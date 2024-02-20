@@ -229,28 +229,35 @@ def load_continuous_behaviors(one, eid):
     # for the side views, they contain columns ['times', 'whiskerMotionEnergy'] for the body view it contains
     # ['times', 'bodyMotionEnergy']
     sess_loader.load_motion_energy(views=['left', 'right', 'body'])
-    left_whisker = sess_loader.motion_energy['leftCamera']
-    right_whisker = sess_loader.motion_energy['rightCamera']
-    body = sess_loader.motion_energy['rightCamera']
-    left_motion = left_whisker.to_numpy()
-    right_motion = right_whisker.to_numpy()
-    body_motion = body.to_numpy()
+    left_whisker = sess_loader.motion_energy['leftCamera'].to_numpy()
+    right_whisker = sess_loader.motion_energy['rightCamera'].to_numpy()
+    body_whisker = sess_loader.motion_energy['bodyCamera'].to_numpy()
 
     # To load pose (DLC) data, e.g.
-    # TO DO: Add pupil traces from lightning pose when it becomes available in the IBL database.
+    # TO DO: Add pupil traces from lightning pose when they become available in the IBL database, e.g.,
+    #        sessions = one.search(dataset='lightningPose', details=False)
+    #        pupil_data = one.load_object(eid, f'leftCamera', attribute=['lightningPose', 'times'])
+    # TO DO: Sometimes some traces are unavailable. Right now we still load them as 'nan' but need to handle it later.
+    # TO DO: Different cameras have very different traces for the same behavior. Treat them as independent? 
     dlc_left = one.load_object(eid, "leftCamera", attribute=["dlc", "features", "times"], collection="alf")
     dlc_right = one.load_object(eid, "rightCamera", attribute=["dlc", "features", "times"], collection="alf")
     dlc_body = one.load_object(eid, "bodyCamera", attribute=["dlc", "features", "times"], collection="alf")
     left_pupil = np.c_[dlc_left.times, dlc_left.features.pupilDiameter_smooth]
     right_pupil = np.c_[dlc_right.times, dlc_right.features.pupilDiameter_smooth]
-    left_paw = dlc.get_speed(dlc_left.dlc, dlc_left.times, camera="left", feature="paw_r")
-    right_paw = dlc.get_speed(dlc_right.dlc, dlc_right.times, camera="right", feature="paw_r")
+    # 'left_paw_l' means left paw speed from the left camera
+    left_paw_l = np.c_[dlc_left.times, dlc.get_speed(dlc_left.dlc, dlc_left.times, camera="left", feature="paw_l")]
+    left_paw_r = np.c_[dlc_left.times, dlc.get_speed(dlc_left.dlc, dlc_left.times, camera="left", feature="paw_r")]
+    right_paw_l = np.c_[dlc_right.times, dlc.get_speed(dlc_right.dlc, dlc_right.times, camera="right", feature="paw_l")]
+    right_paw_r = np.c_[dlc_right.times, dlc.get_speed(dlc_right.dlc, dlc_right.times, camera="right", feature="paw_r")]
+    left_nose = np.c_[dlc_left.times, dlc.get_speed(dlc_left.dlc, dlc_left.times, camera="left", feature="nose_tip")]
+    right_nose = np.c_[dlc_right.times, dlc.get_speed(dlc_right.dlc, dlc_right.times, camera="right", feature="nose_tip")]
     
     behaviors = {
         'wheel_pos':wheel_pos, 'wheel_vel': wheel_vel, 
-        'left_motion': left_motion, 'right_motion': right_motion, 'body_motion': body_motion,
+        'left_whisker': left_whisker, 'right_whisker': right_whisker, 'body_whisker': body_whisker,
         'left_pupil': left_pupil, 'right_pupil': right_pupil, 
-        'left_paw': left_paw, 'right_paw': right_paw 
+        'left_paw_l': left_paw_l, 'left_paw_r': left_paw_r, 'right_paw_l': right_paw_l, 'right_paw_r': right_paw_r,
+        'left_nose': left_nose, 'right_nose': right_nose 
     }
     return behaviors
 
