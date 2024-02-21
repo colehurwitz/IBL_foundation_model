@@ -1,4 +1,6 @@
 import numpy as np
+from tqdm import tqdm
+from iblatlas.regions import BrainRegions
 from iblutil.numerical import bincount2D
 from brainbox.population.decode import get_spike_counts_in_bins
 
@@ -63,6 +65,13 @@ def prepare_data(one, idx, bwm_df, params):
 
     return neural_dict, behave_dict, metadata
 
+def list_brain_regions(neural_dict, **kwargs):
+    brainreg = BrainRegions()
+    beryl_reg = brainreg.acronym2acronym(neural_dict['cluster_regions'], mapping='Beryl')
+    regions = ([[k] for k in np.unique(beryl_reg)] if kwargs['single_region'] else [np.unique(beryl_reg)])
+    print(f"Use spikes from brain regions: ", regions[0])
+    return regions, beryl_reg
+
 
 def select_brain_regions(regressors, beryl_reg, region, **kwargs):
     """
@@ -110,7 +119,7 @@ def get_spike_data_per_trial(times, clusters, interval_begs, interval_ends, inte
 
     binned_spikes = np.zeros((n_trials, n_clusters_in_region, n_bins))
     spike_times_list = []
-    for tr, (t_beg, t_end) in enumerate(zip(interval_begs, interval_ends)):
+    for tr, (t_beg, t_end) in enumerate(tqdm(zip(interval_begs, interval_ends), total=n_trials)):
         # just get spikes for this region/trial
         idxs_t = (times >= t_beg) & (times < t_end)
         times_curr = times[idxs_t]
