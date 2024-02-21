@@ -207,7 +207,7 @@ def load_discrete_behaviors(trials, mask=None):
     contrast = np.c_[trials['contrastLeft'], trials['contrastRight']]
     contrast = (-1 * np.nan_to_num(contrast, 0)).sum(1)
 
-    behaviors = {'choice':choice, 'block': block, 'reward': reward, 'contrast':contrast}
+    behaviors = {'choice': choice, 'block': block, 'reward': reward, 'contrast': contrast}
     return behaviors
 
 
