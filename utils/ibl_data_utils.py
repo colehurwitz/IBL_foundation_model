@@ -669,35 +669,26 @@ def load_trial_behaviors(one, eid, trials, mask=None, allow_nans=True, **kwargs)
     return behave_dict
 
 
-def prepare_data(one, idx, bwm_df, params):
+def prepare_data(one, eid, bwm_df, params):
     
     # When merging probes we are interested in eids, not pids
-    if params['merged_probes']:
-        eid = bwm_df['eid'].unique()[idx]
-        tmp_df = bwm_df.set_index(['eid', 'subject']).xs(eid, level='eid')
-        subject = tmp_df.index[0]
-        pids = tmp_df['pid'].to_list()  # Select all probes of this session
-        probe_names = tmp_df['probe_name'].to_list()
-        print(f"Running merged probes for session eid: {eid}")
-    else:
-        eid = bwm_df.iloc[idx]['eid']
-        subject = bwm_df.iloc[idx]['subject']
-        pid = bwm_df.iloc[idx]['pid']
-        probe_name = bwm_df.iloc[idx]['probe_name']
-        print(f"Running probe pid: {pid}")
+    idx = (bwm_df.eid.unique() == eid).argmax()
+    eid = bwm_df.eid.unique()[idx]
+    tmp_df = bwm_df.set_index(['eid', 'subject']).xs(eid, level='eid')
+    subject = tmp_df.index[0]
+    pids = tmp_df['pid'].to_list()  # Select all probes of this session
+    probe_names = tmp_df['probe_name'].to_list()
+    print(f"Merged {len(probe_names)} probes for session eid: {eid}")
 
-    if params['merged_probes']:
-        clusters_list = []
-        spikes_list = []
-        for pid, probe_name in zip(pids, probe_names):
-            tmp_spikes, tmp_clusters = load_spiking_data(one, pid, eid=eid, pname=probe_name)
-            tmp_clusters['pid'] = pid
-            spikes_list.append(tmp_spikes)
-            clusters_list.append(tmp_clusters)
-        spikes, clusters = merge_probes(spikes_list, clusters_list)
-    else:
-        spikes, clusters = load_spiking_data(one, pid, eid=eid, pname=probe_name)
-
+    clusters_list = []
+    spikes_list = []
+    for pid, probe_name in zip(pids, probe_names):
+        tmp_spikes, tmp_clusters = load_spiking_data(one, pid, eid=eid, pname=probe_name)
+        tmp_clusters['pid'] = pid
+        spikes_list.append(tmp_spikes)
+        clusters_list.append(tmp_clusters)
+    spikes, clusters = merge_probes(spikes_list, clusters_list)
+  
     trials, trials_mask = load_trials_and_mask(one=one, eid=eid)
     anytime_behaviors = load_anytime_behaviors(one, eid)
     
