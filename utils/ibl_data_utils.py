@@ -705,6 +705,8 @@ def prepare_data(one, eid, bwm_df, params):
     eid = bwm_df.eid.unique()[idx]
     tmp_df = bwm_df.set_index(['eid', 'subject']).xs(eid, level='eid')
     subject = tmp_df.index[0]
+    lab = tmp_df.lab.iloc[0]
+    
     pids = tmp_df['pid'].to_list()  # Select all probes of this session
     probe_names = tmp_df['probe_name'].to_list()
 
@@ -725,22 +727,31 @@ def prepare_data(one, eid, bwm_df, params):
     neural_dict = {
         'spike_times': spikes['times'],
         'spike_clusters': spikes['clusters'],
-        'cluster_regions': clusters['acronym'],
-        'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
-        'cluster_df': clusters
+        'cluster_regions': clusters['acronym'].to_numpy(),
+        # We don't need details about the cluster QC. Only include if good units for now.
+        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
+        # 'cluster_df': clusters
     }
     
     behave_dict = anytime_behaviors
     
-    metadata = {
+    meta_data = {
         'subject': subject,
         'eid': eid,
         'probe_name': probe_name,
-        'trials': trials_df,
+        'lab': lab,
+        'cluster_channels': list(clusters['channels']),
+        'cluster_regions': list(clusters['acronym']),
+        'good_clusters': list((clusters['label'] >= 1).astype(int))
+        # TO DO: Add sampling frequency
+    }
+
+    trials_data = {
+        'trials_df': trials_df,
         'trials_mask': trials_mask
     }
 
-    return neural_dict, behave_dict, metadata
+    return neural_dict, behave_dict, meta_data, trials_data
     
 
 
