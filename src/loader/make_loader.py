@@ -1,14 +1,16 @@
 import torch
 from loader.base import BaseDataset
 
-def make_batcher(dataset, 
+def make_loader(dataset, 
                  batch_size, 
-                 pad_to_ritght = True,
-                 max_pad = 5000,
+                 pad_to_right = True,
+                 pad_value = 0.,
+                 max_length = 5000,
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
-                          max_pad=max_pad,
-                          pad_to_ritght=pad_to_ritght,
+                          pad_value=pad_value,
+                          max_length=max_length,
+                          pad_to_right=pad_to_right,
                             )
     
     dataloader = torch.utils.data.DataLoader(dataset,
