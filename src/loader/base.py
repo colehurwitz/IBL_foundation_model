@@ -41,27 +41,50 @@ def _pad_seq_left_to_n(
         axis=0,
     )
 
+def _attention_mask(
+    seq: np.ndarray,
+    pad_length: int,
+    ) -> np.ndarray:
+    mask = np.ones_like(seq)
+    if pad_length:
+        mask[-pad_length:] = 0
+    else:
+        mask[:pad_length] = 0
+    return mask
+
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         dataset,
-        max_pad = 5000,
-        pad_to_ritght = True
+        pad_value = 0.,
+        max_length = 5000,
+        pad_to_right = True
     ) -> None:
         self.dataset = dataset
-        self.max_pad = max_pad
-        self.pad_to_ritght = pad_to_ritght
+        self.pad_value = pad_value
+        self.max_length = max_length
+        self.pad_to_right = pad_to_right
 
     def _preprocess(self, data):
         data = np.array(data['spikes_sparse_data'])
-        if data.shape[0] > self.max_pad:
-            data = data[:self.max_pad]
-        else:
-            if self.pad_to_ritght:
-                data = _pad_seq_right_to_n(data, self.max_pad)
+        
+        pad_length = 0
+
+        if data.shape[0] > self.max_length:
+            data = data[:self.max_length]
+        else: 
+            if self.pad_to_right:
+                pad_length = self.max_length - data.shape[0]
+                data = _pad_seq_right_to_n(data, self.max_length, self.pad_value)
             else:
-                data = _pad_seq_left_to_n(data, self.max_pad)
-        return {"spikes_sparse_data": data}
+                pad_length = data.shape[0] - self.max_length
+                data = _pad_seq_left_to_n(data, self.max_length, self.pad_value)
+
+        # add attention mask
+        attention_mask = _attention_mask(data, pad_length)
+
+        return {"spikes_sparse_data": data,
+                "attention_mask": attention_mask}
     
     def __len__(self):
         return len(self.dataset)
