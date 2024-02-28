@@ -12,3 +12,8 @@ conda env create -f env.yaml
 conda activate ibl-fm
 ```
 
+## How to run
+Run the script
+```
+source run.sh
+```

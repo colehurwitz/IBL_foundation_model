@@ -40,9 +40,16 @@ bwm_df = pd.read_csv(freeze_file, index_col=0)
 idx = 400
 pid = bwm_df.pid[idx]
 eid, probe = one.pid2eid(pid)
+print(f"Session {idx} has PID {pid} and EID {eid}")
 
 # Load spike sorting data
 spikes, clusters = load_spiking_data(one, pid)
+
+print("Spikes Keys:", spikes.keys())
+# for k, v in spikes.items():
+#     print(k, v.shape)
+#     print(v[:10])
+# exit()
 
 # We may not want to train the model with data within trials, but we may need it for eval purposes.
 # Load trials data and mask. Trials are excluded in the mask if reaction time is too long or too short,
@@ -51,7 +58,6 @@ trials, mask = load_trials_and_mask(one, eid, min_rt=0.08, max_rt=2., nan_exclud
 
 # Load behaviors for any-time decoding
 anytime_behaviors = load_anytime_behaviors(one, eid)
-print(anytime_behaviors.keys())
 
 params = {
     # setup for trial decoding:
@@ -63,10 +69,12 @@ params = {
 
 neural_dict, behave_dict, metadata = prepare_data(one, eid, bwm_df, params)
 
-print(neural_dict.keys())
+print("neural_dict keys:", neural_dict.keys())
+print("behave_dict keys:", behave_dict.keys())
+print("metadata keys:", metadata.keys())
 
 regions, beryl_reg = list_brain_regions(neural_dict, **params)
-
+print("Regions:", regions)
 # Use spikes from brain regions:  ['CA1' 'CP' 'DG' 'LP' 'MOp' 'OT' 'PIR' 'PO' 'PoT' 'SI' 'VISa' 'root']
 region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
 
@@ -80,7 +88,7 @@ plt.title(f"spike count in trial {trial_idx}")
 plt.xlabel("time bin")
 plt.ylabel("unit")
 plt.colorbar()
-plt.savefig("spike_count_trial_{trial_idx}.png")
+plt.savefig("spike_count_trial_{}.png".format(trial_idx))
 
 total_elems = binned_spikes[trial_idx].shape[0] * binned_spikes[trial_idx].shape[1]
 nonzero_elems = np.count_nonzero(binned_spikes[trial_idx])
