@@ -570,6 +570,8 @@ def get_behavior_per_interval(
         assert intervals is not None, 'Require intervals to segment the recording into chunks including trials and non-trials.'
         interval_begs, interval_ends = intervals.T
 
+    n_intervals = len(interval_begs)
+
     if np.all(np.isnan(interval_begs)) or np.all(np.isnan(interval_ends)):
         print('interval times all nan')
         good_interval = np.nan * np.ones(interval_begs.shape[0])
@@ -631,8 +633,8 @@ def get_behavior_per_interval(
         return interval_idx, is_good_interval, x_interp, y_interp, skip_reason
 
     with multiprocessing.Pool(processes=n_workers) as p:
-        targets = list(zip(np.arange(len(intervals)), target_times_og_list, target_vals_og_list))
-        with tqdm(total=len(intervals)) as pbar:
+        targets = list(zip(np.arange(n_intervals), target_times_og_list, target_vals_og_list))
+        with tqdm(total=n_intervals) as pbar:
             for res in p.imap_unordered(interpolate_behavior, targets):
                 pbar.update()
                 good_interval[res[0]] = res[1]
