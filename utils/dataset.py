@@ -45,6 +45,7 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'probe_name': [meta_data['probe_name']] * len(sparse_binned_spikes),
             'subject': [meta_data['subject']] * len(sparse_binned_spikes),
             'lab': [meta_data['lab']] * len(sparse_binned_spikes),
+            'sampling_freq': [meta_data['sampling_freq']] * len(sparse_binned_spikes),
             'cluster_regions': [meta_data['cluster_regions']] * len(sparse_binned_spikes),
             'cluster_channels': [meta_data['cluster_channels']] * len(sparse_binned_spikes),
             'good_clusters': [meta_data['good_clusters']] * len(sparse_binned_spikes)
