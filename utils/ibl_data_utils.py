@@ -241,7 +241,7 @@ def create_intervals(start_time, end_time, interval_len):
     return np.c_[interval_begs, interval_ends]
 
 
-def get_spike_data_per_interval(times, clusters, interval_begs, interval_ends, interval_len, binsize):
+def get_spike_data_per_interval(times, clusters, interval_begs, interval_ends, interval_len, binsize, n_workers=os.cpu_count()):
     """
     Select spiking data for specified interval in each recording.
 
@@ -299,7 +299,7 @@ def get_spike_data_per_interval(times, clusters, interval_begs, interval_ends, i
         return binned_spikes_tmp[:, :n_bins], idxs_tmp, interval_idx
 
     binned_spikes = np.zeros((n_intervals, n_clusters_in_region, n_bins))
-    with multiprocessing.Pool(processes=os.cpu_count()) as p:
+    with multiprocessing.Pool(processes=n_workers) as p:
         intervals = list(zip(np.arange(n_intervals), interval_begs, interval_ends))
         with tqdm(total=len(intervals)) as pbar:
             for res in p.imap_unordered(compute_spike_count, intervals):
@@ -310,7 +310,7 @@ def get_spike_data_per_interval(times, clusters, interval_begs, interval_ends, i
     return binned_spikes
 
 
-def bin_spiking_data(reg_clu_ids, neural_df, intervals=None, trials_df=None, **kwargs):
+def bin_spiking_data(reg_clu_ids, neural_df, intervals=None, trials_df=None, n_workers=os.cpu_count(), **kwargs):
     """
     Format a single session-wide array of spikes into a list of trial-based arrays.
     The ordering of clusters used in the output are also returned.
@@ -379,7 +379,8 @@ def bin_spiking_data(reg_clu_ids, neural_df, intervals=None, trials_df=None, **k
             interval_begs=intervals[:, 0],
             interval_ends=intervals[:, 1],
             interval_len=interval_len,
-            binsize=kwargs['binsize'])
+            binsize=kwargs['binsize'],
+            n_workers=n_workers)
         binned_list = [x.T for x in binned_array]   
     return np.array(binned_list), clusters_used_in_bins
     
@@ -510,7 +511,15 @@ def load_target_behavior(one, eid, target):
     return beh_dict
 
 
-def get_behavior_per_interval(target_times, target_vals, intervals=None, trials_df=None, allow_nans=False, **kwargs):
+def get_behavior_per_interval(
+    target_times, 
+    target_vals, 
+    intervals=None, 
+    trials_df=None, 
+    allow_nans=False, 
+    n_workers=os.cpu_count(), 
+    **kwargs
+):
     """
     Format a single session-wide array of target data into a list of interval-based arrays.
 
@@ -621,7 +630,7 @@ def get_behavior_per_interval(target_times, target_vals, intervals=None, trials_
                 target_time, target_vals, kind='linear', fill_value='extrapolate')(x_interp)
         return interval_idx, is_good_interval, x_interp, y_interp, skip_reason
 
-    with multiprocessing.Pool(processes=os.cpu_count()) as p:
+    with multiprocessing.Pool(processes=n_workers) as p:
         targets = list(zip(np.arange(len(intervals)), target_times_og_list, target_vals_og_list))
         with tqdm(total=len(intervals)) as pbar:
             for res in p.imap_unordered(interpolate_behavior, targets):
@@ -636,7 +645,7 @@ def get_behavior_per_interval(target_times, target_vals, intervals=None, trials_
     return target_times_list, target_vals_list, np.array(good_interval), skip_reasons    
 
 
-def load_anytime_behaviors(one, eid):
+def load_anytime_behaviors(one, eid, n_workers=os.cpu_count()):
 
     behaviors = [
         'wheel-position', 'wheel-velocity', 'wheel-speed',
@@ -653,7 +662,7 @@ def load_anytime_behaviors(one, eid):
         return beh, load_target_behavior(one, eid, beh)
     
     behave_dict = {}
-    with multiprocessing.Pool(processes=os.cpu_count()) as p:
+    with multiprocessing.Pool(processes=n_workers) as p:
         with tqdm(total=len(behaviors)) as pbar:
             for res in p.imap_unordered(load_beh, behaviors):
                 pbar.update()
@@ -664,7 +673,17 @@ def load_anytime_behaviors(one, eid):
     return behave_dict
 
 
-def bin_behaviors(one, eid, intervals=None, trials_only=False, trials_df=None, mask=None, allow_nans=True, **kwargs):
+def bin_behaviors(
+    one, 
+    eid, 
+    intervals=None, 
+    trials_only=False, 
+    trials_df=None, 
+    mask=None, 
+    allow_nans=True, 
+    n_workers=os.cpu_count(),
+    **kwargs
+):
 
     behaviors = [
         'wheel-position', 'wheel-velocity', 'wheel-speed',
@@ -701,7 +720,7 @@ def bin_behaviors(one, eid, intervals=None, trials_only=False, trials_df=None, m
         target_times, target_vals = target_dict['times'], target_dict['values']
         target_times_list, target_vals_list, target_mask, skip_reasons = get_behavior_per_interval(
             target_times, target_vals, intervals=intervals, 
-            trials_df=trials_df, allow_nans=allow_nans, **kwargs
+            trials_df=trials_df, allow_nans=allow_nans, n_workers=n_workers, **kwargs
         )
         behave_dict.update({beh: np.array(target_vals_list, dtype=object)})
         mask_dict.update({beh: target_mask})
@@ -714,7 +733,7 @@ def bin_behaviors(one, eid, intervals=None, trials_only=False, trials_df=None, m
     return behave_dict, mask_dict
 
 
-def prepare_data(one, eid, bwm_df, params):
+def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
     
     # When merging probes we are interested in eids, not pids
     idx = (bwm_df.eid.unique() == eid).argmax()
@@ -738,7 +757,7 @@ def prepare_data(one, eid, bwm_df, params):
 
     trials_df, trials_mask = load_trials_and_mask(one=one, eid=eid)
         
-    behave_dict = load_anytime_behaviors(one, eid)
+    behave_dict = load_anytime_behaviors(one, eid, n_workers=n_workers)
     
     neural_dict = {
         'spike_times': spikes['times'],
