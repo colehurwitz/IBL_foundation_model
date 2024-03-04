@@ -54,8 +54,8 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
 
     return Dataset.from_dict(data_dict)
 
-def upload_dataset(dataset):
-    dataset.push_to_hub("berkott/ibl_ssl_data")
+def upload_dataset(dataset, org, eid, is_private=True):
+    dataset.push_to_hub(f"{org}/{eid}", private=is_private)
 
-def download_dataset():
-    return load_dataset("berkott/ibl_ssl_data")
+def download_dataset(org, eid, split="train"):
+    return load_dataset(f"{org}/{eid}", split=split)
