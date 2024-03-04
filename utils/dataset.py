@@ -57,5 +57,9 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
 def upload_dataset(dataset, org, eid, is_private=True):
     dataset.push_to_hub(f"{org}/{eid}", private=is_private)
 
-def download_dataset(org, eid, split="train"):
-    return load_dataset(f"{org}/{eid}", split=split)
+def download_dataset(org, eid, split="train", cache_dir=None):
+    if cache_dir is None:
+        return load_dataset(f"{org}/{eid}", split=split)
+    else:
+        return load_dataset(f"{org}/{eid}", split=split, cache_dir=cache_dir)
+
