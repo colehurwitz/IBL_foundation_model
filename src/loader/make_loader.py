@@ -6,10 +6,12 @@ def make_loader(dataset,
                  pad_to_right = True,
                  pad_value = 0.,
                  max_length = 5000,
+                 bin_size = 0.05,
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
                           pad_value=pad_value,
                           max_length=max_length,
+                          bin_size=bin_size,
                           pad_to_right=pad_to_right,
                             )
     
