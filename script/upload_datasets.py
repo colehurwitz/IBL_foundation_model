@@ -48,24 +48,24 @@ for eid_idx, eid in enumerate(include_eids):
         print('======================')
         print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
         
-        neural_dict, _, meta_data, _ = prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count())
+        neural_dict, _, meta_data, _ = prepare_data(one, eid, bwm_df, params, n_workers=4)
         regions, beryl_reg = list_brain_regions(neural_dict, **params)
         region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
         intervals = create_intervals(
             start_time=0, end_time=neural_dict['spike_times'].max(), interval_len=params['interval_len']
         )
         binned_spikes, clusters_used_in_bins = bin_spiking_data(
-            region_cluster_ids, neural_dict, intervals=intervals, n_workers=os.cpu_count(), **params
+            region_cluster_ids, neural_dict, intervals=intervals, n_workers=4, **params
         )
         dataset = create_dataset(
             binned_spikes, bwm_df, eid, params, meta_data=meta_data, binned_behaviors=None
         )
         upload_dataset(dataset, org='neurofm123', eid=eid)
-        dataset = download_dataset(org='neurofm123', eid=eid)
+        dataset = download_dataset(org='neurofm123', eid=eid, cache_dir='/mnt/3TB/yizi/huggingface/datasets')
     
         print('======================')
         print(f'Uploaded session {eid} to Hugging Face.')
-        print(f'{eid_idx+1} / {len(include_eids)} sessions left.')
+        print(f'Finished {eid_idx+1} / {len(include_eids)} sessions.')
         
         spikes_sparse_data_list = dataset['spikes_sparse_data']
         spikes_sparse_indices_list = dataset['spikes_sparse_indices']
