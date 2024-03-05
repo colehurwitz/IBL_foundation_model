@@ -46,9 +46,9 @@ class SingleSessionDataset(Dataset):
         
         dataset = datasets.load_from_disk(Path(data_dir)/eid)
         self.train_spike = get_binned_spikes(dataset['train'])
-        self.train_behavior = dataset['train']['binned_behaviors'][beh_name]
+        self.train_behavior = dataset['train'][beh_name]
         self.spike_data = get_binned_spikes(dataset[split])
-        self.behavior = dataset[split]['binned_behaviors'][beh_name]
+        self.behavior = dataset[split][beh_name]
         
         self.n_t_steps = self.spike_data.shape[1]
         self.n_units = self.behavior.shape[2]
