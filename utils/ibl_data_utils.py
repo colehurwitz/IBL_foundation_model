@@ -788,6 +788,29 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
     }
 
     return neural_dict, behave_dict, meta_data, trials_data
-    
 
+
+def align_spike_behavior(binned_spikes, binned_behaviors):
+
+    beh_names = ['wheel-speed', 'left-whisker-motion-energy']
+
+    target_mask = [1] * len(binned_spikes)
+    for beh_name in beh_names:
+        beh_mask = [1 if trial is not None else 0 for trial in binned_behaviors[beh_name]]
+    target_mask = target_mask and beh_mask
+
+    del_idxs = np.argwhere(np.array(target_mask) == 0)
+
+    aligned_binned_spikes = np.delete(binned_spikes, del_idxs, axis=0)
+
+    aligned_binned_behaviors = {}
+    wheel_speed = np.delete(binned_behaviors['wheel-speed'], del_idxs)
+    motion_energy = np.delete(binned_behaviors['right-whisker-motion-energy'], del_idxs)
+    aligned_binned_behaviors['wheel_speed'] = np.array(
+        [y for y in wheel_speed], dtype=float).reshape((aligned_binned_spikes.shape[0], -1)
+    )
+    aligned_binned_behaviors['motion_energy'] = np.array(
+        [y for y in motion_energy], dtype=float).reshape((aligned_binned_spikes.shape[0], -1)
+    )
+    return aligned_binned_spikes, aligned_binned_behaviors
 

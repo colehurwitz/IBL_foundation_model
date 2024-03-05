@@ -1,0 +1,17 @@
+model_class: DECODER
+
+reduced_rank:
+    temporal_rank: 2
+    weight_decay: 0.1
+
+mlp:
+    mlp_hidden_size: (128, 64, 32)
+    weight_decay: 0.001
+
+lstm:
+    lstm_n_layers: 3
+    lstm_hidden_size: 64
+    mlp_hidden_size: (32,)
+    drop_out: 0.1
+    weight_decay: 0.001
+    
