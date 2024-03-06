@@ -1,3 +1,6 @@
+'''Upload spike data for self-supervised learning.'''
+
+
 import os
 import sys
 from pathlib import Path

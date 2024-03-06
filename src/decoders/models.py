@@ -5,13 +5,18 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from torchmetrics import R2Score
 from torch.nn import functional as F
 
+def tuple_type(strings):
+    strings = strings.replace("(", "").replace(")", "")
+    mapped_int = map(int, strings.split(","))
+    return tuple(mapped_int)
+
 
 class BaselineDecoder(LightningModule):
     def __init__(self, config):
         super().__init__()
-        self.n_units = config.n_units
-        self.n_t_steps = config.n_t_steps
-        self.learning_rate = config.training.lr
+        self.n_units = config['n_units']
+        self.n_t_steps = config['n_t_steps']
+        self.learning_rate = config['optimizer']['lr']
         self.r2_score = R2Score(num_outputs=self.n_t_steps, multioutput='uniform_average')
 
     def forward(self, x):
@@ -49,8 +54,8 @@ class ReducedRankDecoder(BaselineDecoder):
     def __init__(self, config):
         super().__init__(config)
 
-        self.temporal_rank = config.reduced_rank.temporal_rank
-        self.weight_decay = config.reduced_rank.weight_decay
+        self.temporal_rank = config['reduced_rank']['temporal_rank']
+        self.weight_decay = config['reduced_rank']['weight_decay']
 
         self.U = torch.nn.Parameter(torch.randn(self.n_units, self.temporal_rank))
         self.V = torch.nn.Parameter(torch.randn(self.temporal_rank, self.n_t_steps, self.n_t_steps))
@@ -68,8 +73,8 @@ class MLPDecoder(BaselineDecoder):
     def __init__(self, config):
         super().__init__(config)
 
-        self.hidden_size = config.mlp.mlp_hidden_size
-        self.weight_decay = config.mlp.weight_decay
+        self.hidden_size = config['mlp']['mlp_hidden_size']
+        self.weight_decay = config['mlp']['weight_decay']
 
         self.input_layer = torch.nn.Linear(self.n_units, self.hidden_size[0])
 
@@ -102,11 +107,11 @@ class LSTMDecoder(BaselineDecoder):
     def __init__(self, config):
         super().__init__(config)
 
-        self.lstm_hidden_size = config.lstm.lstm_hidden_size
-        self.n_layers = config.lstm.lstm_n_layers
-        self.hidden_size = config.lstm.mlp_hidden_size
-        self.drop_out = config.lstm.drop_out
-        self.weight_decay = config.lstm.weight_decay
+        self.lstm_hidden_size = config['lstm']['lstm_hidden_size']
+        self.n_layers = config['lstm']['lstm_n_layers']
+        self.hidden_size = config['lstm']['mlp_hidden_size']
+        self.drop_out = config['lstm']['drop_out']
+        self.weight_decay = config['lstm']['weight_decay']
 
         self.lstm = torch.nn.LSTM(
             input_size=self.n_units,

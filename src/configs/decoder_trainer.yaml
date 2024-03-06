@@ -35,11 +35,11 @@ optimizer:
   lr_patience: 5
 
 tuner:
-    num_epochs: 100
-    num_samples: 1
-    use_gpu: false
-    num_workers: 1
-    metric: val_loss
-    mode: min
-    enable_progress_bar: false
+  num_epochs: 10 # change later when running on clusters
+  num_samples: 1
+  use_gpu: false
+  num_workers: 1
+  metric: val_loss
+  mode: min
+  enable_progress_bar: false
     

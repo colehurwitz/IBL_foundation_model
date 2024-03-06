@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch import LightningDataModule
 import datasets
-from utils.dataset import get_binned_spikes_from_sparse
+from utils.dataset_utils import get_binned_spikes_from_sparse
 
 def to_tensor(x, device):
     return torch.tensor(x).to(device)
@@ -38,7 +38,8 @@ def get_binned_spikes(dataset):
     binned_spikes  = get_binned_spikes_from_sparse(
         spikes_sparse_data_list, spikes_sparse_indices_list, spikes_sparse_indptr_list, spikes_sparse_shape_list
     )
-    return binned_spikes
+    # TO DO: make this nicer
+    return binned_spikes.astype(float)
 
 
 class SingleSessionDataset(Dataset):
@@ -46,12 +47,12 @@ class SingleSessionDataset(Dataset):
         
         dataset = datasets.load_from_disk(Path(data_dir)/eid)
         self.train_spike = get_binned_spikes(dataset['train'])
-        self.train_behavior = dataset['train'][beh_name]
+        self.train_behavior = np.array(dataset['train'][beh_name])
         self.spike_data = get_binned_spikes(dataset[split])
-        self.behavior = dataset[split][beh_name]
-        
+        self.behavior = np.array(dataset[split][beh_name])
+
         self.n_t_steps = self.spike_data.shape[1]
-        self.n_units = self.behavior.shape[2]
+        self.n_units = self.spike_data.shape[2]
 
         # fit scaler on train to avoid data leakage
         self.train_spike, self.means, self.stds = standardize_spike_data(self.train_spike)
@@ -75,14 +76,14 @@ class SingleSessionDataModule(LightningDataModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.data_dir = config.dirs.data_dir
-        self.eid = config.eid
-        self.beh_name = config.target
-        self.device = config.training.device
-        self.batch_size = config.training.batch_size
-        self.n_workers = config.data.num_workers
+        self.data_dir = config['dirs']['data_dir']
+        self.eid = config['eid']
+        self.beh_name = config['target']
+        self.device = config['training']['device']
+        self.batch_size = config['training']['batch_size']
+        self.n_workers = config['data']['num_workers']
 
-    def setup(self):
+    def setup(self, stage=None):
         self.train = SingleSessionDataset(
             self.data_dir, self.eid, self.beh_name, self.device, split='train'
         )
@@ -92,7 +93,7 @@ class SingleSessionDataModule(LightningDataModule):
         self.test = SingleSessionDataset(
             self.data_dir, self.eid, self.beh_name, self.device, split='test'
         )
-        self.config.update({'n_units': session_dataset.n_units, 'n_t_steps': session_dataset.n_t_steps})
+        self.config.update({'n_units': self.train.n_units, 'n_t_steps': self.train.n_t_steps})
         
 
     def train_dataloader(self):
