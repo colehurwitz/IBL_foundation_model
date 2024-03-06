@@ -5,11 +5,6 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from torchmetrics import R2Score
 from torch.nn import functional as F
 
-def tuple_type(strings):
-    strings = strings.replace("(", "").replace(")", "")
-    mapped_int = map(int, strings.split(","))
-    return tuple(mapped_int)
-
 
 class BaselineDecoder(LightningModule):
     def __init__(self, config):
