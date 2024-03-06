@@ -2,14 +2,21 @@ seed: 42
 
 savestring: test
 wandb_project: test
-log_to_wandb: false
+log_to_wandb: true
 
 verbosity: 0
+
+# wandb configuration
+wandb:
+  use: false
+  entity: null
+  project: test
+  run_name: test
 
 # Logging directories
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: train_logs  # save tensorboard logs
+  log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
   dataset_dir: berkott/ibl_ssl_data
   
@@ -18,8 +25,8 @@ dirs:
 # Training configuration
 training:
   num_epochs: 100
-  train_batch_size: 1
-  test_batch_size: 1        
+  train_batch_size: 32
+  test_batch_size: 256  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_every: null  # Save checkpoint
