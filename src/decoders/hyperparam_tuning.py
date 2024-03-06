@@ -7,7 +7,7 @@ from ray.train.torch import TorchTrainer
 
 def tune_decoder(
     train_func, search_space,
-    max_epochs=500, num_samples=10, use_gpu=False, num_workers=1, 
+    max_epochs=100, num_samples=1, use_gpu=False, num_workers=1, 
     metric="loss", mode="min", 
 ):
     
