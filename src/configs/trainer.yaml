@@ -8,10 +8,10 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
   project: test
-  run_name: test
+  run_name: ndt1-ssl
 
 # Logging directories
 dirs:
