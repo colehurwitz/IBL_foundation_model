@@ -623,6 +623,8 @@ class NDT1(nn.Module):
         if self.method == "ssl":
             if kwargs["loss"] == "poisson_nll":
                 self.loss_fn = nn.PoissonNLLLoss(reduction="none", log_input=kwargs["use_lograte"])
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
             else:   
                 raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
         elif self.method == "ctc":

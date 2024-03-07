@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
-from utils.utils import set_seed, move_batch_to_device, plot_gt_pred
+from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list
 from utils.config_utils import config_from_kwargs, update_config
 from models.ndt1 import NDT1
 from torch.optim.lr_scheduler import OneCycleLR
@@ -44,6 +44,10 @@ dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
 # select the train dataset and the spikes_sparse_data column
 train_dataset = dataset["train"].select_columns(['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape'])
 test_dataset = dataset["test"].select_columns(['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape'])
+
+# sample a neuron index
+sampled_neuron_idx = np.random.randint(0, config.encoder.embedder.n_channels)
+print(f"sampled_neuron_idx: {sampled_neuron_idx}")
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
@@ -96,7 +100,7 @@ for epoch in range(config.training.num_epochs):
         train_loss += loss.item()
         train_examples += outputs.n_examples
         
-    print(f"epoch: {epoch} loss: {train_loss/train_examples}")
+    print(f"epoch: {epoch} train loss: {train_loss/train_examples}")
     test_loss = 0.
     test_examples = 0
     model.eval()
@@ -107,19 +111,29 @@ for epoch in range(config.training.num_epochs):
         test_loss += loss.item()
         test_examples += outputs.n_examples
 
-    pred_spike_count = torch.exp(outputs.preds)
+    
+    outputs.preds = torch.exp(outputs.preds)
     print(f"epoch: {epoch} test_loss: {test_loss/test_examples}") 
+    results = metrics_list(gt = batch['binned_spikes_data'][0, :, sampled_neuron_idx], 
+                           pred = outputs.preds[0, :, sampled_neuron_idx], 
+                           metrics=["r2"],
+                           device=accelerator.device)
     
     # plot Ground Truth and Prediction in the same figure
     fig = plot_gt_pred(gt = batch['binned_spikes_data'][0].T.cpu().numpy(), 
-                 pred = pred_spike_count[0].T.detach().cpu().numpy(),
+                 pred = outputs.preds[0].T.detach().cpu().numpy(),
                  epoch = epoch)
                 
     if config.wandb.use:
-        wandb.log({"epoch": epoch, 
-                   "train_loss": train_loss/train_examples, 
-                   "test_loss": test_loss/test_examples, 
-                   "gt_pred": [wandb.Image(fig)]})
+        logs = {
+            "epoch": epoch, 
+            "train_loss": train_loss/train_examples, 
+            "test_loss": test_loss/test_examples, 
+            "gt_pred": [wandb.Image(fig)]
+        }
+        # merge the results with the logs
+        logs.update(results)
+        wandb.log(logs)
     else:
         plt.savefig(f"{log_dir}/epoch_{epoch}.png")
 
