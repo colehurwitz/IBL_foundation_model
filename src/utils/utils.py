@@ -3,8 +3,7 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from src.utils.metric_utils import r2_score
-
+from utils.metric_utils import r2_score
 
 def set_seed(seed):
     # set seed for reproducibility
@@ -17,7 +16,6 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     print('seed set to {}'.format(seed))
 
-
 def move_batch_to_device(batch, device):
     # if batch values are tensors, move them to device
     for key in batch:
@@ -25,21 +23,34 @@ def move_batch_to_device(batch, device):
             batch[key] = batch[key].to(device)
     return batch
 
-
 def plot_gt_pred(gt, pred, epoch=0):
     # plot Ground Truth and Prediction in the same figur
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     ax1.set_title("Ground Truth")
     im1 = ax1.imshow(gt, aspect='auto', cmap='binary')
-
+    
     ax2.set_title("Prediction")
     im2 = ax2.imshow(pred, aspect='auto', cmap='binary')
-
+    
     # add colorbar
-    fig.colorbar(im1, ax=ax1)
-    fig.colorbar(im2, ax=ax2)
+    plt.colorbar(im1, ax=ax1)
+    plt.colorbar(im2, ax=ax2)
 
     fig.suptitle("Epoch: {}".format(epoch))
+    return fig
+
+def plot_r2(gt, pred, r2, epoch=0, neuron_idx=0):
+    # plot line of gt and pred in different colors
+    fig, ax = plt.subplots()
+    ax.plot(gt, label="Ground Truth", color="blue")
+    ax.plot(pred, label="Prediction", color="red")
+    ax.set_title("R2: {:.4f}".format(r2))
+    ax.legend()
+    # x label
+    ax.set_xlabel("Time")
+    # y label
+    ax.set_ylabel("Rate")
+    fig.suptitle("Epoch: {}, Neuron: {}".format(epoch, neuron_idx))
     return fig
 
 

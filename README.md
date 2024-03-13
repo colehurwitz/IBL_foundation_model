@@ -1,19 +1,40 @@
-# IBL Foundation Model
-We recommend setting up with:
-```
-conda create --name ENV_NAME python=3.11
-pip install -r requirements.txt
-```
+
+# IBL Foundation Model  
 
 ## Environment setup
+
 Create and activate conda environment
-```
-conda env create -f env.yaml
-conda activate ibl-fm
+
 ```
 
-## How to run
-Run the script
+conda env create -f env.yaml
+
+conda activate ibl-fm
+
 ```
+
+## Dataset
+1.  To use lorenz dataset(NDT1 paper). Plz download the dataset from [here](https://drive.google.com/file/d/1O5GxtX90uCgP9xlcmalHmVgC7DjNKO0j/view?usp=sharing). 
+	In trainer.yaml:
+	```
+	dataset_dir: YOUR_PATH
+	dataset_name: lorenz
+	```
+  In ndt1.yaml:
+  ```
+  n_channels: NUM_NEURON  # number of neurons recorded
+  ``` 
+	
+2. The IBL dataset has been setup in huggingface.
+
+  
+
+## How to run
+
+Run the script
+
+```
+
 source run.sh
+
 ```
