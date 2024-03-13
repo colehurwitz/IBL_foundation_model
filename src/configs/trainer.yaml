@@ -2,14 +2,14 @@ seed: 42
 
 savestring: test
 wandb_project: test
-log_to_wandb: true
+log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
   use: true
-  entity: wdk0082
+  entity: null
   project: test
   run_name: ndt1-ssl
 
@@ -41,7 +41,8 @@ model:
 
 # Data configuration.
 data:
-  dataset_class: ssl # Any registered dataset class name. 
+  dataset_name: lorenz # Any registered dataset name.
+  dataset_class: ssl # Any registered dataset class name.
 
   # Load raw dataset if a dataset is not passed to the Trainer __init__ method. 
   hf_dataset_name: null   # from huggingface
@@ -52,6 +53,11 @@ data:
   train_len: null     # used length of the train dataset. null to use all
   test_len: null      # used length of the test dataset. null to use all
 
+  LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
+  use_lograte: True # use lograte
+
+  max_seq_len: 50 # max sequence length
+
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
@@ -61,7 +67,7 @@ method:
     method_name: ssl
 
     use_lograte: true
-    loss: poisson_nll # poisson_nll/mse/other distributions (todo)
+    loss: poisson_nll # mse/other distirbutions (todo)
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}

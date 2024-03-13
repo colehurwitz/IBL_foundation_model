@@ -7,12 +7,14 @@ def make_loader(dataset,
                  pad_value = 0.,
                  max_length = 5000,
                  bin_size = 0.05,
+                 dataset_name = "ibl",
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
                           pad_value=pad_value,
                           max_length=max_length,
                           bin_size=bin_size,
                           pad_to_right=pad_to_right,
+                          dataset_name=dataset_name,
                             )
     
     dataloader = torch.utils.data.DataLoader(dataset,

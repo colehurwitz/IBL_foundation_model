@@ -66,6 +66,25 @@ def _spikes_mask(
     # output 0/1
     return np.random.choice([0, 1], size=(seq_length,), p=[mask_ratio, 1-mask_ratio])
 
+def _pad_spike_seq(
+    seq: np.ndarray, 
+    max_length: int,
+    pad_to_right: bool = True,
+    pad_value: float = 0.,
+) -> np.ndarray:
+    pad_length = 0
+    seq_len = seq.shape[0]
+    if seq_len > max_length:
+        seq = seq[:max_length]
+    else: 
+        if pad_to_right:
+            pad_length = max_length - seq_len
+            seq = _pad_seq_right_to_n(seq, max_length, pad_value)
+        else:
+            pad_length = seq_len - max_length
+            seq = _pad_seq_left_to_n(seq, max_length, pad_value)
+    return seq, pad_length
+
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -74,7 +93,8 @@ class BaseDataset(torch.utils.data.Dataset):
         max_length = 5000,
         bin_size = 0.05,
         mask_ratio = 0.1,
-        pad_to_right = True
+        pad_to_right = True,
+        dataset_name = "ibl",
     ) -> None:
         self.dataset = dataset
         self.pad_value = pad_value
@@ -82,8 +102,26 @@ class BaseDataset(torch.utils.data.Dataset):
         self.bin_size = bin_size
         self.pad_to_right = pad_to_right
         self.mask_ratio = mask_ratio
+        self.dataset_name = dataset_name
 
-    def _preprocess(self, data):
+    def _preprocess_h5_data(self, data, idx):
+        spike_data, rates, _, _ = data
+        spike_data, rates = spike_data[idx], rates[idx]
+        # print(spike_data.shape, rates.shape)
+        spike_data, pad_length = _pad_spike_seq(spike_data, self.max_length, self.pad_to_right, self.pad_value)
+        # add attention mask
+        attention_mask = _attention_mask(self.max_length, pad_length).astype(np.int64)
+        # add spikes timestamps
+        spikes_timestamps = _spikes_timestamps(self.max_length, 1)
+        spikes_timestamps = spikes_timestamps.astype(np.int64)
+
+        spike_data = spike_data.astype(np.float32)
+        return {"spikes_data": spike_data, 
+                "rates": rates, 
+                "spikes_timestamps": spikes_timestamps, 
+                "attention_mask": attention_mask}
+
+    def _preprocess_ibl_data(self, data):
         spikes_sparse_data_list = [data['spikes_sparse_data']]
         spikes_sparse_indices_list = [data['spikes_sparse_indices']]
         spikes_sparse_indptr_list = [data['spikes_sparse_indptr']]
@@ -94,8 +132,7 @@ class BaseDataset(torch.utils.data.Dataset):
                                                            spikes_sparse_indices_list, 
                                                            spikes_sparse_indptr_list, 
                                                            spikes_sparse_shape_list)
-        # binned_spikes_data = np.einsum('bns->bsn', binned_spikes_data)
-        # [n_spikes, n_neurons]]
+
         binned_spikes_data = binned_spikes_data[0]
 
         pad_length = 0
@@ -121,7 +158,7 @@ class BaseDataset(torch.utils.data.Dataset):
         spikes_timestamps = spikes_timestamps.astype(np.int64)
 
         binned_spikes_data = binned_spikes_data.astype(np.float32)
-        return {"binned_spikes_data": binned_spikes_data,
+        return {"spikes_data": binned_spikes_data,
                 "spikes_timestamps": spikes_timestamps,
                 "attention_mask": attention_mask}
     
@@ -129,4 +166,7 @@ class BaseDataset(torch.utils.data.Dataset):
         return len(self.dataset)
     
     def __getitem__(self, idx):
-        return self._preprocess(self.dataset[idx])    
+        if "ibl" in self.dataset_name:
+            return self._preprocess_ibl_data(self.dataset[idx])
+        else:
+            return self._preprocess_h5_data(self.dataset, idx) 
