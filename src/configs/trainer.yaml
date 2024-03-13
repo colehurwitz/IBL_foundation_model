@@ -9,7 +9,7 @@ verbosity: 0
 # wandb configuration
 wandb:
   use: true
-  entity: null
+  entity: wdk0082
   project: test
   run_name: ndt1-ssl
 
@@ -24,7 +24,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 100
+  num_epochs: 1000
   train_batch_size: 32
   test_batch_size: 256  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -61,7 +61,7 @@ method:
     method_name: ssl
 
     use_lograte: true
-    loss: poisson_nll # mse/other distirbutions (todo)
+    loss: poisson_nll # poisson_nll/mse/other distributions (todo)
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}
