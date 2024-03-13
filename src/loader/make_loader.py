@@ -16,7 +16,7 @@ def make_loader(dataset,
                           pad_to_right=pad_to_right,
                           dataset_name=dataset_name,
                             )
-    
+    print(f"len(dataset): {len(dataset)}")
     dataloader = torch.utils.data.DataLoader(dataset,
                                                 batch_size=batch_size,
                                                 shuffle=shuffle)

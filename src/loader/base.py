@@ -163,7 +163,11 @@ class BaseDataset(torch.utils.data.Dataset):
                 "attention_mask": attention_mask}
     
     def __len__(self):
-        return len(self.dataset)
+        if "ibl" in self.dataset_name:
+            return len(self.dataset)
+        else:
+            # get the length of the first tuple in the dataset
+            return len(self.dataset[0])
     
     def __getitem__(self, idx):
         if "ibl" in self.dataset_name:
