@@ -39,8 +39,11 @@ def plot_gt_pred(gt, pred, epoch=0):
     fig.suptitle("Epoch: {}".format(epoch))
     return fig
 
-def plot_r2(gt, pred, r2, epoch=0, neuron_idx=0):
+def plot_r2(gt, pred, epoch=0, neuron_idx=0):
     # plot line of gt and pred in different colors
+
+    r2 = r2_score(y_true=gt, y_pred=pred)
+    gt, pred = gt.cpu().numpy(), pred.cpu().numpy()
     fig, ax = plt.subplots()
     ax.plot(gt, label="Ground Truth", color="blue")
     ax.plot(pred, label="Prediction", color="red")
@@ -53,13 +56,46 @@ def plot_r2(gt, pred, r2, epoch=0, neuron_idx=0):
     fig.suptitle("Epoch: {}, Neuron: {}".format(epoch, neuron_idx))
     return fig
 
+def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first_n=8, device="cpu"):
+    _, unique, counts = np.unique(gt.cpu().numpy(), axis=0, return_inverse=True, return_counts=True)
+    trial_idx = (unique == condition_idx)
+
+    if trial_idx.sum() < first_n:
+        first_n = trial_idx.sum()
+
+    gt_condition = gt[trial_idx][0,:,neuron_idx]
+    pred_condition = pred[trial_idx][:first_n,:,neuron_idx]
+    
+    # plot line of gt and pred in different colors
+    r2 = r2_score(y_true=gt_condition, y_pred=torch.mean(pred_condition, axis=0), device=device)
+    gt_condition = gt_condition.cpu().numpy()
+    pred_condition = pred_condition.cpu().numpy()
+    fig, ax = plt.subplots()
+    ax.plot(gt_condition, label="Ground Truth", color="blue")
+    # plot all pred trials, and show the range of the first_n trials
+    for i in range(pred_condition.shape[0]):
+        ax.plot(pred_condition[i], label="Prediction", color="red", alpha=0.2)
+
+    ax.set_title("R2: {:.4f}".format(r2))
+    ax.legend()
+    # x label
+    ax.set_xlabel("Time")
+    # y label
+    ax.set_ylabel("Rate")
+    fig.suptitle("Epoch: {}, Neuron: {}, Condition: {}, Avg {} trials".format(epoch, neuron_idx, condition_idx, first_n))
+    return fig
 
 # metrics list, return different metrics results
 def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
     results = {}
     if "r2" in metrics:
-        r2 = r2_score(gt, pred)
+        r2_list = []
+        for i in range(gt.shape[0]):
+            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device)
+            r2_list.append(r2)
+        r2 = np.mean(r2_list)
         results["r2"] = r2
+        print("device", device)
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)
         results["mse"] = mse

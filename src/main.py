@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
-from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, plot_rate_and_spike
+from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, plot_rate_and_spike, plt_condition_avg_r2
 from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_r2
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
@@ -53,9 +53,9 @@ else:
     test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
     bin_size = None
 
-
 # sample a neuron index
 sampled_neuron_idx = np.random.randint(0, config.encoder.embedder.n_channels)
+sampled_neuron_idx = 0
 print(f"sampled_neuron_idx: {sampled_neuron_idx}")
 
 # make the dataloader
@@ -94,7 +94,7 @@ lr_scheduler = OneCycleLR(
                 pct_start=config.optimizer.warmup_pct,
                 div_factor=config.optimizer.div_factor,
             )
-
+best_test_trial_avg_r2 = -np.inf
 # loop through the dataloader
 for epoch in range(config.training.num_epochs):
     train_loss = 0.
@@ -110,21 +110,23 @@ for epoch in range(config.training.num_epochs):
         optimizer.zero_grad()
         train_loss += loss.item()
         train_examples += outputs.n_examples
-        
+    
     print(f"epoch: {epoch} train loss: {train_loss/train_examples}")
+
     test_loss = 0.
     test_examples = 0
     model.eval()
     test_pred_list = []
-    for batch in test_dataloader:
-        batch = move_batch_to_device(batch, accelerator.device)
-        spike_data_copy = copy.deepcopy(batch['binned_spikes_data'])
-        outputs = model(spike_data_copy, batch['attention_mask'], batch['spikes_timestamps'])
-        outputs = model(batch['spikes_data'], batch['attention_mask'], batch['spikes_timestamps'])
-        loss = outputs.loss
-        test_loss += loss.item()
-        test_examples += outputs.n_examples
-        test_pred_list.append((torch.exp(outputs.preds), batch['binned_spikes_data']))
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            spike_data_copy = copy.deepcopy(batch['spikes_data'])
+            outputs = model(spike_data_copy, batch['attention_mask'], batch['spikes_timestamps'])
+            outputs = model(batch['spikes_data'], batch['attention_mask'], batch['spikes_timestamps'])
+            loss = outputs.loss
+            test_loss += loss.item()
+            test_examples += outputs.n_examples
+            test_pred_list.append((torch.exp(outputs.preds), batch['spikes_data']))
 
     if config.data.use_lograte:
         preds = torch.exp(outputs.preds)
@@ -136,48 +138,78 @@ for epoch in range(config.training.num_epochs):
         preds = outputs.preds
         gt = batch['spikes_data']
 
-    results = metrics_list(gt = gt[0, :, sampled_neuron_idx],
-                           pred = preds[0, :, sampled_neuron_idx],
+    # calculate results metrics
+    results = metrics_list(gt = gt[..., sampled_neuron_idx],
+                           pred = preds[..., sampled_neuron_idx],
                            metrics=["r2"],
                            device=accelerator.device)
-    fig_r2 = plot_r2(gt = gt[0, :, sampled_neuron_idx].cpu().numpy(),
-                 pred = preds[0, :, sampled_neuron_idx].detach().cpu().numpy(),
-                 r2 = results['r2'],
-                 neuron_idx=sampled_neuron_idx,
-                 epoch = epoch,
-                 )
-    # plot Ground Truth and Prediction in the same figure
-    fig_gt_pred = plot_gt_pred(gt = gt[0].T.cpu().numpy(),
-                 pred = preds[0].T.detach().cpu().numpy(),
-                 epoch = epoch)
-
     print(f"epoch: {epoch} test_loss: {test_loss/test_examples} r2: {results['r2']}")
-
-    # plot the GT rate and inferred rate
-    fig_rate = plot_rate_and_spike(
-        gt=batch['binned_spikes_data'][1].T.cpu().numpy(),
-        pred=outputs.preds[1].T.detach().cpu().numpy(),
-        epoch=epoch
-    )
-
-    # plot the avg inferred rate and spike count
-    fig_avg = plot_avg_rate_and_spike(test_pred_list, epoch)
 
     if config.wandb.use:
         logs = {
             "epoch": epoch, 
             "train_loss": train_loss/train_examples, 
-            "test_loss": test_loss/test_examples, 
-            "gt_pred": [wandb.Image(fig_gt_pred)],
-            "r2_score": [wandb.Image(fig_r2)],
-            "single_trial": [wandb.Image(fig_rate)],
-            "avg rate and spike": [wandb.Image(fig_avg)]
+            "test_loss": test_loss/test_examples,
+            "test_all_trials_r2": results['r2'],
+            "lr": optimizer.param_groups[0]['lr'],
         }
         # merge the results with the logs
         logs.update(results)
         wandb.log(logs)
-    else:
-        plt.savefig(f"{log_dir}/epoch_{epoch}.png")
+    
+    if epoch % config.training.save_plot_every_n_epochs == 0:
+        # plot the r2 score of a sampled neuron in single trial
+        fig_r2 = plot_r2(gt = gt[0, :, sampled_neuron_idx],
+                    pred = preds[0, :, sampled_neuron_idx],
+                    neuron_idx=sampled_neuron_idx,
+                    epoch = epoch,
+                    )
+        
+        # plot Ground Truth and Prediction of a single trial
+        fig_gt_pred = plot_gt_pred(gt = gt[0].T.cpu().numpy(),
+                    pred = preds[0].T.detach().cpu().numpy(),
+                    epoch = epoch)
+        
+        # plot condition average r2 score
+        fig_condition_avg_r2 = plt_condition_avg_r2(gt = gt,
+                    pred = preds,
+                    neuron_idx=sampled_neuron_idx,
+                    condition_idx=0,
+                    first_n=8,
+                    device=accelerator.device,
+                    epoch = epoch)
+        
+        if config.wandb.use:
+            wandb.log({"epoch": epoch,
+                       "test_gt_pred_single_trial": [wandb.Image(fig_gt_pred)],
+                       "test_r2_score_single_trial": [wandb.Image(fig_r2)],
+                       "test_condition_avg_r2": [wandb.Image(fig_condition_avg_r2)]})
+        else:
+            fig_r2.savefig(os.path.join(log_dir, f"test_r2_score_single_trial_epoch_{epoch}.png"))
+            fig_gt_pred.savefig(os.path.join(log_dir, f"test_gt_pred_single_trial_epoch_{epoch}.png"))
+            fig_condition_avg_r2.savefig(os.path.join(log_dir, f"test_condition_avg_r2_epoch_{epoch}.png"))
+
+    if results['r2'] > best_test_trial_avg_r2:
+        best_test_trial_avg_r2 = results['r2']
+        print(f"best_test_trial_avg_r2: {best_test_trial_avg_r2}")
+        # save the model
+        torch.save(model.state_dict(), os.path.join(log_dir, "best_model.pth"))
+
+# save the model
+torch.save(model.state_dict(), os.path.join(log_dir, "last_model.pth"))
+
+
+    # if "rates" not in batch:
+    #     # plot the GT rate and inferred rate
+    #     fig_rate = plot_rate_and_spike(
+    #         gt=batch['spikes_data'][1].T.cpu().numpy(),
+    #         pred=outputs.preds[1].T.detach().cpu().numpy(),
+    #         epoch=epoch
+    #     )
+
+    #     # plot the avg inferred rate and spike count
+    #     fig_avg = plot_avg_rate_and_spike(test_pred_list, epoch)
+
 
 
     
