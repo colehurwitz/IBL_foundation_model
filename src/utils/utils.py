@@ -33,11 +33,26 @@ def plot_gt_pred(gt, pred, epoch=0):
     im2 = ax2.imshow(pred, aspect='auto', cmap='binary')
     
     # add colorbar
-    fig.colorbar(im1, ax=ax1)
-    fig.colorbar(im2, ax=ax2)
+    plt.colorbar(im1, ax=ax1)
+    plt.colorbar(im2, ax=ax2)
 
     fig.suptitle("Epoch: {}".format(epoch))
     return fig
+
+def plot_r2(gt, pred, r2, epoch=0, neuron_idx=0):
+    # plot line of gt and pred in different colors
+    fig, ax = plt.subplots()
+    ax.plot(gt, label="Ground Truth", color="blue")
+    ax.plot(pred, label="Prediction", color="red")
+    ax.set_title("R2: {:.4f}".format(r2))
+    ax.legend()
+    # x label
+    ax.set_xlabel("Time")
+    # y label
+    ax.set_ylabel("Rate")
+    fig.suptitle("Epoch: {}, Neuron: {}".format(epoch, neuron_idx))
+    return fig
+
 
 # metrics list, return different metrics results
 def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
