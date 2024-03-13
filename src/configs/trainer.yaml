@@ -2,7 +2,7 @@ seed: 42
 
 savestring: test
 wandb_project: test
-log_to_wandb: true
+log_to_wandb: false
 
 verbosity: 0
 
@@ -18,13 +18,13 @@ dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
-  dataset_dir: berkott/ibl_ssl_data
+  dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   
 
 
 # Training configuration
 training:
-  num_epochs: 100
+  num_epochs: 200
   train_batch_size: 32
   test_batch_size: 256  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -41,6 +41,7 @@ model:
 
 # Data configuration.
 data:
+  dataset_name: lorenz # Any registered dataset name.
   dataset_class: ssl # Any registered dataset class name. 
 
   # Load raw dataset if a dataset is not passed to the Trainer __init__ method. 
@@ -51,6 +52,11 @@ data:
   test_name: test     # name of the test split in the raw datasete
   train_len: null     # used length of the train dataset. null to use all
   test_len: null      # used length of the test dataset. null to use all
+
+  LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
+  use_lograte: True # use lograte
+
+  max_seq_len: 50 # max sequence length
 
 
 # Method configuration. Contains kwargs that are specific to the training method.
