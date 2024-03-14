@@ -1,52 +1,49 @@
 
-# IBL Foundation Model  
+# International Brain Laboratory (IBL) Foundation Model  
 
 ## Environment setup
-
 Create and activate conda environment
-
 ```
-
 conda env create -f env.yaml
-
 conda activate ibl-fm
-
 ```
 
-## Dataset
-1.  To use lorenz dataset(NDT1 paper). Plz download the dataset from [here](https://drive.google.com/file/d/1O5GxtX90uCgP9xlcmalHmVgC7DjNKO0j/view?usp=sharing). 
-	In trainer.yaml:
-	```
-	dataset_dir: YOUR_PATH
-	dataset_name: lorenz
-	```
-  In ndt1.yaml:
-  ```
-  n_channels: NUM_NEURON  # number of neurons recorded
-  ``` 
+## Datasets
+**Lorenz dataset**
+
+To use the lorenz dataset from the [NDT1](https://arxiv.org/abs/2108.01210) paper, please download the dataset from this [link](https://drive.google.com/file/d/1O5GxtX90uCgP9xlcmalHmVgC7DjNKO0j/view?usp=sharing). 
 	
-2. The IBL dataset has been setup in huggingface.
-
-  
-
-## How to run
-
-Run the script
-
+ In `src/configs/trainer.yaml`, set the following path and dataset names:
+	
+ ```
+dataset_dir: PATH_TO_DATA_DIR
+dataset_name: lorenz
 ```
+**IBL datasets**
 
+In progress. Will be on huggingface.
+
+## Models
+**Neural Data Transformer (NDT1) - re-implementation**
+
+The configuration for NDT1 is `src/configs/ndt1.yaml`. Set the number of neurons by:
+```
+n_channels: NUM_NEURON  # number of neurons recorded
+``` 
+
+## Training
+To train a model, inside of `script/hpc`, run the script:
+```
 source run.sh # Train model
-
 ```
 
 ## Evaluation
+To evaluate a model, first set the pre-trained model path in `trainer.yaml`:
+```
+pretrained_model_path: PATH_TO_DIR/models/ndt1/last_model_lorenz.pth
+```
+Then, run the associated evaluation script in `script/hpc`. To run evaluation for NDT1 use:
+```
+source eval_ndt1.sh # Evaluate NDT1
+```
 
-```
-eval_ndt1.sh # Evaluate NDT1 SSL results
-```
-
-Setup the pre-trained model path in trainer.yaml:
-
-```
-pretrained_model_path: YOUR_PATH_TO/models/ndt1/last_model_lorenz.pth
-```
