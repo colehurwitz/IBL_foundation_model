@@ -35,6 +35,18 @@ Run the script
 
 ```
 
-source run.sh
+source run.sh # Train model
 
+```
+
+## Evaluation
+
+```
+eval_ndt1.sh # Evaluate NDT1 SSL results
+```
+
+Setup the pre-trained model path in trainer.yaml:
+
+```
+pretrained_model_path: YOUR_PATH_TO/models/ndt1/last_model_lorenz.pth
 ```
