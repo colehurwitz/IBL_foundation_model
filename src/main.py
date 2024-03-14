@@ -89,7 +89,7 @@ model = accelerator.prepare(model)
 optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
 lr_scheduler = OneCycleLR(
                 optimizer=optimizer,
-                total_steps=config.training.num_epochs*len(train_dataloader) * 100 //config.optimizer.gradient_accumulation_steps,
+                total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
                 max_lr=config.optimizer.lr,
                 pct_start=config.optimizer.warmup_pct,
                 div_factor=config.optimizer.div_factor,

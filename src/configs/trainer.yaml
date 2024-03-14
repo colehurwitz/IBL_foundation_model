@@ -19,15 +19,15 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
   dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: /home/ppwang/IBL_foundation_model/results/model_NDT1/method_ssl/best_model.pth
+  pretrained_model_path: checkpoints/models/ndt1/last_model_lorenz.pth
   # dataset_dir: berkott/ibl_ssl_data
   
 
 
 # Training configuration
 training:
-  num_epochs: 1000
-  train_batch_size: 32
+  num_epochs: 5000
+  train_batch_size: 16
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
