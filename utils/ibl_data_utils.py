@@ -765,10 +765,6 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         'spike_times': spikes['times'],
         'spike_clusters': spikes['clusters'],
         'cluster_regions': clusters['acronym'].to_numpy(),
-        'cluster_depths': clusters['depths'].to_numpy(),
-        # We don't need details about the cluster QC. Only include if good units for now.
-        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
-        # 'cluster_df': clusters
     }
         
     meta_data = {
@@ -779,7 +775,11 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         'sampling_freq': sampling_freq,
         'cluster_channels': list(clusters['channels']),
         'cluster_regions': list(clusters['acronym']),
-        'good_clusters': list((clusters['label'] >= 1).astype(int))
+        'good_clusters': list((clusters['label'] >= 1).astype(int)),
+        'cluster_depths': list(clusters['depths']),
+        # We don't need details about the cluster QC. Only include if good units for now.
+        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
+        # 'cluster_df': clusters
     }
 
     trials_data = {
