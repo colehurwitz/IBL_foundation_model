@@ -168,3 +168,5 @@ playground/
 *png
 wandb
 results
+
+*.pth
