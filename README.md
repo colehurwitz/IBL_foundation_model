@@ -32,7 +32,13 @@ n_channels: NUM_NEURON  # number of neurons recorded
 ``` 
 
 ## Training
-To train a model, inside of `script/hpc`, run the script:
+To train a model, first set the model config in `src/main.py`. For NDT1, set the config to:
+```
+kwargs = {
+    "model": "include:src/configs/ndt1.yaml"
+}
+```
+Then, run the script inside of `script/hpc`:
 ```
 source run.sh # Train model
 ```
