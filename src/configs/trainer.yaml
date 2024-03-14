@@ -8,7 +8,7 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
   project: test
   run_name: ndt1-ssl
@@ -19,7 +19,7 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
   dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: /home/ppwang/IBL_foundation_model/results/model_NDT1/method_ssl/last_model.pth
+  pretrained_model_path: /home/ppwang/IBL_foundation_model/results/model_NDT1/method_ssl/best_model.pth
   # dataset_dir: berkott/ibl_ssl_data
   
 
@@ -31,7 +31,7 @@ training:
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 10  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 20  # Plot the model output every n epochs
   save_every: null  # Save checkpoint
   eval_every: null  # Eval model
 

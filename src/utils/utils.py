@@ -72,9 +72,9 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
     pred_condition = pred_condition.cpu().numpy()
     fig, ax = plt.subplots()
     ax.plot(gt_condition, label="Ground Truth", color="blue")
-    # plot all pred trials, and show the range of the first_n trials
-    for i in range(pred_condition.shape[0]):
-        ax.plot(pred_condition[i], label="Prediction", color="red", alpha=0.2)
+    # plot all pred trials, and show the range of the first_n trials through the shaded area
+    ax.plot(np.mean(pred_condition, axis=0), label="Prediction", color="red")
+    ax.fill_between(np.arange(pred_condition.shape[1]), np.min(pred_condition, axis=0), np.max(pred_condition, axis=0), color="red", alpha=0.2)
 
     ax.set_title("R2: {:.4f}".format(r2))
     ax.legend()
@@ -95,7 +95,6 @@ def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
             r2_list.append(r2)
         r2 = np.mean(r2_list)
         results["r2"] = r2
-        print("device", device)
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)
         results["mse"] = mse
