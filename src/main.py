@@ -150,7 +150,6 @@ for epoch in range(config.training.num_epochs):
             "epoch": epoch, 
             "train_loss": train_loss/train_examples, 
             "test_loss": test_loss/test_examples,
-            "test_all_trials_r2": results['r2'],
             "lr": optimizer.param_groups[0]['lr'],
         }
         # merge the results with the logs
@@ -191,10 +190,12 @@ for epoch in range(config.training.num_epochs):
 
     if results['r2'] > best_test_trial_avg_r2:
         best_test_trial_avg_r2 = results['r2']
-        print(f"best_test_trial_avg_r2: {best_test_trial_avg_r2}")
+        print(f"Epoch {epoch} Save the best model with r2: {best_test_trial_avg_r2}")
         # save the model
         torch.save(model.state_dict(), os.path.join(log_dir, "best_model.pth"))
 
+if config.wandb.use:
+    wandb.log({"best_test_trial_avg_r2": best_test_trial_avg_r2})
 # save the model
 torch.save(model.state_dict(), os.path.join(log_dir, "last_model.pth"))
 
