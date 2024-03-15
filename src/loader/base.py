@@ -133,6 +133,10 @@ class BaseDataset(torch.utils.data.Dataset):
         return self._preprocess(self.dataset[idx])    
 
 
+# TO DO: Need to break each session into separate probes!
+# NDT2 output: dict of arrays of size (batch x time x probe x n_patches x patch_size)
+# Current output: (batch x time x n_patches x patch_size) == (batch x n_tokens x token_size)
+
 class NDT2Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
