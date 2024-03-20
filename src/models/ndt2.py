@@ -12,7 +12,7 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
-DEFAULT_CONFIG = "src/configs/ndt2.yaml"
+DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
 
 @dataclass
 class NDT2Output(ModelOutput):
@@ -53,8 +53,6 @@ class Masker(nn.Module):
         self.ratio = config.ratio
         self.zero_ratio = config.zero_ratio
         self.random_ratio = config.random_ratio
-        self.expand_prob = config.expand_prob
-        self.max_timespan = config.max_timespan
         self.embed_mode = embed_mode
         self.n_time_steps = config.n_time_steps
 
@@ -82,7 +80,6 @@ class Masker(nn.Module):
 
         # expand mask
         if self.mode == "timestep":
-            mask = self.expand_timesteps(mask, timespan)
             mask = mask.unsqueeze(-1).unsqueeze(-1).expand_as(spikes).bool()  # (n_batch, n_time_bins, n_patches, n_channels)
         elif self.mode == "full":
             mask = mask.unsqueeze(-1).expand_as(spikes).bool()                # (n_batch, n_time_bins, n_patches, n_channels)
@@ -366,20 +363,21 @@ class SpaceTimeTransformer(nn.Module):
             spikes_time_mask = spikes_time_mask.unsqueeze(-1).expand(B,T,T)
         self_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
         # hack so that even padded spikes attend to themselves and avoid attention issues
+
         if self.use_space:
-            space_attn_mask = self_mask | (context_mask and spikes_space_mask)
+            space_attn_mask = self_mask | (context_mask & spikes_space_mask)
         if self.use_time:
-            time_attn_mask = self_mask | (context_mask and spikes_time_mask)
+            time_attn_mask = self_mask | (context_mask & spikes_time_mask)
 
         # Forward transformer
         if self.use_space:
             for idx, layer in enumerate(self.space_layers):
-                x = layer(x, attn_mask=space_attn_mask, timestamp=spikes_spacestamp)
+                x = layer(x, attn_mask=space_attn_mask)
             x = self.space_out_norm(x)
 
         if self.use_time:
             for idx, layer in enumerate(self.time_layers):
-                x = layer(x, attn_mask=time_attn_mask, timestamp=spikes_timestamp)
+                x = layer(x, attn_mask=time_attn_mask)
             x = self.time_out_norm(x)
 
         return x, targets_mask

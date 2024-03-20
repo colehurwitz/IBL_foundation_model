@@ -26,8 +26,8 @@ def make_ndt2_loader(dataset,
                  pad_to_right = True,
                  pad_value = 0.,
                  max_time_length=100, 
-                 max_space_length=78, 
-                 n_neurons_per_patch=32,
+                 max_space_length=15, 
+                 n_neurons_per_patch=64,
                  bin_size = 0.05,
                  shuffle = True):
     dataset = NDT2Dataset(

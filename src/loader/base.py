@@ -210,7 +210,7 @@ class NDT2Dataset(torch.utils.data.Dataset):
         # group neurons into patches
         neuron_patches = np.ones(
             (self.max_time_length, self.max_space_length, self.n_neurons_per_patch)
-        ) * self.pad_value        
+        ) * self.pad_value    
         for patch_idx in range(self.max_space_length):
             neuron_patches[:, patch_idx, :] = \
             binned_spikes_data[:, patch_idx*self.n_neurons_per_patch:(patch_idx+1)*self.n_neurons_per_patch]
@@ -220,12 +220,18 @@ class NDT2Dataset(torch.utils.data.Dataset):
         spikes_timestamps = np.repeat(spikes_timestamps, self.max_space_length, 1)
         spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)[None,:]
         spikes_spacestamps = np.repeat(spikes_spacestamps, self.max_time_length, 0)
-        
+
         # add space and time attention masks
         time_attention_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)[:,None]
         time_attention_mask = np.repeat(time_attention_mask, self.max_space_length, 1)
-        space_attention_mask = _attention_mask(max_num_neurons, pad_space_length).astype(np.int64)[None,:]
-        space_attention_mask = np.repeat(space_attention_mask, self.max_time_length, 0)
+        _space_attention_mask = _attention_mask(max_num_neurons, pad_space_length).astype(np.int64)[None,:]
+        _space_attention_mask = np.repeat(space_attention_mask, self.max_time_length, 0)
+
+        # group space attention into patches
+        space_attention_mask = np.ones((self.max_time_length, self.max_space_length))        
+        for patch_idx in range(self.max_space_length):
+            if _space_attention_mask[:, patch_idx*self.n_neurons_per_patch:(patch_idx+1)*self.n_neurons_per_patch].sum() == 0:
+                space_attention_mask[:, patch_idx] = 0
 
         neuron_patches = neuron_patches.astype(np.float32)
         return {"neuron_patches": neuron_patches,
