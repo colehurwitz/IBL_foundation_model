@@ -1,5 +1,5 @@
 import torch
-from loader.base_copy import BaseDataset, NDT2Dataset
+from loader.base import BaseDataset, NDT2Dataset
 
 def make_loader(dataset, 
                  batch_size, 
