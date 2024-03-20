@@ -44,7 +44,7 @@ def create_context_mask(
 
 class Masker(nn.Module):
     '''
-    Mask spikes: (1) time steps (3) random patches.
+    Mask spikes: (1) time steps (2) random patches.
     '''
     def __init__(self, embed_mode, config: DictConfig):
         super().__init__()
@@ -80,9 +80,11 @@ class Masker(nn.Module):
 
         # expand mask
         if self.mode == "timestep":
-            mask = mask.unsqueeze(-1).unsqueeze(-1).expand_as(spikes).bool()  # (n_batch, n_time_bins, n_patches, n_channels)
+            # (n_batch, n_time_bins, n_patches, n_channels)
+            mask = mask.unsqueeze(-1).unsqueeze(-1).expand_as(spikes).bool()  
         elif self.mode == "full":
-            mask = mask.unsqueeze(-1).expand_as(spikes).bool()                # (n_batch, n_time_bins, n_patches, n_channels)
+            # (n_batch, n_time_bins, n_patches, n_channels)
+            mask = mask.unsqueeze(-1).expand_as(spikes).bool()                
 
         # mask data
         zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
@@ -309,7 +311,7 @@ class SpaceTimeTransformer(nn.Module):
 
         # Context span mask
         context_mask = create_context_mask(
-            config.context.forward, config.context.backward,config.embedder.max_space_F, config.embedder.max_time_F
+            config.context.forward, config.context.backward, config.embedder.max_space_F, config.embedder.max_time_F
         )
         self.register_buffer("context_mask", context_mask, persistent=False)
 
@@ -317,17 +319,12 @@ class SpaceTimeTransformer(nn.Module):
         self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
 
         # Transformer
-        if self.use_space:
-            self.space_layers = nn.ModuleList(
-                [NeuralEncoderLayer(idx, config.embedder.max_space_F, config.transformer) for idx in range(self.n_layers)]
-            )
-            self.space_out_norm = nn.LayerNorm(self.hidden_size) 
-
-        if self.use_time:
-            self.time_layers = nn.ModuleList(
-                [NeuralEncoderLayer(idx, config.embedder.max_time_F, config.transformer) for idx in range(self.n_layers)]
-            )
-            self.time_out_norm = nn.LayerNorm(self.hidden_size) 
+        self.layers = nn.ModuleList(
+            [NeuralEncoderLayer(
+                idx, config.embedder.max_time_F*config.embedder.max_space_F, config.transformer
+            ) for idx in range(self.n_layers)]
+        )
+        self.out_norm = nn.LayerNorm(self.hidden_size) 
 
     def forward(
             self, 
@@ -361,24 +358,18 @@ class SpaceTimeTransformer(nn.Module):
             spikes_space_mask = spikes_space_mask.unsqueeze(-1).expand(B,T,T)
         if self.use_time:
             spikes_time_mask = spikes_time_mask.unsqueeze(-1).expand(B,T,T)
-        self_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
+        attn_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
         # hack so that even padded spikes attend to themselves and avoid attention issues
 
         if self.use_space:
-            space_attn_mask = self_mask | (context_mask & spikes_space_mask)
+            attn_mask = attn_mask | (context_mask & spikes_space_mask)
         if self.use_time:
-            time_attn_mask = self_mask | (context_mask & spikes_time_mask)
+            attn_mask = attn_mask | (context_mask & spikes_time_mask)
 
         # Forward transformer
-        if self.use_space:
-            for idx, layer in enumerate(self.space_layers):
-                x = layer(x, attn_mask=space_attn_mask)
-            x = self.space_out_norm(x)
-
-        if self.use_time:
-            for idx, layer in enumerate(self.time_layers):
-                x = layer(x, attn_mask=time_attn_mask)
-            x = self.time_out_norm(x)
+        for idx, layer in enumerate(self.layers):
+            x = layer(x, attn_mask=attn_mask)
+        x = self.out_norm(x)
 
         return x, targets_mask
         

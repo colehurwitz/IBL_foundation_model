@@ -225,10 +225,10 @@ class NDT2Dataset(torch.utils.data.Dataset):
         time_attention_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)[:,None]
         time_attention_mask = np.repeat(time_attention_mask, self.max_space_length, 1)
         _space_attention_mask = _attention_mask(max_num_neurons, pad_space_length).astype(np.int64)[None,:]
-        _space_attention_mask = np.repeat(space_attention_mask, self.max_time_length, 0)
+        _space_attention_mask = np.repeat(_space_attention_mask, self.max_time_length, 0)
 
         # group space attention into patches
-        space_attention_mask = np.ones((self.max_time_length, self.max_space_length))        
+        space_attention_mask = np.ones((self.max_time_length, self.max_space_length)).astype(np.int64)        
         for patch_idx in range(self.max_space_length):
             if _space_attention_mask[:, patch_idx*self.n_neurons_per_patch:(patch_idx+1)*self.n_neurons_per_patch].sum() == 0:
                 space_attention_mask[:, patch_idx] = 0
