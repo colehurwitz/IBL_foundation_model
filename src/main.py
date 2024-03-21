@@ -51,11 +51,6 @@ else:
     test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
     bin_size = None
 
-# sample a neuron index
-sampled_neuron_idx = np.random.randint(0, config.encoder.embedder.n_channels)
-sampled_neuron_idx = 0
-print(f"sampled_neuron_idx: {sampled_neuron_idx}")
-
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
                          batch_size=config.training.train_batch_size, 
