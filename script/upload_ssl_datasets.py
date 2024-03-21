@@ -51,14 +51,14 @@ for eid_idx, eid in enumerate(include_eids):
         print('======================')
         print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
         
-        neural_dict, _, meta_data, _ = prepare_data(one, eid, bwm_df, params, n_workers=4)
+        neural_dict, _, meta_data, _ = prepare_data(one, eid, bwm_df, params, n_workers=3)
         regions, beryl_reg = list_brain_regions(neural_dict, **params)
         region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
         intervals = create_intervals(
             start_time=0, end_time=neural_dict['spike_times'].max(), interval_len=params['interval_len']
         )
         binned_spikes, clusters_used_in_bins = bin_spiking_data(
-            region_cluster_ids, neural_dict, intervals=intervals, n_workers=4, **params
+            region_cluster_ids, neural_dict, intervals=intervals, n_workers=3, **params
         )
         dataset = create_dataset(
             binned_spikes, bwm_df, eid, params, meta_data=meta_data, binned_behaviors=None
