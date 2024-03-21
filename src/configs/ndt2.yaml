@@ -9,14 +9,14 @@ encoder:
   masker:
     active: true         
     mode: timestep      # full to zero out randomly in the featue matrix. timestep to zero out randomly full timesteps. 
-    ratio: 0.1          # ratio of data to predict
+    ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
     n_time_steps: 50   # num of time bins
 
   # Context available for each timestep
   context:
-    forward: 0
+    forward: -1
     backward: -1
 
   # Embedding layer
