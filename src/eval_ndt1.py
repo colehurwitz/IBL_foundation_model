@@ -2,7 +2,7 @@ from datasets import load_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, plot_rate_and_spike, plt_condition_avg_r2
-from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, plot_r2
+from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, plot_neurons_r2
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
@@ -81,7 +81,7 @@ with torch.no_grad():
         for neuron in range(gt.shape[2]):
             # plot
             # plot the r2 score of a sampled neuron in single trial
-            fig_r2 = plot_r2(gt = gt[0, :, neuron],
+            fig_r2 = plot_neurons_r2(gt = gt[0, :, neuron],
                         pred = preds[0, :, neuron],
                         neuron_idx=neuron,
                         epoch = 0,
@@ -97,7 +97,7 @@ with torch.no_grad():
             fig_condition_avg_r2 = plt_condition_avg_r2(gt = gt,
                         pred = preds,
                         neuron_idx=neuron,
-                        condition_idx=0,
+                        condition_idx=1,
                         first_n=8,
                         device=accelerator.device,
                         epoch = 0)

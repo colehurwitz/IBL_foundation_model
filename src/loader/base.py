@@ -66,6 +66,25 @@ def _spikes_mask(
     # output 0/1
     return np.random.choice([0, 1], size=(seq_length,), p=[mask_ratio, 1-mask_ratio])
 
+def _pad_spike_seq(
+    seq: np.ndarray, 
+    max_length: int,
+    pad_to_right: bool = True,
+    pad_value: float = 0.,
+) -> np.ndarray:
+    pad_length = 0
+    seq_len = seq.shape[0]
+    if seq_len > max_length:
+        seq = seq[:max_length]
+    else: 
+        if pad_to_right:
+            pad_length = max_length - seq_len
+            seq = _pad_seq_right_to_n(seq, max_length, pad_value)
+        else:
+            pad_length = seq_len - max_length
+            seq = _pad_seq_left_to_n(seq, max_length, pad_value)
+    return seq, pad_length
+
 
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
@@ -152,7 +171,10 @@ class BaseDataset(torch.utils.data.Dataset):
             return len(self.dataset[0])
     
     def __getitem__(self, idx):
-        return self._preprocess(self.dataset[idx])    
+        if "ibl" in self.dataset_name:
+            return self._preprocess_ibl_data(self.dataset[idx])
+        else:
+            return self._preprocess_h5_data(self.dataset, idx)  
 
 
 # TO DO: Need to break each session into separate probes!
