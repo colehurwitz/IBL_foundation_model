@@ -74,6 +74,10 @@ class Trainer():
                            "test_trial_avg_r2": test_epoch_results['test_trial_avg_r2']})
         # save last model
         self.save_model(name="last")
+        
+        if self.config.wandb.use:
+            wandb.log({"best_test_loss": best_test_loss,
+                       "best_test_trial_avg_r2": best_test_trial_avg_r2})
             
     def train_epoch(self, epoch):
         train_loss = 0.
