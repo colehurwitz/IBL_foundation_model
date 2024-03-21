@@ -8,7 +8,7 @@ encoder:
   # Mask spikes
   masker:
     active: true         
-    mode: full      # full to zero out randomly in the featue matrix. timestep to zero out randomly full timesteps. 
+    mode: timestep      # full to zero out randomly in the featue matrix. timestep to zero out randomly full timesteps. 
     ratio: 0.1          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
