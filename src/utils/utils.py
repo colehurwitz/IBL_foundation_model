@@ -39,21 +39,23 @@ def plot_gt_pred(gt, pred, epoch=0):
     fig.suptitle("Epoch: {}".format(epoch))
     return fig
 
-def plot_r2(gt, pred, epoch=0, neuron_idx=0):
-    # plot line of gt and pred in different colors
-
-    r2 = r2_score(y_true=gt, y_pred=pred)
-    gt, pred = gt.cpu().numpy(), pred.cpu().numpy()
-    fig, ax = plt.subplots()
-    ax.plot(gt, label="Ground Truth", color="blue")
-    ax.plot(pred, label="Prediction", color="red")
-    ax.set_title("R2: {:.4f}".format(r2))
-    ax.legend()
-    # x label
-    ax.set_xlabel("Time")
-    # y label
-    ax.set_ylabel("Rate")
-    fig.suptitle("Epoch: {}, Neuron: {}".format(epoch, neuron_idx))
+def plot_neurons_r2(gt, pred, epoch=0, neuron_idx=[]):
+    # Create one figure and axis for all plots
+    fig, ax = plt.subplots(len(neuron_idx), 1, figsize=(12, 5 * len(neuron_idx)))
+    r2_values = []  # To store R2 values for each neuron
+    
+    for neuron in neuron_idx:
+        r2 = r2_score(y_true=gt[:, neuron], y_pred=pred[:, neuron])
+        r2_values.append(r2)
+        ax[neuron_idx.index(neuron)].plot(gt[:, neuron].cpu().numpy(), label="Ground Truth", color="blue")
+        ax[neuron_idx.index(neuron)].plot(pred[:, neuron].cpu().numpy(), label="Prediction", color="red")
+        ax[neuron_idx.index(neuron)].set_title("Neuron: {}, R2: {:.4f}".format(neuron, r2))
+        ax[neuron_idx.index(neuron)].legend()
+        # x label
+        ax[neuron_idx.index(neuron)].set_xlabel("Time")
+        # y label
+        ax[neuron_idx.index(neuron)].set_ylabel("Rate")
+    fig.suptitle("Epoch: {}, Avg R2: {:.4f}".format(epoch, np.mean(r2_values)))
     return fig
 
 def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first_n=8, device="cpu"):
