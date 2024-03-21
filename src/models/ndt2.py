@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
@@ -28,7 +29,7 @@ def create_context_mask(
 
     # bidirectional
     if context_forward == -1 and context_backward == -1:
-        return torch.ones(max_time_F, max_time_F).to(torch.int64)
+        return torch.ones(max_time_F*max_space_F, max_time_F*max_space_F).to(torch.int64)
 
     context_forward = context_forward if context_forward >= 0 else max_time_F
     context_backward = context_backward if context_backward >= 0 else max_time_F
@@ -361,10 +362,13 @@ class SpaceTimeTransformer(nn.Module):
         attn_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
         # hack so that even padded spikes attend to themselves and avoid attention issues
 
-        if self.use_space:
-            attn_mask = attn_mask | (context_mask & spikes_space_mask)
-        if self.use_time:
-            attn_mask = attn_mask | (context_mask & spikes_time_mask)
+        if self.use_space & self.use_time:
+            attn_mask = attn_mask | (context_mask & spikes_space_mask & spikes_time_mask)
+        else:
+            if self.use_space:
+                attn_mask = attn_mask | (context_mask & spikes_space_mask)
+            elif self.use_time:
+                attn_mask = attn_mask | (context_mask & spikes_time_mask)
 
         # Forward transformer
         for idx, layer in enumerate(self.layers):
@@ -461,7 +465,7 @@ class NDT2(nn.Module):
         torch.save(self.encoder.state_dict(), os.path.join(save_dir,"encoder.bin"))
         torch.save(self.decoder.state_dict(), os.path.join(save_dir,"decoder.bin"))
 
-    def load_checkpoint(self, save_dir):
+    def load_checkpoint(self, load_dir):
         self.encoder.load_state_dict(torch.load(os.path.join(load_dir,"encoder.bin")))
         self.decoder.load_state_dict(torch.load(os.path.join(load_dir,"decoder.bin")))
 
