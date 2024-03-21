@@ -131,12 +131,12 @@ class NeuralEmbeddingLayer(nn.Module):
         # embed space postion
         self.space_pos = config.space_pos
         if self.space_pos:
-            self.embed_space_pos = nn.Embedding(config.max_space_F, hidden_size)
+            self.embed_space_pos = nn.Embedding(config.max_time_F*config.max_space_F, hidden_size)
 
         # embed time postion
         self.time_pos = config.time_pos
         if self.time_pos:
-            self.embed_time_pos = nn.Embedding(config.max_time_F, hidden_size)
+            self.embed_time_pos = nn.Embedding(config.max_time_F*config.max_space_F, hidden_size)
 
         self.dropout = nn.Dropout(config.dropout)
 
