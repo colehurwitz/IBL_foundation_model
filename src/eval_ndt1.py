@@ -41,7 +41,7 @@ train_dataloader = make_loader(train_dataset,
                          batch_size=2048, 
                          pad_to_right=True, 
                          pad_value=-1.,
-                         max_length=config.data.max_seq_len,
+                         max_time_length=config.data.max_seq_len,
                          dataset_name=config.data.dataset_name,
                          shuffle=False)
 

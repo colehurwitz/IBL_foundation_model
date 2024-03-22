@@ -84,8 +84,7 @@ class Trainer():
         train_examples = 0
         self.model.train()
         for batch in self.train_dataloader:
-            batch = move_batch_to_device(batch, self.accelerator.device)
-            outputs = self.model(batch['spikes_data'], batch['attention_mask'], batch['spikes_timestamps'])
+            outputs = self._forward_model_outputs(batch)
             loss = outputs.loss
             loss.backward()
             self.optimizer.step()
@@ -96,7 +95,21 @@ class Trainer():
         return{
             "train_loss": train_loss/train_examples
         }
-
+    
+    def _forward_model_outputs(self, batch):
+        batch = move_batch_to_device(batch, self.accelerator.device)
+        if "neuron_patches" in batch:
+            return self.model(
+                batch['neuron_patches'].flatten(1,-2), 
+                batch['space_attention_mask'].flatten(1), 
+                batch['time_attention_mask'].flatten(1),
+                batch['spikes_spacestamps'].flatten(1),
+                batch['spikes_timestamps'].flatten(1)
+            )
+        else:
+            return self.model(batch['spikes_data'], 
+                              batch['attention_mask'], 
+                              batch['spikes_timestamps']) 
     def eval_epoch(self):
         # TODO: implement this for decoding
         self.model.eval()
@@ -114,13 +127,18 @@ class Trainer():
             preds = []
             with torch.no_grad():  
                 for batch in self.test_dataloader:
-                    batch = move_batch_to_device(batch, self.accelerator.device)
-                    gt.append(batch['spikes_data'].clone())
-                    outputs = self.model(batch['spikes_data'], batch['attention_mask'], batch['spikes_timestamps'])
+                    if self.config.data.patching:
+                        gt.append(batch['neuron_patches'].clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
+                    else:
+                        gt.append(batch['spikes_data'].clone())
+                    outputs = self._forward_model_outputs(batch)
                     loss = outputs.loss
                     test_loss += loss.item()
                     test_examples += outputs.n_examples
-                    preds.append(outputs.preds.clone())
+                    if self.config.data.patching:
+                        preds.append(outputs.preds.clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
+                    else:
+                        preds.append(outputs.preds.clone())
             
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
@@ -128,9 +146,10 @@ class Trainer():
             preds = torch.exp(preds)
         if self.active_neurons is None:
             self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
+        
         results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
                                pred = preds.mean(0)[..., self.active_neurons].T, 
-                               metrics=["r2", "mse", "mae"], 
+                               metrics=["r2"], 
                                device=self.accelerator.device)
 
         return {
