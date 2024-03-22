@@ -19,8 +19,9 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt1/last_model.pth
+  pretrained_model_path: checkpoints/models/ndt2/model_best_behav.pt
   dataset_dir: berkott/ibl_ssl_data
+  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   
 
 
@@ -65,6 +66,7 @@ data:
   n_neurons_per_patch: 16 # number of neurons per patch
   patching: True # patching the neurons
 
+  include_behav: True # include behavior data
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
