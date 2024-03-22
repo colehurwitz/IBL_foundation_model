@@ -1,4 +1,4 @@
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk, concatenate_datasets
 from accelerate import Accelerator
 from loader.make_loader import make_loader, make_ndt2_loader
 from utils.utils import set_seed
@@ -22,14 +22,14 @@ config = update_config("src/configs/ndt2.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name))
+log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name=config.wandb.run_name)
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}".format(config.model.model_class, config.method.model_kwargs.method_name))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -38,9 +38,9 @@ set_seed(config.seed)
 if "ibl" in config.data.dataset_name:
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
     # show the columns
-    print(dataset.column_names)
+    
     bin_size = dataset["train"]["bin_size"][0]
-    print(f"bin_size: {bin_size}")
+    
 
     # split the dataset to train and test
     dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
@@ -48,6 +48,19 @@ if "ibl" in config.data.dataset_name:
     data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
     train_dataset = dataset["train"].select_columns(data_columns)
     test_dataset = dataset["test"].select_columns(data_columns)
+
+    if config.data.include_behav:
+        dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
+        dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
+        dataset = dataset.train_test_split(test_size=0.1, seed=config.seed)
+        bin_size = dataset["train"]["binsize"][0]
+
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
+
+    print(dataset.column_names)
+    print(f"bin_size: {bin_size}")
+
 else:
     train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
     test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)

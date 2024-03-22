@@ -98,7 +98,7 @@ class Trainer():
     
     def _forward_model_outputs(self, batch):
         batch = move_batch_to_device(batch, self.accelerator.device)
-        if "neuron_patches" in batch:
+        if self.config.data.patching:
             return self.model(
                 batch['neuron_patches'].flatten(1,-2), 
                 batch['space_attention_mask'].flatten(1), 
