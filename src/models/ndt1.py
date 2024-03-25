@@ -367,7 +367,7 @@ class NeuralAttention(nn.Module):
 
         # Flash attention
         # torch.backends.cuda.enable_flash_sdp(True)
-        self.flash_attention = partial(torch.nn.functional.scaled_dot_product_attention, dropout_p=dropout, is_causal=False)
+        self.attn_dropout = dropout
 
         # Final projection
         self.dropout = nn.Dropout(dropout)
@@ -403,7 +403,7 @@ class NeuralAttention(nn.Module):
             q, k = apply_rotary_pos_emb(q, k, timestamp, self.cos, self.sin, 1)  # (B,n_heads,T,head_size)
 
         # Compute attention efficiently
-        out = self.flash_attention(q, k, v, attn_mask=attn_mask)                 # (B,n_heads,T,head_size)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False) # (B,n_heads,T,head_size)
         out = out.transpose(1, 2).contiguous().view(B,T, self.hidden_size)       # (B, T, hidden_size)
 
         return self.out_proj(self.dropout(out)) # (B, T, hidden_size)
