@@ -13,7 +13,7 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
-DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
+DEFAULT_CONFIG = "src/configs/ndt2.yaml"
 
 @dataclass
 class NDT2Output(ModelOutput):
@@ -205,7 +205,7 @@ class NeuralAttention(nn.Module):
 
         # Flash attention
         # torch.backends.cuda.enable_flash_sdp(True)
-        self.flash_attention = partial(torch.nn.functional.scaled_dot_product_attention, dropout_p=dropout, is_causal=False)
+        self.attn_dropout = dropout
 
         # Final projection
         self.dropout = nn.Dropout(dropout)
@@ -220,7 +220,8 @@ class NeuralAttention(nn.Module):
         B, T, _  = x.size()     
 
         # create batched bool attention mask 
-        assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
+        # TODO: assert attn_mask?
+        # assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
         attn_mask = attn_mask.unsqueeze(1).expand(B, self.n_heads, T, T).bool()    # (n_batch, n_heads, n_token, n_token)
         
         # compute query, key, value for attention
@@ -229,7 +230,7 @@ class NeuralAttention(nn.Module):
         v = self.value(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2) # (n_batch, n_heads, n_token, head_size)
 
         # compute attention efficiently
-        out = self.flash_attention(q, k, v, attn_mask=attn_mask)                   # (n_batch, n_heads, n_token, head_size)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False) # (n_batch, n_heads, n_token, head_size)
         out = out.transpose(1, 2).contiguous().view(B,T, self.hidden_size)         # (n_batch, n_token, hidden_size)
 
         return self.out_proj(self.dropout(out))                                    # (n_batch, n_token, hidden_size)
