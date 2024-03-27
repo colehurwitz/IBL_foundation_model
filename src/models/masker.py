@@ -12,6 +12,7 @@ from utils.config_utils import DictConfig
 >``neuron``: all timebins of randomly selected neurons are masked
 >``random``: neuron and timestep are both randomly selected
 >``region``: all neurons in a given brain region are masked
+>``co-smooth``: a fixed set of channels are masked
 
 CONFIG:
     mode: masking mode
@@ -21,6 +22,7 @@ CONFIG:
     expand_prob: probability of expanding the mask for consecutive bin masking in ``temporal`` mode
     max_timespan: max length of the expanded mask in ``temporal`` mode
     regions: list of ``str`` containing the names of regions to mask in ``region`` mode
+    channels: list of ``int`` containing the indx of channels to mask in ``co-smooth`` mode
 """
 class Masker(nn.Module):
 
@@ -35,6 +37,7 @@ class Masker(nn.Module):
         self.expand_prob = config.expand_prob
         self.max_timespan = config.max_timespan
         self.regions = config.regions
+        self.channels = config.channels
 
     def forward(
         self, 
@@ -57,11 +60,17 @@ class Masker(nn.Module):
             mask_probs = torch.full(spikes.shape, mask_ratio)     # (bs, seq_len, n_channels)
         elif self.mode == "region":
             assert brain_regions is not None, "Can't mask region without brain region information"
+            assert self.regions is not None, "No regions to mask"
             region_indx = []
             mask_probs = torch.zeros(spikes.shape[0],spikes.shape[2])
             for region in self.regions:
                 region_indx = torch.tensor(brain_regions == region, device=spikes.device)
                 mask_probs[region_indx] = 1
+        elif self.mode == "co-smooth":
+            assert self.channels is not None, "No channels to mask"
+            mask_probs = torch.zeros(spikes.shape[2])
+            for c in self.channels:
+                mask_probs[c] = 1
         else:
             raise Exception(f"Masking mode {self.mode} not implemented")
         
@@ -74,6 +83,8 @@ class Masker(nn.Module):
             mask = mask.unsqueeze(2).expand_as(spikes).bool()    # (bs, seq_len, n_channels)
         elif self.mode in ["neuron","region"]:
             mask = mask.unsqueeze(1).expand_as(spikes).bool()    # (bs, seq_len, n_channels)
+        elif self.mode == "co-smooth":
+            mask = mask.unsqueeze(0).unsqueeze(1).expand_as(spikes).bool()
         else: # random
             mask = mask.bool()
             
