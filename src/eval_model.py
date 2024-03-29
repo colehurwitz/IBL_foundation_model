@@ -1,34 +1,39 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets
 from accelerate import Accelerator
-from loader.make_loader import make_loader, make_ndt2_loader
+import torch
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+
+from loader.make_loader import make_loader
 from utils.utils import set_seed,move_batch_to_device, viz_single_cell
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
 from models.ndt2 import NDT2
-import torch
-import numpy as np
-import os
-from trainer.make import make_trainer
+
+
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
+    "model": "include:src/configs/co_smooth_ndt1.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
+config = update_config("src/configs/ndt1.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
+mask_mode = config.encoder.masker.mode
+
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "eval", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name))
+log_dir = os.path.join(config.dirs.log_dir, "eval", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(mask_mode))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="eval_model_{}_method_{}".format(config.model.model_class, config.method.model_kwargs.method_name))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="eval_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,mask_mode))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -183,9 +188,9 @@ var_behlist = []
 # choose more active neuron
 tmp = np.mean(ys, axis=(0,1))
 idx_top = np.argsort(tmp)[-5:]
-print(idx_top)
-
-import matplotlib.pyplot as plt
+if mask_mode == "co-smooth":
+    idx_top = config.encoder.masker.channels
+    idx_top = np.array(idx_top)
 
 for i in range(idx_top.shape[0]):
     viz_single_cell(X,ys[:,:,idx_top[i]],y_preds[:,:,idx_top[i]], 

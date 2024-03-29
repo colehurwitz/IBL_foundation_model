@@ -176,7 +176,7 @@ class Trainer():
 
     def save_model(self, name="last", epoch=0):
         # save model
-        print(f"saving model: {name}")
+        print(f"saving model: {name} to {self.log_dir}")
         dict_config = {
             "model": self.model,
             "epoch": epoch,
