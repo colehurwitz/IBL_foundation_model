@@ -1,6 +1,6 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets
 from accelerate import Accelerator
-from loader.make_loader import make_loader, make_ndt2_loader
+from loader.make_loader import make_loader
 from utils.utils import set_seed
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
@@ -14,22 +14,22 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
+    "model": "include:src/configs/ndt1.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
+config = update_config("src/configs/ndt1.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name))
+log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}".format(config.model.model_class, config.method.model_kwargs.method_name))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode))
 
 # set seed for reproducibility
 set_seed(config.seed)
