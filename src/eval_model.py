@@ -20,7 +20,7 @@ kwargs = {
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1.yaml", config)
+config = update_config("src/configs/co_smooth_ndt1.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 mask_mode = config.encoder.masker.mode
