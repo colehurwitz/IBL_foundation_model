@@ -531,19 +531,35 @@ class NDT1(nn.Module):
             n_outputs = config.encoder.embedder.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]
+        elif self.method == "sl":
+            n_outputs = kwargs["output_size"]
         else:
             raise Exception(f"Method {self.method} not implemented yet for NDT1")
 
         decoder_layers = []
-        decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, n_outputs))
+        if self.method == "sl":
+            # To Do: We can only flatten for NDT1 because we do not need to pad the token (time) dimension
+            # Need a different strategy for NDT2 
+            decoder_layers.append(
+                nn.Linear(config.encoder.embedder.max_F * self.encoder.out_proj.out_size, n_outputs)
+            )
+        else:
+            decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, n_outputs))
 
         if self.method == "sft" and not kwargs["use_lograte"]:
             decoder_layers.append(nn.ReLU()) # If we're not using lograte, we need to feed positive rates
         if self.method == "ctc":
             decoder_layers.append(nn.LogSoftmax(dim=-1))  # CTC loss asks for log-softmax-normalized logits
+        if self.method == "sl":
+            if kwargs["clf"]:
+                pass  # cross-entropy loss uses logits as inputs
+            elif kwargs["reg"]:
+                pass
+            else:
+                raise Exception(f"Decoder not implemented yet for sl")
+            
         self.decoder = nn.Sequential(*decoder_layers)
 
-        # Load decoder weights
         if config.decoder.from_pt is not None:
             self.decoder.load_state_dict(torch.load(os.path.join(config.decoder.from_pt,"decoder.bin")))
 
@@ -557,6 +573,13 @@ class NDT1(nn.Module):
                 raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
         elif self.method == "ctc":
              self.loss_fn = nn.CTCLoss(reduction="none", blank=kwargs["blank_id"], zero_infinity=kwargs["zero_infinity"])
+        elif self.method == "sl":
+            if kwargs["loss"] == "cross_entropy":
+                self.loss_fn = nn.CrossEntropyLoss(reduction="none")
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for sl")
         
 
     def forward(
@@ -564,8 +587,8 @@ class NDT1(nn.Module):
         spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
         spikes_mask:      torch.LongTensor,   # (bs, seq_len)
         spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
-        spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs)
-        targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len) 
+        targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len)
+        spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs) 
         targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
         block_idx:        Optional[torch.LongTensor] = None,   # (bs)
         date_idx:         Optional[torch.LongTensor] = None,   # (bs)
@@ -581,6 +604,9 @@ class NDT1(nn.Module):
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits
+        if self.method == "sl":
+            x = x.flatten(start_dim=1)
+            
         outputs = self.decoder(x)
 
         # Compute the loss over unmasked outputs
@@ -589,7 +615,10 @@ class NDT1(nn.Module):
             n_examples = targets_mask.sum()
         elif self.method == "ctc":
             loss = self.loss_fn(outputs.transpose(0,1), targets, spikes_lengths, targets_len)
-            n_examples = torch.Tensor(len(targets)).to(loss.device, torch.long)
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
+        elif self.method == "sl":
+            loss = self.loss_fn(outputs, targets).sum()
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
 
         return NDT1Output(
             loss=loss,

@@ -37,7 +37,7 @@ encoder:
     n_channels: 668       # number of neurons recorded 
     n_blocks: 24          # number of blocks of experiments
     n_dates: 24           # number of days of experiments
-    max_F: 1024           # max feature len in timesteps
+    max_F: 100           # max feature len in timesteps
 
     mode: linear          # linear/embed/identity
     mult: 2               # embedding multiplier. hiddden_sizd = n_channels * mult
@@ -81,7 +81,7 @@ encoder:
   # Projection to factor space
   factors:  
     active: false  # project from hidden_size to factors
-    size: 16                  # factors size  
+    size: 8                  # factors size  
     act: relu                 # activation function after projecting to factors
     bias: true                # use bias in projection to factors
     dropout: 0.0              # dropout in projection to factors
@@ -91,7 +91,6 @@ encoder:
 decoder:
   from_pt: null
 
-  
 
 
 
