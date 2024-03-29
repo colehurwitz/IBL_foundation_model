@@ -73,10 +73,13 @@ method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: ssl
+    method_name: sl #ssl 
 
     use_lograte: true
-    loss: poisson_nll # mse/other distirbutions (todo)
+    loss: cross_entropy  # poisson_nll # mse/other distirbutions (todo)
+    output_size: 2
+    clf: true
+    reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}
