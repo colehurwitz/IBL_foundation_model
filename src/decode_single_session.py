@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 
 from sklearn.model_selection import GridSearchCV
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, LogisticRegression
 
 import torch
 from lightning.pytorch.callbacks import ModelCheckpoint
@@ -18,10 +18,10 @@ from ray.train.lightning import (
     prepare_trainer,
 )
 
-from decoders.decoder_loader import SingleSessionDataModule
-from decoders.models import ReducedRankDecoder, MLPDecoder, LSTMDecoder
-from decoders.eval import eval_model
-from decoders.hyperparam_tuning import tune_decoder
+from behavior_decoders.decoder_loader import SingleSessionDataModule
+from behavior_decoders.models import ReducedRankDecoder, MLPDecoder, LSTMDecoder
+from behavior_decoders.eval import eval_model
+from behavior_decoders.hyperparam_tuning import tune_decoder
 
 from ray import tune
 
@@ -43,14 +43,27 @@ config = config_from_kwargs(kwargs)
 config = update_config("configs/decoder.yaml", config)
 config = update_config("configs/decoder_trainer.yaml", config)
 
-set_seed(config.seed)
-
 # Need user inputs: choice of dataset & behavior
 ap = argparse.ArgumentParser()
 ap.add_argument("--eid", type=str)
 ap.add_argument("--target", type=str)
+ap.add_argument("--method", type=str)
 args = ap.parse_args()
 
+# wandb
+if config.wandb.use:
+    import wandb
+    wandb.login()
+    wandb.init(
+        # project=args.target, entity=args.eid, 
+        config=config,
+        name="train_{}".format(args.method)
+    )
+
+set_seed(config.seed)
+
+save_path = Path(config.dirs.output_dir) / args.target / args.method 
+os.makedirs(save_path, exist_ok=True)
 
 """
 --------
@@ -58,37 +71,32 @@ DECODING
 --------
 """
 
+model_class = args.method
+
 print(f'Decode {args.target} from session {args.eid}:')
+print(f'Launch {model_class} decoder:')
 print('----------------------------------------------------')
 
-def save_results(model_class, r2, test_pred, test_y):
-    res_dict = {'r2': r2, 'pred': test_pred, 'target': test_y}
-    save_path = Path(config.dirs.output_dir) / args.target / model_class 
-    os.makedirs(save_path, exist_ok=True)
-    np.save(save_path / f'{args.eid}.npy', res_dict)
-    print(f'{model_class} {args.target} test R2: ', r2)
+search_space = config.copy()
+search_space['eid'] = args.eid
+search_space['target'] = args.target
+search_space['training']['device'] = torch.device(
+    'cuda' if np.logical_and(torch.cuda.is_available(), config.training.device == 'gpu') else 'cpu'
+)
 
-for model_class in ['ridge', 'reduced_rank', 'lstm', 'mlp']:
-
-    print(f'Launch {model_class} decoder:')
-    print('----------------------------------------------------')
-
-    search_space = config.copy()
-    search_space['eid'] = args.eid
-    search_space['target'] = args.target
-    search_space['training']['device'] = torch.device(
-        'cuda' if np.logical_and(torch.cuda.is_available(), config.training.device == 'gpu') else 'cpu'
+if model_class == "linear":
+    dm = SingleSessionDataModule(search_space)
+    dm.setup()
+    if config.model.target == 'reg':
+        model = GridSearchCV(Ridge(), {"alpha": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1]})
+    elif config.model.target == 'clf':
+        model = GridSearchCV(LogisticRegression(), {"C": [1, 1e1, 1e2, 1e3, 1e4]})
+    else:
+        raise NotImplementedError
+    metric, test_pred, test_y = eval_model(
+        dm.train, dm.test, model, target=config.model.target, model_class=model_class
     )
-
-    if model_class == "ridge":
-        dm = SingleSessionDataModule(search_space)
-        dm.setup()
-        alphas = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10]
-        model = GridSearchCV(Ridge(), {"alpha": alphas})
-        r2, test_pred, test_y = eval_model(dm.train, dm.test, model, model_class=model_class, plot=False)
-        save_results(model_class, r2, test_pred, test_y)
-        continue
-
+else:
     def train_func(config):
         dm = SingleSessionDataModule(config)
         dm.setup()
@@ -112,20 +120,30 @@ for model_class in ['ridge', 'reduced_rank', 'lstm', 'mlp']:
         )
         trainer = prepare_trainer(trainer)
         trainer.fit(model, datamodule=dm)
-
+    
     # -- Hyper parameter tuning 
     # -------------------------
-    if model_class == "reduced_rank":
-        search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10])
+    
+    # search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
+    # search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
+    
+    if model_class == "reduced-rank":
+        search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10, 15, 20])
+        search_space['tuner']['num_epochs'] = 500
+        search_space['training']['num_epochs'] = 800
     elif model_class == "lstm":
-        search_space['lstm']['lstm_hidden_size'] = tune.grid_search([32, 64])
+        search_space['lstm']['lstm_hidden_size'] = tune.grid_search([128, 64])
         search_space['lstm']['lstm_n_layers'] = tune.grid_search([1, 3, 5])
-        search_space['lstm']['mlp_hidden_size'] = tune.grid_search([(32,), (64,)])
+        search_space['lstm']['drop_out'] = tune.grid_search([0., 0.2, 0.4, 0.6])
+        search_space['tuner']['num_epochs'] = 250
+        search_space['training']['num_epochs'] = 250
     elif model_class == "mlp":
-        search_space['mlp']['mlp_hidden_size'] = tune.grid_search([(256, 128, 64), (512, 256, 128, 64)])
+        search_space['mlp']['drop_out'] = tune.grid_search([0., 0.2, 0.4, 0.6])
+        search_space['tuner']['num_epochs'] = 250
+        search_space['training']['num_epochs'] = 250
     else:
         raise NotImplementedError
-
+    
     results = tune_decoder(
         train_func, search_space, use_gpu=config.tuner.use_gpu, max_epochs=config.tuner.num_epochs, 
         num_samples=config.tuner.num_samples, num_workers=config.tuner.num_workers
@@ -133,7 +151,7 @@ for model_class in ['ridge', 'reduced_rank', 'lstm', 'mlp']:
     
     best_result = results.get_best_result(metric=config.tuner.metric, mode=config.tuner.mode)
     best_config = best_result.config['train_loop_config']
-
+    
     # -- Model training 
     # -----------------
     checkpoint_callback = ModelCheckpoint(
@@ -148,7 +166,7 @@ for model_class in ['ridge', 'reduced_rank', 'lstm', 'mlp']:
     dm = SingleSessionDataModule(best_config)
     dm.setup()
     
-    if model_class == "reduced_rank":
+    if model_class == "reduced-rank":
         model = ReducedRankDecoder(best_config)
     elif model_class == "lstm":
         model = LSTMDecoder(best_config)
@@ -159,9 +177,21 @@ for model_class in ['ridge', 'reduced_rank', 'lstm', 'mlp']:
     
     trainer.fit(model, datamodule=dm)
     trainer.test(datamodule=dm, ckpt_path='best')
+    metrics = trainer.test(datamodule=dm, ckpt_path='best')[0]
+    metric = metrics['test_metric']
+    
+    _, test_pred, test_y = eval_model(
+        dm.train, dm.test, model, target=best_config['model']['target'], model_class=model_class
+    )
+    
+print(f'{model_class} {args.target} test metric: ', metric)
 
-    # -- Model Eval 
-    # -------------
-    r2, test_pred, test_y = eval_model(dm.train, dm.test, model, model_class)
-    save_results(model_class, r2, test_pred, test_y)
-
+if config.wandb.use:
+    wandb.log(
+        {"test_metric": metric, "test_pred": test_pred, "test_y": test_y}
+    )
+    wandb.finish()
+else:
+    res_dict = {'test_metric': metric, 'test_pred': test_pred, 'test_y': test_y}
+    np.save(save_path / f'{args.eid}.npy', res_dict)
+        
