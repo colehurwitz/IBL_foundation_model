@@ -121,8 +121,8 @@ def merge_probes(spikes_list, clusters_list):
 
 
 def load_trials_and_mask(
-        one, eid, min_rt=0.08, max_rt=2., nan_exclude='default', min_trial_len=None,
-        max_trial_len=None, exclude_unbiased=False, exclude_nochoice=False, sess_loader=None):
+        one, eid, min_rt=0.02, max_rt=2., nan_exclude='default', min_trial_len=None,
+        max_trial_len=None, exclude_unbiased=False, exclude_nochoice=True, sess_loader=None):
     """
     Function to load all trials for a given session and create a mask to exclude all trials that have a reaction time
     shorter than min_rt or longer than max_rt or that have NaN for one of the specified events.
@@ -791,34 +791,30 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
     return neural_dict, behave_dict, meta_data, trials_data
 
 
-def align_spike_behavior(binned_spikes, binned_behaviors):
+def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
-    beh_names = ['wheel-speed', 'left-whisker-motion-energy']
+    beh_names = ['choice', 'wheel-speed', 'left-whisker-motion-energy']
 
     target_mask = [1] * len(binned_spikes)
     for beh_name in beh_names:
-        beh_mask = [1 if trial is not None else 0 for trial in binned_behaviors[beh_name]]
+       beh_mask = [1 if trial is not None else 0 for trial in binned_behaviors[beh_name]]
     target_mask = target_mask and beh_mask
+
+    if trials_mask is not None:
+        target_mask = target_mask and list(trials_mask.to_numpy().astype(int))
 
     del_idxs = np.argwhere(np.array(target_mask) == 0)
 
     aligned_binned_spikes = np.delete(binned_spikes, del_idxs, axis=0)
 
     aligned_binned_behaviors = {}
-    wheel_speed = np.delete(binned_behaviors['wheel-speed'], del_idxs)
-    motion_energy = np.delete(binned_behaviors['right-whisker-motion-energy'], del_idxs)
-    
-    aligned_binned_behaviors['wheel_speed'] = np.array(
-        [y for y in wheel_speed], dtype=float).reshape((aligned_binned_spikes.shape[0], -1)
-    )
-    aligned_binned_behaviors['motion_energy'] = np.array(
-        [y for y in motion_energy], dtype=float).reshape((aligned_binned_spikes.shape[0], -1)
-    )
-    
-    assert len(aligned_binned_spikes) == len(aligned_binned_behaviors['wheel_speed']), \
-    f'mismatch between spike shape {len(aligned_binned_spikes)} and behavior shape {len(aligned_binned_behaviors["wheel_speed"])}'
-    assert len(aligned_binned_spikes) == len(aligned_binned_behaviors['motion_energy']), \
-    f'mismatch between spike shape {len(aligned_binned_spikes)} and behavior shape {len(aligned_binned_behaviors["motion_energy"])}'
+    for beh_name in beh_names:
+        aligned_binned_behaviors.update({beh_name: np.delete(binned_behaviors[beh_name], del_idxs, axis=0)})
+        aligned_binned_behaviors[beh_name] = np.array(
+                [y for y in aligned_binned_behaviors[beh_name]], dtype=float
+            ).reshape((aligned_binned_spikes.shape[0], -1)
+        )
+        assert len(aligned_binned_spikes) == len(aligned_binned_behaviors[beh_name]), f'mismatch between spike shape {len(aligned_binned_spikes)} and {beh_name} shape {len(aligned_binned_behaviors[beh_name])}'
     
     return aligned_binned_spikes, aligned_binned_behaviors
 
