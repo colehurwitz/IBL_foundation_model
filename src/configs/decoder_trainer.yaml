@@ -1,0 +1,51 @@
+seed: 42
+
+dirs:
+  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: train_logs  # save tensorboard logs
+  data_dir: /mnt/3TB/yizi/huggingface/decoding_datasets
+  output_dir: /mnt/3TB/yizi/ibl_fm/results
+
+training:
+  num_epochs: 500
+  batch_size: 8
+
+  device: cpu
+  metric: val_loss
+  mode: min
+  enable_progress_bar: true
+
+model: 
+  model_class: DECODER   # Any registered model class name. 
+  target: clf           # reg
+  output_size: 2       # 100 
+
+data:
+  dataset_class: decoding # Any registered dataset class name. 
+
+  train_name: train   # name of the train split in the raw datasete
+  test_name: test     # name of the test split in the raw datasete
+  train_len: null     # used length of the train dataset. null to use all
+  test_len: null      # used length of the test dataset. null to use all 
+
+  num_workers: 1
+
+optimizer:
+  lr: 0.001
+  scheduler: cosine # step/cosine/linear
+  weight_decay: 0.001
+
+tuner:
+  num_epochs: 10 # change later when running on clusters
+  num_samples: 1
+  use_gpu: false
+  num_workers: 1
+  metric: val_loss
+  mode: min
+  enable_progress_bar: false
+
+wandb:
+  use: true
+  
+
+  

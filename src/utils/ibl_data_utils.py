@@ -818,3 +818,4 @@ def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
     
     return aligned_binned_spikes, aligned_binned_behaviors
 
+

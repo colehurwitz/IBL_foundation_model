@@ -166,3 +166,9 @@ playground/
 *.txt
 *cache*
 *png
+wandb
+results
+
+*.pth
+*pt
+data

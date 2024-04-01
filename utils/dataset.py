@@ -48,14 +48,19 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'sampling_freq': [meta_data['sampling_freq']] * len(sparse_binned_spikes),
             'cluster_regions': [meta_data['cluster_regions']] * len(sparse_binned_spikes),
             'cluster_channels': [meta_data['cluster_channels']] * len(sparse_binned_spikes),
-            'good_clusters': [meta_data['good_clusters']] * len(sparse_binned_spikes)
+            'good_clusters': [meta_data['good_clusters']] * len(sparse_binned_spikes),
+            'cluster_depths': [meta_data['cluster_depths']] * len(sparse_binned_spikes)
         }
         data_dict = data_dict | meta_dict
 
     return Dataset.from_dict(data_dict)
 
-def upload_dataset(dataset):
-    dataset.push_to_hub("berkott/ibl_ssl_data")
+def upload_dataset(dataset, org, eid, is_private=True):
+    dataset.push_to_hub(f"{org}/{eid}", private=is_private)
 
-def download_dataset():
-    return load_dataset("berkott/ibl_ssl_data")
+def download_dataset(org, eid, split="train", cache_dir=None):
+    if cache_dir is None:
+        return load_dataset(f"{org}/{eid}", split=split)
+    else:
+        return load_dataset(f"{org}/{eid}", split=split, cache_dir=cache_dir)
+
