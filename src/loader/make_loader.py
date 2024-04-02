@@ -12,6 +12,7 @@ def make_loader(dataset,
                  max_space_length = 100,
                  n_neurons_per_patch = 64,
                  bin_size = 0.05,
+                 brain_region = 'all',
                  dataset_name = "ibl",
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
@@ -25,6 +26,7 @@ def make_loader(dataset,
                           dataset_name=dataset_name,
                           patching = patching,
                           sort_by_depth = sort_by_depth,
+                          brain_region = brain_region
                             )
     print(f"len(dataset): {len(dataset)}")
     dataloader = torch.utils.data.DataLoader(dataset,
