@@ -57,6 +57,10 @@ class Trainer():
                     print(f"epoch: {epoch} best test loss: {best_test_loss}")
                 print(f"epoch: {epoch} test loss: {test_epoch_results['test_loss']} r2: {test_epoch_results['test_trial_avg_r2']}")
 
+            # save model by epoch
+            if epoch % self.config.training.save_every == 0:
+                self.save_model(name="epoch", epoch=epoch)
+
             # plot epoch
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
                 gt_pred_fig = self.plot_epoch(gt=test_epoch_results['test_gt'], preds=test_epoch_results['test_preds'], epoch=epoch)
@@ -72,8 +76,9 @@ class Trainer():
                 wandb.log({"train_loss": train_epoch_results['train_loss'],
                            "test_loss": test_epoch_results['test_loss'],
                            "test_trial_avg_r2": test_epoch_results['test_trial_avg_r2']})
+                
         # save last model
-        self.save_model(name="last")
+        self.save_model(name="last", epoch=epoch)
         
         if self.config.wandb.use:
             wandb.log({"best_test_loss": best_test_loss,
