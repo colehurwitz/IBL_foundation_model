@@ -164,8 +164,8 @@ class BaseDataset(torch.utils.data.Dataset):
             # only load neurons from a given brain region
             # this is for NDT2 since not enough RAM to load all neurons  
             neuron_regions = np.array(data['cluster_regions'])
-            region_idxs = np.where(neuron_regions == self.brain_region)
-            binned_spikes_data = binned_spikes_data[:,region_idxs][0]
+            region_idxs = np.argwhere(neuron_regions == self.brain_region)
+            binned_spikes_data = binned_spikes_data[:,region_idxs].squeeze()
             if self.sort_by_depth:
                 neuron_depths = neuron_depths[region_idxs]            
 
