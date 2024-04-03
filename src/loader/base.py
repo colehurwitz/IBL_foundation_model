@@ -159,6 +159,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
         if self.sort_by_depth:
             neuron_depths = np.array(data['cluster_depths'])
+            exit()
 
         if self.brain_region != 'all':
             # only load neurons from a given brain region
@@ -172,7 +173,10 @@ class BaseDataset(torch.utils.data.Dataset):
         pad_time_length, pad_space_length = 0, 0
 
         num_time_steps, num_neurons = binned_spikes_data.shape
-        max_num_neurons = self.max_space_length * self.n_neurons_per_patch
+        if self.patching:
+            max_num_neurons = self.max_space_length * self.n_neurons_per_patch
+        else:
+            max_num_neurons = self.max_space_length
 
         if self.sort_by_depth:
             # sort neurons by depth on the probe
@@ -191,19 +195,19 @@ class BaseDataset(torch.utils.data.Dataset):
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
                 
-        if self.patching:
-            # pad along space dimension
-            if num_neurons > max_num_neurons:
-                binned_spikes_data = binned_spikes_data[:,:max_num_neurons]
-            else: 
-                if self.pad_to_right:
-                    pad_space_length = max_num_neurons - num_neurons
-                    binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
-                else:
-                    pad_space_length = num_neurons - max_num_neurons
-                    binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
-                binned_spikes_data = binned_spikes_data.T
-                    
+        # pad along space dimension
+        if num_neurons > max_num_neurons:
+            binned_spikes_data = binned_spikes_data[:,:max_num_neurons]
+        else: 
+            if self.pad_to_right:
+                pad_space_length = max_num_neurons - num_neurons
+                binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
+            else:
+                pad_space_length = num_neurons - max_num_neurons
+                binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
+            binned_spikes_data = binned_spikes_data.T
+
+        if self.patching:    
             # group neurons into patches
             neuron_patches = np.ones(
                 (self.max_time_length, self.max_space_length, self.n_neurons_per_patch)
@@ -247,7 +251,6 @@ class BaseDataset(torch.utils.data.Dataset):
         # add attention mask
         attention_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
-
         return {
             "spikes_data": binned_spikes_data,
             "spikes_timestamps": spikes_timestamps,
