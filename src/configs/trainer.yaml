@@ -17,11 +17,12 @@ wandb:
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
   log_dir: results  # save tensorboard logs
-  dataset_cache_dir: checkpoints/datasets_cache
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   pretrained_model_path: checkpoints/models/ndt1/ssl/co-smooth/model_best.pt
   dataset_dir: berkott/ibl_ssl_data
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  huggingface_org: neurofm123
   
 
 
@@ -61,15 +62,19 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 100 # max time sequence length
-  max_space_length: 8 # max space(neuron) sequence length
+  max_time_length: 50 # max time sequence length
+  max_space_length: 200 # max space(neuron) sequence length
   n_neurons_per_patch: 32 # number of neurons per patch
-  patching: true # patching the neurons
+  patching: false # patching the neurons
   sort_by_depth: false
   brain_region: GRN
 
   include_behav: true # include behavior data
   target: choice
+
+  num_sessions: 10
+
+  split_method: session_based
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:

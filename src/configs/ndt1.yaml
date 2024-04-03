@@ -35,7 +35,7 @@ encoder:
 
   # Embedding layer
   embedder:
-    n_channels: 668       # number of neurons recorded 
+    n_channels: 200       # number of neurons recorded 
     n_blocks: 24          # number of blocks of experiments
     n_dates: 24           # number of days of experiments
     max_F: 50           # max feature len in timesteps
