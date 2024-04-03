@@ -1,4 +1,4 @@
-seed: 0
+seed: 42
 
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
@@ -17,6 +17,8 @@ training:
 
 model: 
   model_class: DECODER   # Any registered model class name. 
+  target: clf           # reg
+  output_size: 2       # 100 
 
 data:
   dataset_class: decoding # Any registered dataset class name. 
@@ -31,8 +33,7 @@ data:
 optimizer:
   lr: 0.001
   scheduler: cosine # step/cosine/linear
-  lr_factor: 0.1
-  lr_patience: 5
+  weight_decay: 0.001
 
 tuner:
   num_epochs: 10 # change later when running on clusters
@@ -42,4 +43,9 @@ tuner:
   metric: val_loss
   mode: min
   enable_progress_bar: false
-    
+
+wandb:
+  use: true
+  
+
+  
