@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: test
+wandb_project: ndt2-ssl
 log_to_wandb: false
 
 verbosity: 0
@@ -10,8 +10,8 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: test
-  run_name: ndt1-ssl
+  project: ndt2-ssl
+  run_name: 671c7ea7
 
 # Logging directories
 dirs:
@@ -27,13 +27,13 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 200
+  num_epochs: 1000
   train_batch_size: 16
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 20  # Plot the model output every n epochs
-  save_every: null  # Save checkpoint
+  save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -61,12 +61,15 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 50 # max time sequence length
-  max_space_length: 15 # max space(neuron) sequence length
-  n_neurons_per_patch: 16 # number of neurons per patch
-  patching: False # patching the neurons
+  max_time_length: 100 # max time sequence length
+  max_space_length: 8 # max space(neuron) sequence length
+  n_neurons_per_patch: 32 # number of neurons per patch
+  patching: true # patching the neurons
+  sort_by_depth: false
+  brain_region: GRN
 
-  include_behav: True # include behavior data
+  include_behav: true # include behavior data
+  target: choice
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
@@ -78,7 +81,7 @@ method:
     use_lograte: true
     loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
     output_size: 2
-    clf: true
+    clf: false
     reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 

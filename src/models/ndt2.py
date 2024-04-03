@@ -13,7 +13,8 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
-DEFAULT_CONFIG = "src/configs/ndt2.yaml"
+# DEFAULT_CONFIG = "src/configs/ndt2.yaml"
+DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
 
 @dataclass
 class NDT2Output(ModelOutput):
@@ -113,6 +114,9 @@ class NeuralEmbeddingLayer(nn.Module):
         self.bias = config.bias
         # NDT1,: n_channels = n_neurons vs. NDT2: n_channels = n_neurons_per_patch
         self.input_dim = config.n_channels*config.mult
+       
+        self.max_time_F = config.max_time_F
+        self.max_space_F = config.max_space_F
 
         if config.mode == "linear":
             self.embed_spikes = nn.Linear(config.n_channels, self.input_dim, bias=config.bias)
@@ -120,6 +124,11 @@ class NeuralEmbeddingLayer(nn.Module):
             self.embed_spikes = nn.Identity()
         else:
             raise Exception(f"Invalid embed mode {config.mode}.")
+
+        # initiate [cls] tokens for downstream tasks
+        self.n_cls_tokens = config.n_cls_tokens
+        if self.n_cls_tokens != 0:
+            self.cls_tokens = nn.Parameter(torch.zeros(1, self.max_time_F*self.n_cls_tokens, self.input_dim))
 
         self.projection = nn.Linear(self.input_dim, hidden_size)
 
@@ -132,13 +141,13 @@ class NeuralEmbeddingLayer(nn.Module):
         # embed space postion
         self.space_pos = config.space_pos
         if self.space_pos:
-            self.embed_space_pos = nn.Embedding(config.max_time_F*config.max_space_F, hidden_size)
+            self.embed_space_pos = nn.Embedding(self.max_time_F*(self.max_space_F+self.n_cls_tokens), hidden_size)
 
         # embed time postion
         self.time_pos = config.time_pos
         if self.time_pos:
-            self.embed_time_pos = nn.Embedding(config.max_time_F*config.max_space_F, hidden_size)
-
+            self.embed_time_pos = nn.Embedding(self.max_time_F*(self.max_space_F+self.n_cls_tokens), hidden_size)
+        
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(
@@ -152,13 +161,41 @@ class NeuralEmbeddingLayer(nn.Module):
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
 
+        B, T, N = spikes.size()
+        
         # Embed spikes
         x = self.embed_spikes(spikes)
+
+        # Prepend [cls] tokens for downstream tasks
+        if self.n_cls_tokens != 0:
+            cls_tokens = self.cls_tokens.expand(B, -1, -1)  
+            x = torch.cat((cls_tokens, x), dim=1)
 
         # Rescaling
         x = self.act(x) * self.scale
 
         x = self.projection(x)
+
+        # Prepend space and time stamps for [cls] tokens
+        if self.n_cls_tokens != 0:
+            # TO DO: There may be better ways to handle the cls space & time stamps
+            spikes_spacestamp = torch.arange(self.max_space_F+self.n_cls_tokens).to(torch.int64)[None,:]
+            spikes_spacestamp = spikes_spacestamp.expand(self.max_time_F, -1)[None,:]
+            spikes_spacestamp = spikes_spacestamp.expand(B, -1, -1).flatten(1).to(spikes.device)
+            spikes_timestamp = torch.arange(self.max_time_F).to(torch.int64)[:,None]
+            spikes_timestamp = spikes_timestamp.expand(-1, self.max_space_F+self.n_cls_tokens)[None,:]
+            spikes_timestamp = spikes_timestamp.expand(B, -1, -1).flatten(1).to(spikes.device)
+
+        # Prepend space and time masks for [cls] tokens
+        if self.n_cls_tokens != 0:
+            # TO DO: There may be better ways to handle the cls space & time masks
+            cls_mask = torch.ones((B, self.max_time_F, self.n_cls_tokens)).to(spikes.device)
+            spikes_space_mask = torch.cat(
+                (cls_mask, spikes_space_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
+            ).flatten(1).to(torch.int64)
+            spikes_time_mask = torch.cat(
+                (cls_mask, spikes_time_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
+            ).flatten(1).to(torch.int64)
 
         # Embed space position
         if self.space_pos:
@@ -306,6 +343,11 @@ class SpaceTimeTransformer(nn.Module):
         self.use_space = config.transformer.use_space
         self.use_time = config.transformer.use_time
 
+        self.max_time_F = config.embedder.max_time_F
+        self.max_space_F = config.embedder.max_space_F
+
+        self.n_cls_tokens = config.embedder.n_cls_tokens
+
         # Masker
         self.mask = config.masker.active
         if self.mask:
@@ -313,7 +355,8 @@ class SpaceTimeTransformer(nn.Module):
 
         # Context span mask
         context_mask = create_context_mask(
-            config.context.forward, config.context.backward, config.embedder.max_space_F, config.embedder.max_time_F
+            config.context.forward, config.context.backward, 
+            config.embedder.max_space_F+self.n_cls_tokens, config.embedder.max_time_F
         )
         self.register_buffer("context_mask", context_mask, persistent=False)
 
@@ -323,7 +366,7 @@ class SpaceTimeTransformer(nn.Module):
         # Transformer
         self.layers = nn.ModuleList(
             [NeuralEncoderLayer(
-                idx, config.embedder.max_time_F*config.embedder.max_space_F, config.transformer
+                idx, self.max_time_F*(self.max_space_F+self.n_cls_tokens), config.transformer
             ) for idx in range(self.n_layers)]
         )
         self.out_norm = nn.LayerNorm(self.hidden_size) 
@@ -406,14 +449,31 @@ class NDT2(nn.Module):
         if self.method == "ssl":
             assert config.encoder.masker.active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.n_channels
+        elif self.method == "sl":
+            n_outputs = kwargs["output_size"]
         else:
             raise Exception(f"Method {self.method} not implemented yet for NDT2")
 
         decoder_layers = []
-        decoder_layers.append(nn.Linear(self.encoder.hidden_size, n_outputs))
+        if self.method == "sl":
+            decoder_layers.append(
+                nn.Linear(
+                    (self.encoder.max_time_F * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
+                )
+            )
+        else:
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size, n_outputs))
 
         if self.method == "sft" and not kwargs["use_lograte"]:
             decoder_layers.append(nn.ReLU()) # If we're not using lograte, we need to feed positive rates
+        if self.method == "sl":
+            if kwargs["clf"]:
+                pass  # cross-entropy loss uses logits as inputs
+            elif kwargs["reg"]:
+                pass
+            else:
+                raise Exception(f"Decoder not implemented yet for sl")
+        
         self.decoder = nn.Sequential(*decoder_layers)
 
         # Load decoder weights
@@ -421,12 +481,21 @@ class NDT2(nn.Module):
             self.decoder.load_state_dict(torch.load(os.path.join(config.decoder.from_pt,"decoder.bin")))
 
         # Build loss function
-        if kwargs["loss"] == "poisson_nll":
-            self.loss_fn = nn.PoissonNLLLoss(reduction="none", log_input=kwargs["use_lograte"])
-        elif kwargs["loss"] == "mse":
-            self.loss_fn = nn.MSELoss(reduction="none")
-        else:   
-            raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
+        if self.method == "ssl":
+            if kwargs["loss"] == "poisson_nll":
+                self.loss_fn = nn.PoissonNLLLoss(reduction="none", log_input=kwargs["use_lograte"])
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:   
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
+        elif self.method == "sl":
+            if kwargs["loss"] == "cross_entropy":
+                self.loss_fn = nn.CrossEntropyLoss(reduction="none")
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for sl")
+        
 
     def forward(
         self, 
@@ -435,8 +504,8 @@ class NDT2(nn.Module):
         spikes_time_mask:  torch.LongTensor,                    # (n_batch, n_token)
         spikes_spacestamp: torch.LongTensor,                    # (n_batch, n_token)
         spikes_timestamp:  torch.LongTensor,                    # (n_batch, n_token)
-        spikes_lengths:    Optional[torch.LongTensor] = None,   # (n_batch)
         targets:           Optional[torch.FloatTensor] = None,  # (n_batch, target_len) 
+        spikes_lengths:    Optional[torch.LongTensor] = None,   # (n_batch)
         targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
     ) -> NDT2Output:   
 
@@ -449,12 +518,23 @@ class NDT2(nn.Module):
         )
 
         # Transform neural embeddings into rates/logits
-        outputs = self.decoder(x)
+        if self.method == "ssl":
+            # Grab the spike embeddings
+            x = x[:,(self.encoder.max_time_F * self.encoder.n_cls_tokens):]
+            outputs = self.decoder(x)
+        elif self.method == "sl":
+            # Grab the prepended [cls] embeddings
+            x = x[:,:(self.encoder.max_time_F * self.encoder.n_cls_tokens)]
+            x = x.flatten(start_dim=1)  
+            outputs = self.decoder(x)      
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
             loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
             n_examples = targets_mask.sum()
+        elif self.method == "sl":
+            loss = self.loss_fn(outputs, targets).sum()
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
 
         return NDT2Output(
             loss=loss,
