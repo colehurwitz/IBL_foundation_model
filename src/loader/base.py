@@ -99,7 +99,7 @@ class BaseDataset(torch.utils.data.Dataset):
         mask_ratio = 0.1,
         pad_to_right = True,
         patching = False,
-        sort_by_depth = False,
+        sort_by_depth = True,
         brain_region = 'all',
         dataset_name = "ibl",
     ) -> None:
@@ -159,7 +159,6 @@ class BaseDataset(torch.utils.data.Dataset):
 
         if self.sort_by_depth:
             neuron_depths = np.array(data['cluster_depths'])
-            exit()
 
         if self.brain_region != 'all':
             # only load neurons from a given brain region

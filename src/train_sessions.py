@@ -40,6 +40,7 @@ set_seed(config.seed)
 train_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                            config.dirs.huggingface_org,
                            num_sessions=config.data.num_sessions,
+                           split_method=config.data.split_method,
                            seed=config.seed)
 
 # make the dataloader

@@ -10,7 +10,7 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: ndt2-ssl
+  project: multi-session
   run_name: 671c7ea7
 
 # Logging directories
@@ -28,8 +28,8 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000
-  train_batch_size: 16
+  num_epochs: 300
+  train_batch_size: 512
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 50 # max time sequence length
-  max_space_length: 200 # max space(neuron) sequence length
+  max_space_length: 256 # max space(neuron) sequence length
   n_neurons_per_patch: 32 # number of neurons per patch
   patching: false # patching the neurons
   sort_by_depth: false
@@ -72,7 +72,7 @@ data:
   include_behav: true # include behavior data
   target: choice
 
-  num_sessions: 10
+  num_sessions: 101
 
   split_method: session_based
 
@@ -106,7 +106,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
+  lr: 32.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
