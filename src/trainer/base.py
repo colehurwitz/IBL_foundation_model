@@ -52,6 +52,14 @@ class Trainer():
                     print(f"epoch: {epoch} best test trial avg r2: {best_test_trial_avg_r2}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
+                    gt_pred_fig = self.plot_epoch(gt=test_epoch_results['test_gt'], preds=test_epoch_results['test_preds'], epoch=epoch)
+                    if self.config.wandb.use:
+                        wandb.log({"best_epoch": epoch,
+                                "best_gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
+                                "best_r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
+                    else:
+                        gt_pred_fig['plot_gt_pred'].savefig(os.path.join(self.log_dir, f"best_gt_pred_fig_{epoch}.png"))
+                        gt_pred_fig['plot_r2'].savefig(os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png"))
                 if test_epoch_results['test_loss'] < best_test_loss:
                     best_test_loss = test_epoch_results['test_loss']
                     print(f"epoch: {epoch} best test loss: {best_test_loss}")

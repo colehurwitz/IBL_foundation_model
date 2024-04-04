@@ -159,7 +159,7 @@ def load_ibl_dataset(cache_dir,
     print("Total session-wise datasets found: ", len(user_datasets))
     cache_dir = os.path.join(cache_dir, "ibl", user_or_org_name)
     if eid is not None:
-        eid_dir = os.path.join(cache_dir, eid)
+        eid_dir = os.path.join(user_or_org_name, eid)
         if eid_dir not in user_datasets:
             raise ValueError(f"Dataset with eid: {eid} not found in the user's datasets")
         else:
