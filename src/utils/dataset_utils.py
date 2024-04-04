@@ -28,7 +28,15 @@ def get_binned_spikes_from_sparse(spikes_sparse_data_list, spikes_sparse_indices
 
     return binned_spikes
 
-def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_behaviors=None):
+def create_dataset(
+    binned_spikes, 
+    bwm_df, 
+    eid, 
+    params, 
+    meta_data=None, 
+    binned_behaviors=None,
+    intervals=None
+):
 
     # Scipy sparse matrices can't be directly loaded into HuggingFace Datasets so they are converted to lists
     sparse_binned_spikes, spikes_sparse_data_list, spikes_sparse_indices_list, spikes_sparse_indptr_list, spikes_sparse_shape_list = get_sparse_from_binned_spikes(binned_spikes)
@@ -60,6 +68,10 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'good_clusters': [meta_data['good_clusters']] * len(sparse_binned_spikes)
         }
         data_dict = data_dict | meta_dict
+
+    if intervals is not None:
+        time_dict = {'intervals': intervals}
+        data_dict = data_dict | time_dict
 
     return Dataset.from_dict(data_dict)
 
