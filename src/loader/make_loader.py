@@ -12,6 +12,7 @@ def make_loader(dataset,
                  max_space_length = 100,
                  n_neurons_per_patch = 64,
                  bin_size = 0.05,
+                 load_meta = False,
                  brain_region = 'all',
                  dataset_name = "ibl",
                  shuffle = True):
@@ -25,6 +26,7 @@ def make_loader(dataset,
                           pad_to_right=pad_to_right,
                           dataset_name=dataset_name,
                           patching = patching,
+                          load_meta = load_meta,
                           sort_by_depth = sort_by_depth,
                           brain_region = brain_region
                             )

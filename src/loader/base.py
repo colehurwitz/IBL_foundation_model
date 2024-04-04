@@ -100,6 +100,7 @@ class BaseDataset(torch.utils.data.Dataset):
         pad_to_right = True,
         patching = False,
         sort_by_depth = False,
+        load_meta = False,
         brain_region = 'all',
         dataset_name = "ibl",
     ) -> None:
@@ -115,6 +116,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.pad_to_right = pad_to_right
         self.mask_ratio = mask_ratio
         self.brain_region = brain_region
+        self.load_meta = load_meta
         self.dataset_name = dataset_name
 
     def _preprocess_h5_data(self, data, idx):
@@ -157,28 +159,33 @@ class BaseDataset(torch.utils.data.Dataset):
             
         binned_spikes_data = binned_spikes_data[0]
 
-        if self.sort_by_depth:
-            neuron_depths = np.array(data['cluster_depths'])
+        if self.load_meta:
+            neuron_depths = np.array(data['cluster_depths']).astype(np.float32)
+            neuron_regions = np.array(data['cluster_regions']).astype('str')
+        else:
+            neuron_depths = neuron_regions = np.array([np.nan])
 
-        if self.brain_region != 'all':
+        if self.load_meta & (self.brain_region != 'all'):
             # only load neurons from a given brain region
             # this is for NDT2 since not enough RAM to load all neurons  
-            neuron_regions = np.array(data['cluster_regions'])
             region_idxs = np.argwhere(neuron_regions == self.brain_region)
             binned_spikes_data = binned_spikes_data[:,region_idxs].squeeze()
+            neuron_regions = neuron_regions[region_idxs]
             if self.sort_by_depth:
-                neuron_depths = neuron_depths[region_idxs]            
+                neuron_depths = neuron_depths[region_idxs]   
 
         pad_time_length, pad_space_length = 0, 0
 
         num_time_steps, num_neurons = binned_spikes_data.shape
         max_num_neurons = self.max_space_length * self.n_neurons_per_patch
 
-        if self.sort_by_depth:
+        if self.load_meta & self.sort_by_depth:
             # sort neurons by depth on the probe
             neuron_idxs = np.arange(num_neurons)
             sorted_neuron_idxs = [x for _, x in sorted(zip(neuron_depths, neuron_idxs))]
             binned_spikes_data = binned_spikes_data[:,sorted_neuron_idxs]
+            neuron_depths = neuron_depths[sorted_neuron_idxs]
+            neuron_regions = neuron_regions[sorted_neuron_idxs]
         
         # pad along time dimension
         if num_time_steps > self.max_time_length:
@@ -236,7 +243,9 @@ class BaseDataset(torch.utils.data.Dataset):
                 "spikes_spacestamps": spikes_spacestamps,
                 "time_attention_mask": time_attention_mask,
                 "space_attention_mask": space_attention_mask,
-                "target": target_behavior
+                "target": target_behavior,
+                "neuron_depths": neuron_depths, 
+                "neuron_regions": list(neuron_regions)
             }
         # add spikes timestamps [bs, n_spikes]
         # multiply by 100 to convert to int64
@@ -252,7 +261,9 @@ class BaseDataset(torch.utils.data.Dataset):
             "spikes_data": binned_spikes_data,
             "spikes_timestamps": spikes_timestamps,
             "attention_mask": attention_mask,
-            "target": target_behavior
+            "target": target_behavior,
+            "neuron_depths": neuron_depths, 
+            "neuron_regions": list(neuron_regions)
         }
     
     def __len__(self):
