@@ -150,9 +150,10 @@ def get_user_datasets(user_or_org_name):
 
 def load_ibl_dataset(cache_dir,
                      user_or_org_name='neurofm123',
-                     eid=None,
-                     num_sessions=5,
+                     eid=None, # specify 1 session for training, random_split will be used
+                     num_sessions=5, # total number of sessions for training and testing
                      split_method="session_based",
+                     test_session_eid=[], # specify session eids for testing, session_based will be used
                      split_size = 0.1,
                      seed=42):
     user_datasets = get_user_datasets(user_or_org_name)
@@ -165,10 +166,24 @@ def load_ibl_dataset(cache_dir,
         else:
             user_datasets = [eid_dir]
 
+    test_session_eid_dir = []
+    train_session_eid_dir = []
+    if len(test_session_eid) > 0:
+        test_session_eid_dir = [os.path.join(user_or_org_name, eid) for eid in test_session_eid]
+        print("Test session-wise datasets found: ", len(test_session_eid_dir))
+        train_session_eid_dir = [eid for eid in user_datasets if eid not in test_session_eid_dir]
+        print("Train session-wise datasets found: ", len(train_session_eid_dir))
+        train_session_eid_dir = train_session_eid_dir[:num_sessions - len(test_session_eid)]
+        print("Number of training datasets to be used: ", len(train_session_eid_dir))
+    else:
+        train_session_eid_dir = user_datasets
+    assert len(train_session_eid_dir) > 0, "No training datasets found"
+    assert not (len(test_session_eid) > 0 and split_method == "random_split"), "When you have a test session, the split method should be 'session_based'"
+
     all_sessions_datasets = []
     if split_method == 'random_split':
         print("Loading datasets...")
-        for dataset_eid in tqdm(user_datasets[:num_sessions]):
+        for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
             session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
             all_sessions_datasets.append(session_dataset)
         all_sessions_datasets = concatenate_datasets(all_sessions_datasets)
@@ -178,12 +193,17 @@ def load_ibl_dataset(cache_dir,
         test_dataset = dataset["test"].select_columns(DATA_COLUMNS)
     elif split_method == 'session_based':
         print("Loading train dataset sessions...")
-        for dataset_eid in tqdm(user_datasets[:num_sessions-1]):
+        for dataset_eid in tqdm(train_session_eid_dir):
             session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
             all_sessions_datasets.append(session_dataset)
         train_dataset = concatenate_datasets(all_sessions_datasets)
+
         print("Loading test dataset session...")
-        test_dataset = load_dataset(user_datasets[-1], cache_dir=cache_dir)["train"]
+        all_sessions_datasets = []
+        for dataset_eid in tqdm(test_session_eid_dir):
+            session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
+            all_sessions_datasets.append(session_dataset)
+        test_dataset = concatenate_datasets(all_sessions_datasets)
         
         train_dataset = train_dataset.select_columns(DATA_COLUMNS)
         test_dataset = test_dataset.select_columns(DATA_COLUMNS)

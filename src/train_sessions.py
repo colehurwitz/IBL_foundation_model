@@ -41,7 +41,7 @@ train_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir,
                            config.dirs.huggingface_org,
                            num_sessions=config.data.num_sessions,
                            split_method=config.data.split_method,
-                           eid='671c7ea7-6726-4fbe-adeb-f89c2c8e489b',
+                           test_session_eid=config.data.test_session_eid,
                            seed=config.seed)
 
 # make the dataloader

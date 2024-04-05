@@ -3,6 +3,7 @@ import numpy as np
 import wandb
 import os
 from utils.utils import move_batch_to_device, metrics_list, plot_gt_pred, plot_neurons_r2
+from tqdm import tqdm
 
 class Trainer():
     def __init__(
@@ -96,7 +97,7 @@ class Trainer():
         train_loss = 0.
         train_examples = 0
         self.model.train()
-        for batch in self.train_dataloader:
+        for batch in tqdm(self.train_dataloader):
             outputs = self._forward_model_outputs(batch)
             loss = outputs.loss
             loss.backward()
