@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: ndt2-ssl
+wandb_project: multi-session
 log_to_wandb: false
 
 verbosity: 0
@@ -19,7 +19,7 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt1/ssl/co-smooth/model_best.pt
+  pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_671c7ea7.pt
   dataset_dir: berkott/ibl_ssl_data
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: neurofm123
@@ -28,8 +28,8 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 300
-  train_batch_size: 512
+  num_epochs: 1000
+  train_batch_size: 16
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
@@ -106,7 +106,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 32.e-4
+  lr: 1.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

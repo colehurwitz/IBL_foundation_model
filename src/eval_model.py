@@ -161,7 +161,6 @@ wheel = np.array(test_dataset['wheel-speed'])
 b_list.append(wheel)
 
 behavior_set = np.stack(b_list,axis=-1)
-print(behavior_set.shape)
 
 # Settings for validation
 X = behavior_set # [#trials, #timesteps, #variables]
