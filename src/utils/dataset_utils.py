@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.sparse import csr_array
-from datasets import Dataset, DatasetInfo
+from datasets import Dataset, DatasetInfo, DatasetDict
 from datasets import load_dataset
 import h5py
 import torch
@@ -158,3 +158,72 @@ def get_data_from_h5(mode, filepath, config):
     #     return file_data, merged_rates if self.has_rates else None, None, None
     else: # test unsupported
         return None, None, None, None
+
+
+def _time_extract(data):
+    data['time'] = data['intervals'][0]
+    return data
+
+
+def _split_unaligned_dataset(dataset, start_time=0, val_split_time=0, test_split_time=0, end_time=0):
+    if val_split_time == 0:
+        val_split_time = test_split_time
+
+    train_dataset = dataset.filter(lambda data: data['time'] < val_split_time or data['time'] > end_time)
+    val_dataset = dataset.filter(lambda data: val_split_time <= data['time'] < test_split_time)
+    test_dataset = dataset.filter(lambda data: test_split_time <= data['time'] < end_time)
+    new_dataset = DatasetDict({
+        'train': train_dataset,
+        'val': val_dataset,
+        'test': test_dataset
+    })
+
+    return new_dataset
+
+
+# split the aligned and unaligned dataset together.
+def split_both_dataset(
+        aligned_dataset,    # raw_aligned_dataset
+        unaligned_dataset,  # raw_unaligned_dataset
+        train_ratio=0.7,
+        val_ratio=0.1,
+        test_ratio=0.2
+):
+    assert train_ratio + val_ratio + test_ratio == 1, "The sum of train/val/test is not equal to 1."
+
+    aligned_dataset = aligned_dataset.map(_time_extract)
+    unaligned_dataset = unaligned_dataset.map(_time_extract)
+
+    train_split = int(len(aligned_dataset) * train_ratio)
+    val_split = int(len(aligned_dataset) * val_ratio)
+    test_split = int(len(aligned_dataset) * test_ratio)
+
+    train_list = list(range(0, train_split))
+    val_list = list(range(train_split, train_split + val_split))
+    test_list = list(range(train_split + val_split, len(aligned_dataset)))
+
+    train_al = aligned_dataset.select(train_list)
+    val_al = aligned_dataset.select(val_list)
+    test_al = aligned_dataset.select(test_list)
+
+    new_aligned_dataset = DatasetDict({
+        'train': train_al,
+        'val': val_al,
+        'test': test_al
+    })
+
+    # create the unaligned dataset
+    start_time = train_al[0]['time']
+    val_time = val_al[0]['time']
+    test_time = test_al[0]['time']
+    end_time = test_al[-1]['time']
+
+    new_unaligned_dataset = _split_unaligned_dataset(
+        unaligned_dataset,
+        start_time=start_time,
+        val_split_time=val_time,
+        test_split_time=test_time,
+        end_time=end_time
+    )
+
+    return new_aligned_dataset, new_unaligned_dataset
