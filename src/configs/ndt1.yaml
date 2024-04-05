@@ -20,7 +20,7 @@ encoder:
 
   # Context available for each timestep
   context:
-    forward: 0
+    forward: -1
     backward: -1
 
   # Normalize and add noise
