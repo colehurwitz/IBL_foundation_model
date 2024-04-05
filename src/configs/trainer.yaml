@@ -74,7 +74,7 @@ data:
 
   num_sessions: 101
 
-  split_method: session_based
+  split_method: random_split # random_split/session_based
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
