@@ -19,7 +19,7 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_671c7ea7.pt
+  pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: berkott/ibl_ssl_data
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: neurofm123
