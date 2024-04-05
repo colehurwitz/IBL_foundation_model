@@ -1,15 +1,18 @@
 import numpy as np
 from scipy.sparse import csr_array
-from datasets import Dataset, DatasetInfo, DatasetDict
-from datasets import load_dataset
+from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets, DatasetDict
 import h5py
+import os
 import torch
+from tqdm import tqdm
 
 class DATASET_MODES:
     train = "train"
     val = "val"
     test = "test"
     trainval = "trainval"
+
+DATA_COLUMNS = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape','cluster_depths']
 
 def get_sparse_from_binned_spikes(binned_spikes):
     sparse_binned_spikes = [csr_array(binned_spikes[i], dtype=np.ubyte) for i in range(binned_spikes.shape[0])]
@@ -136,28 +139,58 @@ def get_data_from_h5(mode, filepath, config):
         return train_data, train_rates, None, None
     elif mode == DATASET_MODES.val:
         return valid_data, valid_rates, None, None
-    # elif mode == DATASET_MODES.trainval:
-    #     # merge training and validation data
-    #     if 'train_inds' in h5dict and 'valid_inds' in h5dict:
-    #         # if there are index labels, use them to reassemble full data
-    #         train_inds = h5dict['train_inds'].squeeze()
-    #         valid_inds = h5dict['valid_inds'].squeeze()
-    #         file_data = merge_train_valid(
-    #             train_data, valid_data, train_inds, valid_inds)
-    #         if has_rates:
-    #             merged_rates = merge_train_valid(
-    #                 train_rates, valid_rates, train_inds, valid_inds
-    #             )
-    #     else:
-    #         if self.logger is not None:
-    #             self.logger.info("No indices found for merge. "
-    #             "Concatenating training and validation samples.")
-    #         file_data = np.concatenate([train_data, valid_data], axis=0)
-    #         if self.has_rates:
-    #             merged_rates = np.concatenate([train_rates, valid_rates], axis=0)
-    #     return file_data, merged_rates if self.has_rates else None, None, None
     else: # test unsupported
         return None, None, None, None
+
+# This function will fetch all dataset repositories for a given user or organization
+def get_user_datasets(user_or_org_name):
+    all_datasets = list_datasets()
+    user_datasets = [d for d in all_datasets if d.startswith(f"{user_or_org_name}/")]
+    return user_datasets
+
+def load_ibl_dataset(cache_dir,
+                     user_or_org_name='neurofm123',
+                     eid=None,
+                     num_sessions=5,
+                     split_method="session_based",
+                     split_size = 0.1,
+                     seed=42):
+    user_datasets = get_user_datasets(user_or_org_name)
+    print("Total session-wise datasets found: ", len(user_datasets))
+    cache_dir = os.path.join(cache_dir, "ibl", user_or_org_name)
+    if eid is not None:
+        eid_dir = os.path.join(user_or_org_name, eid)
+        if eid_dir not in user_datasets:
+            raise ValueError(f"Dataset with eid: {eid} not found in the user's datasets")
+        else:
+            user_datasets = [eid_dir]
+
+    all_sessions_datasets = []
+    if split_method == 'random_split':
+        print("Loading datasets...")
+        for dataset_eid in tqdm(user_datasets[:num_sessions]):
+            session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
+            all_sessions_datasets.append(session_dataset)
+        all_sessions_datasets = concatenate_datasets(all_sessions_datasets)
+        # split the dataset to train and test
+        dataset = all_sessions_datasets.train_test_split(test_size=split_size, seed=seed)
+        train_dataset = dataset["train"].select_columns(DATA_COLUMNS)
+        test_dataset = dataset["test"].select_columns(DATA_COLUMNS)
+    elif split_method == 'session_based':
+        print("Loading train dataset sessions...")
+        for dataset_eid in tqdm(user_datasets[:num_sessions-1]):
+            session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
+            all_sessions_datasets.append(session_dataset)
+        train_dataset = concatenate_datasets(all_sessions_datasets)
+        print("Loading test dataset session...")
+        test_dataset = load_dataset(user_datasets[-1], cache_dir=cache_dir)["train"]
+
+        train_dataset = train_dataset.select_columns(DATA_COLUMNS)
+        test_dataset = test_dataset.select_columns(DATA_COLUMNS)
+    else:
+        raise ValueError("Invalid split method. Please choose either 'random_split' or 'session_based'")
+
+    return train_dataset, test_dataset
 
 
 def _time_extract(data):

@@ -14,8 +14,10 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
+from models.masker import Masker
 
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
+# DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt1.yaml"
 
 
 @dataclass
@@ -68,79 +70,6 @@ def apply_rotary_pos_emb(q, k, pos_ids, cos, sin, unsqueeze_dim=1):
     
     return q_embed, k_embed
 
-
-
-# Mask spikes
-class Masker(nn.Module):
-
-    def __init__(self, embed_mode, config: DictConfig):
-        super().__init__()
-
-        self.mode = config.mode
-        self.ratio = config.ratio
-        self.zero_ratio = config.zero_ratio
-        self.random_ratio = config.random_ratio
-        self.expand_prob = config.expand_prob
-        self.max_timespan = config.max_timespan
-        self.embed_mode = embed_mode
-
-    def forward(
-        self, 
-        spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
-    ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
-
-        mask_ratio = deepcopy(self.ratio)
-
-        # Expand mask
-        if self.mode == "timestep":
-            if torch.bernoulli(torch.tensor(self.expand_prob).float()):
-                timespan = torch.randint(1, self.max_timespan+1, (1, )).item() 
-            else:
-                timespan = 1
-            mask_ratio = mask_ratio/timespan
-
-        # Get masking probabilities
-        if self.mode == "full":
-            mask_probs = torch.full(spikes.shape, mask_ratio)     # (bs, seq_len, n_channels)
-        elif self.mode == "timestep":
-            mask_probs = torch.full(spikes[:, :, 0].shape, mask_ratio) # (bs, seq_len)
-        elif self.mode == "neuron":
-            mask_probs = torch.full(spikes[:, 0].shape, mask_ratio)    # (bs, n_channels)
-        else:
-            raise Exception(f"Masking mode {self.mode} not implemented")
-        
-        # Create mask
-        mask = torch.bernoulli(mask_probs).to(spikes.device)
-
-        # Expand mask
-        if self.mode == "timestep":
-            mask = self.expand_timesteps(mask, timespan)
-            mask = mask.unsqueeze(2).expand_as(spikes).bool()    # (bs, seq_len, n_channels)
-        elif self.mode == "neuron":
-            mask = mask.unsqueeze(1).expand_as(spikes).bool()    # (bs, seq_len, n_channels)
-        
-        # Mask data
-        zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
-        spikes[zero_idx] = 0
-        random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
-        random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device) )
-        if self.embed_mode == "embed":
-            random_spikes = random_spikes.to(torch.int64)
-        elif self.embed_mode == "identity":
-            random_spikes = random_spikes.round()
-        else:
-            random_spikes = random_spikes.float()
-
-        spikes[random_idx] = random_spikes[random_idx]
-
-        return spikes, mask.to(torch.int64)
-
-    @staticmethod
-    def expand_timesteps(mask, width=1):
-        kernel = torch.ones(width, device=mask.device).view(1, 1, -1)
-        expanded_mask = F.conv1d(mask.unsqueeze(1), kernel, padding="same")
-        return (expanded_mask.squeeze(1) >= 1)
-        
 
 # Normalize and add noise
 class NormAndNoise(nn.Module): 
@@ -508,8 +437,8 @@ class NeuralEncoder(nn.Module):
         # Masker
         self.mask = config.masker.active
         if self.mask:
-            self.masker = Masker(config.embedder.mode, config.masker)
-
+            self.masker = Masker(config.masker)
+        
         # Context span mask
         context_mask = create_context_mask(config.context.forward, config.context.backward, config.embedder.max_F)
         self.register_buffer("context_mask", context_mask, persistent=False)
@@ -603,19 +532,33 @@ class NDT1(nn.Module):
             n_outputs = config.encoder.embedder.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]
+        elif self.method == "sl":
+            n_outputs = kwargs["output_size"]
         else:
             raise Exception(f"Method {self.method} not implemented yet for NDT1")
 
         decoder_layers = []
-        decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, n_outputs))
+        if self.method == "sl":
+            decoder_layers.append(
+                nn.Linear(config.encoder.embedder.max_F * self.encoder.out_proj.out_size, n_outputs)
+            )
+        else:
+            decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, n_outputs))
 
         if self.method == "sft" and not kwargs["use_lograte"]:
             decoder_layers.append(nn.ReLU()) # If we're not using lograte, we need to feed positive rates
         if self.method == "ctc":
             decoder_layers.append(nn.LogSoftmax(dim=-1))  # CTC loss asks for log-softmax-normalized logits
+        if self.method == "sl":
+            if kwargs["clf"]:
+                pass  # cross-entropy loss uses logits as inputs
+            elif kwargs["reg"]:
+                pass
+            else:
+                raise Exception(f"Decoder not implemented yet for sl")
+            
         self.decoder = nn.Sequential(*decoder_layers)
 
-        # Load decoder weights
         if config.decoder.from_pt is not None:
             self.decoder.load_state_dict(torch.load(os.path.join(config.decoder.from_pt,"decoder.bin")))
 
@@ -629,6 +572,13 @@ class NDT1(nn.Module):
                 raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
         elif self.method == "ctc":
              self.loss_fn = nn.CTCLoss(reduction="none", blank=kwargs["blank_id"], zero_infinity=kwargs["zero_infinity"])
+        elif self.method == "sl":
+            if kwargs["loss"] == "cross_entropy":
+                self.loss_fn = nn.CrossEntropyLoss(reduction="none")
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for sl")
         
 
     def forward(
@@ -636,8 +586,8 @@ class NDT1(nn.Module):
         spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
         spikes_mask:      torch.LongTensor,   # (bs, seq_len)
         spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
-        spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs)
-        targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len) 
+        targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len)
+        spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs) 
         targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
         block_idx:        Optional[torch.LongTensor] = None,   # (bs)
         date_idx:         Optional[torch.LongTensor] = None,   # (bs)
@@ -653,6 +603,9 @@ class NDT1(nn.Module):
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits
+        if self.method == "sl":
+            x = x.flatten(start_dim=1)
+            
         outputs = self.decoder(x)
 
         # Compute the loss over unmasked outputs
@@ -661,7 +614,10 @@ class NDT1(nn.Module):
             n_examples = targets_mask.sum()
         elif self.method == "ctc":
             loss = self.loss_fn(outputs.transpose(0,1), targets, spikes_lengths, targets_len)
-            n_examples = torch.Tensor(len(targets)).to(loss.device, torch.long)
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
+        elif self.method == "sl":
+            loss = self.loss_fn(outputs, targets).sum()
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
 
         return NDT1Output(
             loss=loss,
