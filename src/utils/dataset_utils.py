@@ -183,8 +183,8 @@ def _split_unaligned_dataset(dataset, start_time=0, val_split_time=0, test_split
 
 # split the aligned and unaligned dataset together.
 def split_both_dataset(
-        aligned_dataset,    # raw_aligned_dataset
-        unaligned_dataset,  # raw_unaligned_dataset
+        aligned_dataset,
+        unaligned_dataset,
         train_ratio=0.7,
         val_ratio=0.1,
         test_ratio=0.2
