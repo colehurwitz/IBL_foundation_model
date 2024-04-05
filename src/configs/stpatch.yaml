@@ -1,0 +1,58 @@
+model_class: STPatch
+
+
+encoder:
+
+  from_pt: null
+
+  # Mask spikes
+  masker:
+    active: true         
+    mode: full   #timestep    # full to zero out randomly in the featue matrix. timestep to zero out randomly full timesteps. 
+    ratio: 0.1       #0.3     # ratio of data to predict
+    zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
+    random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
+    n_time_steps: 100   # num of time bins
+
+  # Context available for each timestep
+  context:
+    forward: -1
+    backward: -1
+
+  # Embedding layer
+  embedder:
+    n_neurons: 668
+    n_timesteps: 100
+    max_space_F: 167       # max feature len in space dimension
+    max_time_F: 2       # max feature len in time dimension
+    max_spikes: 0         # max number of spikes in a single time bin
+
+    mode: linear          # linear/embed/identity
+    mult: 2               # embedding multiplier. hiddden_sizd = n_channels * mult
+    act: softsign         # activation for the embedding layers
+    scale: 1              # scale the embedding multiplying by this number
+    bias: true            # use bias in the embedding layer
+    dropout: 0.2          # dropout in embedding layer
+
+    n_cls_tokens: 1       # number of [cls] tokens for downstream tasks, e.g., behavior/region decoding
+
+
+  # Transformer
+  transformer:
+    n_layers: 5           # number of transformer layers
+    hidden_size: 256      #1024     # hidden space of the transformer
+
+    n_heads: 8            # number of attentiomn heads
+    attention_bias: true  # learn bias in the attention layers
+
+    act: gelu             # activiation function in mlp layers
+    inter_size: 1024       #1024      # intermediate dimension in the mlp layers
+    mlp_bias: true        # learn bias in the mlp layers
+    
+    dropout: 0.2 #0.4          # dropout in transformer layers
+    fixup_init: true      # modify weight initialization
+
+decoder:
+  from_pt: null
+
+

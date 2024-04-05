@@ -611,7 +611,7 @@ class NDT1(nn.Module):
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
             loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
-            n_examples = targsets_mask.sum()
+            n_examples = targets_mask.sum()
         elif self.method == "ctc":
             loss = self.loss_fn(outputs.transpose(0,1), targets, spikes_lengths, targets_len)
             n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
