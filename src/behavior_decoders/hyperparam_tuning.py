@@ -6,9 +6,9 @@ from ray.train import RunConfig, ScalingConfig, CheckpointConfig
 from ray.train.torch import TorchTrainer
 
 def tune_decoder(
-    train_func, search_space,
-    max_epochs=100, num_samples=1, use_gpu=False, num_workers=1, 
-    metric="loss", mode="min", 
+    train_func, search_space, save_dir='/mnt/3TB/yizi/ray_results',
+    max_epochs=500, num_samples=10, use_gpu=False, num_workers=1, 
+    metric="val_loss", mode="min", 
 ):
     
     if use_gpu:
@@ -21,11 +21,14 @@ def tune_decoder(
     )
     
     run_config = RunConfig(
+        storage_path=save_dir,
+        local_dir=save_dir,
         checkpoint_config=CheckpointConfig(
             num_to_keep=2,
             checkpoint_score_attribute=metric,
             checkpoint_score_order=mode,
         ),
+        stop={"time_total_s": 5400},  # seconds
     )
     
     ray_trainer = TorchTrainer(

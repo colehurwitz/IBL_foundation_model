@@ -1,8 +1,10 @@
 import numpy as np
 from pathlib import Path
 from sklearn import preprocessing
+from sklearn.preprocessing import OneHotEncoder
 import torch
 from torch.utils.data import Dataset, DataLoader
+from lightning.pytorch.utilities import CombinedLoader
 from lightning.pytorch import LightningDataModule
 import datasets
 from utils.dataset_utils import get_binned_spikes_from_sparse
@@ -38,13 +40,11 @@ def get_binned_spikes(dataset):
     binned_spikes  = get_binned_spikes_from_sparse(
         spikes_sparse_data_list, spikes_sparse_indices_list, spikes_sparse_indptr_list, spikes_sparse_shape_list
     )
-    # TO DO: make this nicer
     return binned_spikes.astype(float)
 
 
 class SingleSessionDataset(Dataset):
-    def __init__(self, data_dir, eid, beh_name, device, split='train'):
-        
+    def __init__(self, data_dir, eid, beh_name, target, device, split='train'):
         dataset = datasets.load_from_disk(Path(data_dir)/eid)
         self.train_spike = get_binned_spikes(dataset['train'])
         self.train_behavior = np.array(dataset['train'][beh_name])
@@ -58,8 +58,15 @@ class SingleSessionDataset(Dataset):
         self.train_spike, self.means, self.stds = standardize_spike_data(self.train_spike)
         self.spike_data, _, _ = standardize_spike_data(self.spike_data, self.means, self.stds)
 
-        self.scaler = preprocessing.StandardScaler().fit(self.train_behavior)
-        self.behavior = self.scaler.transform(self.behavior)
+        if target == 'clf':
+            enc = OneHotEncoder(handle_unknown='ignore')
+            self.behavior = enc.fit_transform(self.behavior).toarray()
+        elif self.behavior.shape[1] == self.n_t_steps:
+            self.scaler = preprocessing.StandardScaler().fit(self.train_behavior)
+            self.behavior = self.scaler.transform(self.behavior) 
+
+        if np.isnan(self.behavior).sum() != 0:
+            raise ValueError(f'Session {eid} contains NaNs in {beh_name} !')
 
         # map to device
         self.spike_data = to_tensor(self.spike_data, device).double()
@@ -79,19 +86,20 @@ class SingleSessionDataModule(LightningDataModule):
         self.data_dir = config['dirs']['data_dir']
         self.eid = config['eid']
         self.beh_name = config['target']
+        self.target = config['model']['target']
         self.device = config['training']['device']
         self.batch_size = config['training']['batch_size']
         self.n_workers = config['data']['num_workers']
 
     def setup(self, stage=None):
         self.train = SingleSessionDataset(
-            self.data_dir, self.eid, self.beh_name, self.device, split='train'
+            self.data_dir, self.eid, self.beh_name, self.target, self.device, split='train'
         )
         self.val = SingleSessionDataset(
-            self.data_dir, self.eid, self.beh_name, self.device, split='val'
+            self.data_dir, self.eid, self.beh_name, self.target, self.device, split='val'
         )
         self.test = SingleSessionDataset(
-            self.data_dir, self.eid, self.beh_name, self.device, split='test'
+            self.data_dir, self.eid, self.beh_name, self.target, self.device, split='test'
         )
         self.config.update({'n_units': self.train.n_units, 'n_t_steps': self.train.n_t_steps})
         
@@ -99,7 +107,7 @@ class SingleSessionDataModule(LightningDataModule):
     def train_dataloader(self):
         data_loader = DataLoader(
           self.train, batch_size=self.batch_size, shuffle=True, 
-          # setting num_workers > 0 triggers errors so leave it as it is for now
+          # Setting num_workers > 0 triggers errors so leave it as it is for now
           # num_workers=self.n_workers, pin_memory=True
         )
         return data_loader
@@ -110,3 +118,38 @@ class SingleSessionDataModule(LightningDataModule):
     def test_dataloader(self):
         return DataLoader(self.test, batch_size=self.batch_size, shuffle=False, drop_last=True)
 
+
+class MultiSessionDataModule(LightningDataModule):
+    def __init__(self, eids, configs):
+        super().__init__()
+        self.eids = eids
+        self.configs = configs
+        self.batch_size = configs[0]['training']['batch_size']
+
+    def setup(self, stage=None):
+        self.train, self.val, self.test = [], [], []
+        for idx, eid in enumerate(self.eids):
+            dm = SingleSessionDataModule(self.configs[idx])
+            dm.setup()
+            self.train.append(
+                DataLoader(dm.train, batch_size = self.batch_size, shuffle=True)
+            )
+            self.val.append(
+                DataLoader(dm.val, batch_size = self.batch_size, shuffle=False, drop_last=True)
+            )
+            self.test.append(
+                DataLoader(dm.test, batch_size = self.batch_size, shuffle=False, drop_last=True)
+            )
+
+    def train_dataloader(self):
+        data_loader = CombinedLoader(self.train, mode = "max_size_cycle")
+        return data_loader
+
+    def val_dataloader(self):
+        data_loader = CombinedLoader(self.val)
+        return data_loader
+
+    def test_dataloader(self):
+        data_loader = CombinedLoader(self.test)
+        return data_loader
+    

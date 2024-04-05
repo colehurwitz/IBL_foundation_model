@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: test
+wandb_project: multi-session
 log_to_wandb: false
 
 verbosity: 0
@@ -10,30 +10,31 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: test
-  run_name: ndt1-ssl
+  project: multi-session
+  run_name: 671c7ea7
 
 # Logging directories
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
   log_dir: results  # save tensorboard logs
-  dataset_cache_dir: checkpoints/datasets_cache
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt2/model_best_behav.pt
+  pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_671c7ea7.pt
   dataset_dir: berkott/ibl_ssl_data
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  huggingface_org: neurofm123
   
 
 
 # Training configuration
 training:
-  num_epochs: 200
+  num_epochs: 1000
   train_batch_size: 16
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 20  # Plot the model output every n epochs
-  save_every: null  # Save checkpoint
+  save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -62,21 +63,31 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 50 # max time sequence length
-  max_space_length: 15 # max space(neuron) sequence length
-  n_neurons_per_patch: 16 # number of neurons per patch
-  patching: True # patching the neurons
+  max_space_length: 256 # max space(neuron) sequence length
+  n_neurons_per_patch: 32 # number of neurons per patch
+  patching: false # patching the neurons
+  sort_by_depth: false
+  brain_region: GRN
 
-  include_behav: True # include behavior data
+  include_behav: true # include behavior data
+  target: choice
+
+  num_sessions: 101
+
+  split_method: session_based
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: ssl
+    method_name: ssl #ssl 
 
     use_lograte: true
-    loss: poisson_nll # mse/other distirbutions (todo)
+    loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
+    output_size: 2
+    clf: false
+    reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}

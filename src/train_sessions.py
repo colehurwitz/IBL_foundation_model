@@ -1,4 +1,5 @@
-from datasets import load_dataset, load_from_disk, concatenate_datasets
+from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
+from utils.dataset_utils import get_user_datasets, load_ibl_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
@@ -16,6 +17,7 @@ from trainer.make import make_trainer
 kwargs = {
     "model": "include:src/configs/ndt1.yaml"
 }
+
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/ndt1.yaml", config)
@@ -35,36 +37,11 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
-if "ibl" in config.data.dataset_name:
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    # show the columns
-    
-    bin_size = dataset["train"]["bin_size"][0]
-    
-
-    # split the dataset to train and test
-    dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
-    # select the train dataset and the spikes_sparse_data column
-    data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
-    train_dataset = dataset["train"].select_columns(data_columns)
-    test_dataset = dataset["test"].select_columns(data_columns)
-
-    if config.data.include_behav:
-        dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
-        dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
-        dataset = dataset.train_test_split(test_size=0.1, seed=config.seed)
-        bin_size = dataset["train"]["binsize"][0]
-
-        train_dataset = dataset["train"]
-        test_dataset = dataset["test"]
-
-    print(dataset.column_names)
-    print(f"bin_size: {bin_size}")
-
-else:
-    train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
-    test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
-    bin_size = None
+train_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+                           config.dirs.huggingface_org,
+                           num_sessions=config.data.num_sessions,
+                           split_method=config.data.split_method,
+                           seed=config.seed)
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
@@ -72,7 +49,6 @@ train_dataloader = make_loader(train_dataset,
                          pad_to_right=True, 
                          patching=config.data.patching,
                          pad_value=-1.,
-                         bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          n_neurons_per_patch=config.data.n_neurons_per_patch,
@@ -84,7 +60,6 @@ test_dataloader = make_loader(test_dataset,
                          pad_to_right=True, 
                          patching=config.data.patching,
                          pad_value=-1.,
-                         bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          n_neurons_per_patch=config.data.n_neurons_per_patch,
