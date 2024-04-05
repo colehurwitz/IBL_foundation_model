@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000
+  num_epochs: 300
   train_batch_size: 16
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -73,8 +73,9 @@ data:
   target: choice
 
   num_sessions: 101
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
-  split_method: random_split # random_split/session_based
+  split_method: session_based # random_split/session_based
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:

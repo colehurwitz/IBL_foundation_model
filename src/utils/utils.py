@@ -212,15 +212,7 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
     psth_pred_xy = compute_all_psth(X, y_pred, idxs_psth)
     r2_psth = compute_R2_psth(psth_xy, psth_pred_xy)
     r2_single_trial = np.mean(compute_R2_main(y, y_pred, clip=False))
-    '''
-    axes[-1].annotate(f'PSTH R2: {r2_psth:.2f}'+"\n"+f"#conds: {len(psth_xy.keys())}", 
-                        xy=(y.shape[1], 0), 
-                        xytext=(y.shape[1]+20, 0), 
-                        ha='left', 
-                        rotation=90)
-    '''
-    axes[0].set_ylabel(f'Neuron: #{neuron_idx}')
-    
+    axes[0].set_ylabel(f'Neuron: #{neuron_idx} \n PSTH R2: {r2_psth:.2f} \n Pred R2: {r2_single_trial:.2f}')    
     
     for ax in axes:
         # ax.axis('off')

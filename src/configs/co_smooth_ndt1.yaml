@@ -15,7 +15,7 @@ encoder:
     expand_prob: 0.0    # probability of expanding the mask in ``temporal`` mode
     max_timespan: 1     # max span of mask if expanded
     regions: null       # brain regions to mask in ``region`` mode
-    channels: [21,187,204,255,67] # neurons to mask in ``co-smooth`` mode
+    channels: [187,204,21,197,255] # neurons to mask in ``co-smooth`` mode
 
   # Context available for each timestep
   context:
