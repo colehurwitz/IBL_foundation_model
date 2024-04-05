@@ -155,6 +155,7 @@ def load_ibl_dataset(cache_dir,
                      split_method="session_based",
                      test_session_eid=[], # specify session eids for testing, session_based will be used
                      split_size = 0.1,
+                     mode = "train",
                      seed=42):
     user_datasets = get_user_datasets(user_or_org_name)
     print("Total session-wise datasets found: ", len(user_datasets))
@@ -181,6 +182,15 @@ def load_ibl_dataset(cache_dir,
     assert not (len(test_session_eid) > 0 and split_method == "random_split"), "When you have a test session, the split method should be 'session_based'"
 
     all_sessions_datasets = []
+    if mode == "eval":
+        print("eval mode: only loading test datasets...")
+        for dataset_eid in tqdm(test_session_eid_dir):
+            session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)["train"]
+            all_sessions_datasets.append(session_dataset)
+        all_sessions_datasets = concatenate_datasets(all_sessions_datasets)
+        test_dataset = all_sessions_datasets.select_columns(DATA_COLUMNS)
+        return None, test_dataset
+    
     if split_method == 'random_split':
         print("Loading datasets...")
         for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
