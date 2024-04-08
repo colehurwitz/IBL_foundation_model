@@ -107,7 +107,6 @@ class BaseDataset(torch.utils.data.Dataset):
         self.dataset = dataset
         self.target = target
         self.pad_value = pad_value
-        self.patching = patching
         self.sort_by_depth = sort_by_depth
         self.max_time_length = max_time_length
         self.max_space_length = max_space_length
@@ -198,55 +197,6 @@ class BaseDataset(torch.utils.data.Dataset):
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
                 
-        if self.patching:
-            # pad along space dimension
-            if num_neurons > max_num_neurons:
-                binned_spikes_data = binned_spikes_data[:,:max_num_neurons]
-            else: 
-                if self.pad_to_right:
-                    pad_space_length = max_num_neurons - num_neurons
-                    binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
-                else:
-                    pad_space_length = num_neurons - max_num_neurons
-                    binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, max_num_neurons, self.pad_value)
-                binned_spikes_data = binned_spikes_data.T
-                    
-            # group neurons into patches
-            neuron_patches = np.ones(
-                (self.max_time_length, self.max_space_length, self.n_neurons_per_patch)
-            ) * self.pad_value    
-            for patch_idx in range(self.max_space_length):
-                neuron_patches[:, patch_idx, :] = \
-                binned_spikes_data[:, patch_idx*self.n_neurons_per_patch:(patch_idx+1)*self.n_neurons_per_patch]
-                
-            # add space and time attention masks
-            time_attention_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)[:,None]
-            time_attention_mask = np.repeat(time_attention_mask, self.max_space_length, 1)
-            _space_attention_mask = _attention_mask(max_num_neurons, pad_space_length).astype(np.int64)[None,:]
-            _space_attention_mask = np.repeat(_space_attention_mask, self.max_time_length, 0)
-
-            # group space attention into patches
-            space_attention_mask = np.ones((self.max_time_length, self.max_space_length)).astype(np.int64)        
-            for patch_idx in range(self.max_space_length):
-                if _space_attention_mask[:, patch_idx*self.n_neurons_per_patch:(patch_idx+1)*self.n_neurons_per_patch].sum() == 0:
-                    space_attention_mask[:, patch_idx] = 0
-
-            # add space and time steps
-            spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)[:,None]
-            spikes_timestamps = np.repeat(spikes_timestamps, self.max_space_length, 1)
-            spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)[None,:]
-            spikes_spacestamps = np.repeat(spikes_spacestamps, self.max_time_length, 0)
-
-            return {
-                "neuron_patches": neuron_patches.astype(np.float32),
-                "spikes_timestamps": spikes_timestamps,
-                "spikes_spacestamps": spikes_spacestamps,
-                "time_attention_mask": time_attention_mask,
-                "space_attention_mask": space_attention_mask,
-                "target": target_behavior,
-                "neuron_depths": neuron_depths, 
-                "neuron_regions": list(neuron_regions)
-            }
         # add spikes timestamps [bs, n_spikes]
         # multiply by 100 to convert to int64
         # spikes_timestamps = _spikes_timestamps(self.max_time_length, self.bin_size) * 100
