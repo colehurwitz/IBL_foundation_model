@@ -1,4 +1,5 @@
 import os
+from math import floor
 from dataclasses import dataclass
 from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
@@ -9,6 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
+from models.masker import Masker
+from models.patcher import Patcher
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
@@ -23,7 +26,7 @@ class NDT2Output(ModelOutput):
     preds: Optional[torch.FloatTensor] = None
 
 
-# Create buffer of biggest possible context mask 
+# TO DO:
 def create_context_mask(
     context_forward, context_backward, max_space_F, max_time_F
 ) -> torch.LongTensor: # (max_n_token, max_n_token)
@@ -43,76 +46,13 @@ def create_context_mask(
     mask = mask.repeat(max_space_F, max_space_F)
     return mask
 
-
-class Masker(nn.Module):
-    '''
-    Mask spikes: (1) time steps (2) random patches.
-    '''
-    def __init__(self, embed_mode, config: DictConfig):
-        super().__init__()
-
-        self.mode = config.mode
-        self.ratio = config.ratio
-        self.zero_ratio = config.zero_ratio
-        self.random_ratio = config.random_ratio
-        self.embed_mode = embed_mode
-        self.n_time_steps = config.n_time_steps
-
-    def forward(
-        self, 
-        spikes: torch.FloatTensor,                      # (n_batch, n_token, n_channels)
-    ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (n_batch, n_token, n_channels), (n_batch, n_token, n_channels)
-
-        # (n_batch, n_token, n_channels) -> (n_batch, n_time_bins, n_patches, n_channels)
-        B, T, N = spikes.shape
-        spikes = spikes.reshape(B, self.n_time_steps, T//self.n_time_steps, N)
-        
-        mask_ratio = deepcopy(self.ratio)
-
-        # get masking probabilities
-        if self.mode == "full":
-            mask_probs = torch.full(spikes[:,:,:,0].shape, mask_ratio) # (n_batch, n_time_bins, n_patches)
-        elif self.mode == "timestep":
-            mask_probs = torch.full(spikes[:,:,0,0].shape, mask_ratio) # (n_batch, n_time_bins)
-        else:
-            raise Exception(f"Masking mode {self.mode} not implemented")
-
-        # create mask
-        mask = torch.bernoulli(mask_probs).to(spikes.device)
-
-        # expand mask
-        if self.mode == "timestep":
-            # (n_batch, n_time_bins, n_patches, n_channels)
-            mask = mask.unsqueeze(-1).unsqueeze(-1).expand_as(spikes).bool()  
-        elif self.mode == "full":
-            # (n_batch, n_time_bins, n_patches, n_channels)
-            mask = mask.unsqueeze(-1).expand_as(spikes).bool()                
-
-        # mask data
-        zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
-        spikes[zero_idx] = 0
-        random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
-        random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device) )
-        if self.embed_mode == "identity":
-            random_spikes = random_spikes.round()
-        else:
-            random_spikes = random_spikes.float()
-
-        spikes[random_idx] = random_spikes[random_idx]
-
-        # (n_batch, n_time_bins, n_patches, n_channels) -> (n_batch, n_token, n_channels) 
-        spikes, mask = spikes.flatten(1,-2), mask.flatten(1,-2)
-
-        return spikes, mask.to(torch.int64)
-
-
+# TO DO:
 class NeuralEmbeddingLayer(nn.Module):
 
     def __init__(self, hidden_size, config: DictConfig):
         super().__init__()
 
         self.bias = config.bias
-        # NDT1,: n_channels = n_neurons vs. NDT2: n_channels = n_neurons_per_patch
         self.input_dim = config.n_channels*config.mult
        
         self.max_time_F = config.max_time_F
@@ -328,7 +268,7 @@ class NeuralEncoderLayer(nn.Module):
         self.load_state_dict(temp_state_dic)   
 
 
-
+# TO DO:
 class SpaceTimeTransformer(nn.Module):
     def __init__(
         self, 
@@ -343,15 +283,20 @@ class SpaceTimeTransformer(nn.Module):
         self.use_space = config.transformer.use_space
         self.use_time = config.transformer.use_time
 
-        self.max_time_F = config.embedder.max_time_F
-        self.max_space_F = config.embedder.max_space_F
-
         self.n_cls_tokens = config.embedder.n_cls_tokens
+
+        self.max_space_F = floor(config.embedder.n_neurons/config.patcher.space_patch_size)
+        self.max_time_F = floor(config.embedder.n_timesteps/config.patcher.time_patch_size)
 
         # Masker
         self.mask = config.masker.active
         if self.mask:
-            self.masker = Masker(config.embedder.mode, config.masker)
+            self.masker = Masker(config.masker)
+
+        # Patcher
+        self.patch = config.patcher.active
+        if self.patch:
+            self.patcher = Patcher(config.patcher)
 
         # Context span mask
         context_mask = create_context_mask(
@@ -374,23 +319,27 @@ class SpaceTimeTransformer(nn.Module):
     def forward(
             self, 
             spikes:                  torch.FloatTensor,  # (n_batch, n_token, n_channels)
-            spikes_space_mask:       torch.LongTensor,   # (n_batch, n_token)
-            spikes_time_mask:        torch.LongTensor,   # (n_batch, n_token)
-            spikes_spacestamp:       torch.LongTensor,   # (n_batch, n_token)
+            spikes_mask:             torch.LongTensor,   # (n_batch, n_token)
             spikes_timestamp:        torch.LongTensor,   # (n_batch, n_token)
     ) -> torch.FloatTensor:                              # (n_batch, n_token, hidden_size)
 
-        B, T, N = spikes.size() # n_batch, n_token, n_channels
+        B, T, N = spikes.size() # n_batch, n_timesteps, n_neurons
 
         # Mask neural data
         if self.mask:
             spikes, targets_mask = self.masker(spikes)
-            if self.use_space:
-                targets_mask = targets_mask & spikes_space_mask.unsqueeze(-1).expand(B,T,N)
-            if self.use_time:
-                targets_mask = targets_mask & spikes_time_mask.unsqueeze(-1).expand(B,T,N)
+            # if self.use_space:
+            #     targets_mask = targets_mask & spikes_space_mask.unsqueeze(-1).expand(B,T,N)
+            # if self.use_time:
+            #     targets_mask = targets_mask & spikes_time_mask.unsqueeze(-1).expand(B,T,N)
         else:
             targets_mask = None
+
+        # Patch neural data
+        # Continue here
+        if self.patch:
+            spikes_patches, time_attn_mask, space_attn_mask, timestamps, spacestamps, target_masks = \
+            
 
         # Embed neural data
         x, spikes_space_mask, spikes_time_mask, spikes_spacestamp, spikes_timestamp = \
@@ -422,7 +371,7 @@ class SpaceTimeTransformer(nn.Module):
         return x, targets_mask
         
 
-
+# TO DO:
 class NDT2(nn.Module):
     def __init__(
         self, 
