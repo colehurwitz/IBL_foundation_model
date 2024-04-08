@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from utils.metric_utils import r2_score
 from sklearn.metrics import r2_score as r2_score_sklearn
 from sklearn.cluster import SpectralClustering
+from sklearn.metrics import accuracy_score
 
 def set_seed(seed):
     # set seed for reproducibility
@@ -90,7 +91,7 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
     return fig
 
 # metrics list, return different metrics results
-def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
+def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
     results = {}
     if "r2" in metrics:
         r2_list = []
@@ -105,6 +106,9 @@ def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
     if "mae" in metrics:
         mae = torch.mean(torch.abs(gt - pred))
         results["mae"] = mae
+    if "acc" in metrics:
+        acc = accuracy_score(gt.cpu().numpy(), pred.cpu().detach().numpy())
+        results["acc"] = acc
     return results
 
 
