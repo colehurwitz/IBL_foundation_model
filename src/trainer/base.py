@@ -63,7 +63,12 @@ class Trainer():
 
             # plot epoch
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
-                gt_pred_fig = self.plot_epoch(gt=test_epoch_results['test_gt'], preds=test_epoch_results['test_preds'], epoch=epoch)
+                gt_pred_fig = self.plot_epoch(
+                    gt=test_epoch_results['test_gt'], 
+                    preds=test_epoch_results['test_preds'], 
+                    epoch=epoch, 
+                    n_sample_neurons=self.config.training.n_sample_neurons
+                )
                 if self.config.wandb.use:
                     wandb.log({"gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
                                "r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
@@ -103,18 +108,12 @@ class Trainer():
     
     def _forward_model_outputs(self, batch):
         batch = move_batch_to_device(batch, self.accelerator.device)
-        if self.config.data.patching:
-            return self.model(
-                batch['neuron_patches'].flatten(1,-2), 
-                batch['space_attention_mask'].flatten(1), 
-                batch['time_attention_mask'].flatten(1),
-                batch['spikes_spacestamps'].flatten(1),
-                batch['spikes_timestamps'].flatten(1)
-            )
-        else:
-            return self.model(batch['spikes_data'], 
-                              batch['attention_mask'], 
-                              batch['spikes_timestamps']) 
+        return self.model(
+            batch['spikes_data'], 
+            batch['attention_mask'], 
+            batch['spikes_timestamps']
+        ) 
+        
     def eval_epoch(self):
         # TODO: implement this for decoding
         self.model.eval()
@@ -132,16 +131,17 @@ class Trainer():
             preds = []
             with torch.no_grad():  
                 for batch in self.test_dataloader:
-                    if self.config.data.patching:
-                        gt.append(batch['neuron_patches'].clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
-                    else:
-                        gt.append(batch['spikes_data'].clone())
                     outputs = self._forward_model_outputs(batch)
                     loss = outputs.loss
                     test_loss += loss.item()
                     test_examples += outputs.n_examples
                     if self.config.data.patching:
-                        preds.append(outputs.preds.clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
+                        gt.append(
+                            outputs.targets.clone()
+                        )
+                        preds.append(
+                            outputs.preds.clone()
+                        )
                     else:
                         preds.append(outputs.preds.clone())
             
@@ -151,9 +151,14 @@ class Trainer():
             preds = torch.exp(preds)
         if self.active_neurons is None:
             self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
-        
-        results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
-                               pred = preds.mean(0)[..., self.active_neurons].T, 
+
+        if self.config.training.n_sample_neurons is None:
+            n_sample_neurons = gt.shape[-1]
+        else:
+            n_sample_neurons = self.config.training.n_sample_neurons
+            
+        results = metrics_list(gt = gt.mean(0)[:,:n_sample_neurons][..., self.active_neurons].T,
+                               pred = preds.mean(0)[:,:n_sample_neurons][..., self.active_neurons].T, 
                                metrics=["r2"], 
                                device=self.accelerator.device)
 
@@ -164,9 +169,13 @@ class Trainer():
             "test_preds": preds,
         }
     
-    def plot_epoch(self, gt, preds, epoch):
-        gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
-                     pred = preds.mean(0).T.detach().cpu().numpy(),
+    def plot_epoch(self, gt, preds, epoch, n_sample_neurons=None):
+
+        if n_sample_neurons is None:
+            n_sample_neurons = gt.shape[-1]
+        
+        gt_pred_fig = plot_gt_pred(gt = gt.mean(0)[:,:n_sample_neurons].T.cpu().numpy(),
+                     pred = preds.mean(0)[:,:n_sample_neurons].T.detach().cpu().numpy(),
                      epoch = epoch)
         
         r2_fig = plot_neurons_r2(gt = gt.mean(0),

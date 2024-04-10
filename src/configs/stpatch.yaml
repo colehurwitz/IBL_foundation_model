@@ -8,11 +8,22 @@ encoder:
   # Mask spikes
   masker:
     active: true         
-    mode: full   #timestep    # full to zero out randomly in the featue matrix. timestep to zero out randomly full timesteps. 
-    ratio: 0.1       #0.3     # ratio of data to predict
+    mode: random      # masking mode
+    ratio: 0.1          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
-    n_time_steps: 100   # num of time bins
+    expand_prob: 0.0    # probability of expanding the mask in ``temporal`` mode
+    max_timespan: 1     # max span of mask if expanded
+    channels: null
+    # [579, 21, 486, 316, 521, 71, 32, 561, 445, 470, 205, 41, 230, 306, 592, 148, 484, 592, 181, 94, 120, 601, 414, 497, 263, 447, 16, 537, 396, 323, 68, 444, 325, 137, 223, 434, 131, 363, 280, 419, 332, 218, 130, 580, 381, 560, 576, 145, 280, 234, 258, 37, 9, 324, 199, 610, 529, 196, 164, 348]     # neurons to mask in ``co-smooth`` mode
+    mask_regions: null       # brain regions to mask in ``region`` mode
+    target_regions: null
+
+  patcher:
+    active: true       
+    space_patch_size: 64
+    time_patch_size: 5
+    time_stride: null
 
   # Context available for each timestep
   context:
@@ -23,8 +34,8 @@ encoder:
   embedder:
     n_neurons: 668
     n_timesteps: 100
-    max_space_F: 167       # max feature len in space dimension
-    max_time_F: 2       # max feature len in time dimension
+    max_time_F: 2
+    max_space_F: 167
     max_spikes: 0         # max number of spikes in a single time bin
 
     mode: linear          # linear/embed/identity
