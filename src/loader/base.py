@@ -94,11 +94,9 @@ class BaseDataset(torch.utils.data.Dataset):
         pad_value = 0.,
         max_time_length = 5000,
         max_space_length = 100,
-        n_neurons_per_patch = 64,
         bin_size = 0.05,
         mask_ratio = 0.1,
         pad_to_right = True,
-        patching = False,
         sort_by_depth = False,
         load_meta = False,
         brain_region = 'all',
@@ -110,7 +108,6 @@ class BaseDataset(torch.utils.data.Dataset):
         self.sort_by_depth = sort_by_depth
         self.max_time_length = max_time_length
         self.max_space_length = max_space_length
-        self.n_neurons_per_patch = n_neurons_per_patch
         self.bin_size = bin_size
         self.pad_to_right = pad_to_right
         self.mask_ratio = mask_ratio
