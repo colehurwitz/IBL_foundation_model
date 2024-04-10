@@ -93,7 +93,7 @@ class BaseDataset(torch.utils.data.Dataset):
         target=None,
         pad_value = 0.,
         max_time_length = 5000,
-        max_space_length = 100,
+        max_space_length = 1000,
         bin_size = 0.05,
         mask_ratio = 0.1,
         pad_to_right = True,
@@ -173,7 +173,6 @@ class BaseDataset(torch.utils.data.Dataset):
         pad_time_length, pad_space_length = 0, 0
 
         num_time_steps, num_neurons = binned_spikes_data.shape
-        max_num_neurons = self.max_space_length * self.n_neurons_per_patch
 
         if self.load_meta & self.sort_by_depth:
             # sort neurons by depth on the probe
@@ -193,6 +192,18 @@ class BaseDataset(torch.utils.data.Dataset):
             else:
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
+
+        # pad along space dimension
+        if num_neurons > self.max_space_length:
+            binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
+        else: 
+            if self.pad_to_right:
+                pad_space_length = self.max_space_length - num_neurons
+                binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+            else:
+                pad_space_length = num_neurons - self.max_space_length
+                binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+            binned_spikes_data = binned_spikes_data.T
                 
         # add spikes timestamps [bs, n_spikes]
         # multiply by 100 to convert to int64

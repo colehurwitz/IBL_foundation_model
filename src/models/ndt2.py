@@ -48,17 +48,18 @@ def create_context_mask(
 
 class NeuralEmbeddingLayer(nn.Module):
 
-    def __init__(self, hidden_size, config: DictConfig):
+    def __init__(self, hidden_size, n_channels, max_space_F, max_time_F, config: DictConfig):
         super().__init__()
 
         self.bias = config.bias
-        self.input_dim = config.n_channels*config.mult
+        self.n_channels = n_channels
+        self.input_dim = n_channels*config.mult
        
-        self.max_time_F = config.max_time_F
-        self.max_space_F = config.max_space_F
+        self.max_time_F = max_time_F
+        self.max_space_F = max_space_F
 
         if config.mode == "linear":
-            self.embed_spikes = nn.Linear(config.n_channels, self.input_dim, bias=config.bias)
+            self.embed_spikes = nn.Linear(self.n_channels, self.input_dim, bias=config.bias)
         elif config.mode == "identity":
             self.embed_spikes = nn.Identity()
         else:
@@ -96,6 +97,7 @@ class NeuralEmbeddingLayer(nn.Module):
         time_attn_mask:       Optional[torch.LongTensor],          # (n_batch, n_token)
         spacestamps:          Optional[torch.LongTensor],          # (n_batch, n_token)
         timestamps:           Optional[torch.LongTensor],          # (n_batch, n_token)
+        _targets_mask:         Optional[torch.LongTensor],          # (n_batch, n_token, n_channel)
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -118,10 +120,10 @@ class NeuralEmbeddingLayer(nn.Module):
         # Prepend space and time stamps for [cls] tokens
         if self.n_cls_tokens != 0:
             # TO DO: There may be better ways to handle the cls space & time stamps
-            spacestamps = torch.arange(self.max_space_F+self.n_cls_tokens).bool()[None,:]
+            spacestamps = torch.arange(self.max_space_F+self.n_cls_tokens).to(torch.int64)[None,:]
             spacestamps = spacestamps.expand(self.max_time_F, -1)[None,:]
             spacestamps = spacestamps.expand(B, -1, -1).flatten(1).to(spikes.device)
-            timestamps = torch.arange(self.max_time_F).bool()[:,None]
+            timestamps = torch.arange(self.max_time_F).to(torch.int64)[:,None]
             timestamps = timestamps.expand(-1, self.max_space_F+self.n_cls_tokens)[None,:]
             timestamps = timestamps.expand(B, -1, -1).flatten(1).to(spikes.device)
 
@@ -131,10 +133,16 @@ class NeuralEmbeddingLayer(nn.Module):
             cls_mask = torch.ones((B, self.max_time_F, self.n_cls_tokens)).to(spikes.device)
             space_attn_mask = torch.cat(
                 (cls_mask, space_attn_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
-            ).flatten(1).bool()
+            ).flatten(1).to(torch.int64)
             time_attn_mask = torch.cat(
                 (cls_mask, time_attn_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
-            ).flatten(1).bool()
+            ).flatten(1).to(torch.int64)
+
+        if self.n_cls_tokens != 0:
+            targets_mask = torch.zeros(
+                (B, self.max_time_F*(self.max_space_F+self.n_cls_tokens), N)
+            ).to(torch.int64).to(spikes.device)
+            targets_mask[:,self.n_cls_tokens*self.max_time_F:] = _targets_mask
 
         # Embed space position
         if self.space_pos:
@@ -144,7 +152,7 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.time_pos:
             x += self.embed_time_pos(timestamps)
 
-        return self.dropout(x), space_attn_mask, time_attn_mask, spacestamps, timestamps
+        return self.dropout(x), space_attn_mask, time_attn_mask, spacestamps, timestamps, targets_mask
 
 
 class NeuralMLP(nn.Module):
@@ -285,6 +293,7 @@ class SpaceTimeTransformer(nn.Module):
 
         self.max_space_F = floor(config.embedder.n_neurons/config.patcher.space_patch_size)
         self.max_time_F = floor(config.embedder.n_timesteps/config.patcher.time_patch_size)
+        self.n_channels = config.patcher.space_patch_size * config.patcher.time_patch_size
 
         # Masker
         self.mask = config.masker.active
@@ -299,15 +308,14 @@ class SpaceTimeTransformer(nn.Module):
         # Context span mask
         context_mask = create_context_mask(
             config.context.forward, config.context.backward, 
-            config.embedder.max_space_F+self.n_cls_tokens, config.embedder.max_time_F
+            self.max_space_F+self.n_cls_tokens, self.max_time_F
         )
         self.register_buffer("context_mask", context_mask, persistent=False)
 
         # Embedding layer
-        config.embedder.n_channels = config.patcher.space_patch_size * config.patcher.time_patch_size
-        config.embedder.max_space_F = self.max_space_F
-        config.embedder.max_time_F = self.max_time_F
-        self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
+        self.embedder = NeuralEmbeddingLayer(
+            self.hidden_size, self.n_channels, self.max_space_F, self.max_time_F, config.embedder
+        )
 
         # Transformer
         self.layers = nn.ModuleList(
@@ -333,19 +341,21 @@ class SpaceTimeTransformer(nn.Module):
         # Patch neural data
         # Continue here
         if self.patch:
-            spikes_patches, time_attn_mask, space_attn_mask, timestamps, spacestamps, target_masks = \
+            spikes, time_attn_mask, space_attn_mask, timestamps, spacestamps, targets_mask = \
             self.patcher(spikes, targets_mask)
+
+        _, _, N = spikes.size()
+
+        # Embed neural data
+        x, space_attn_mask, time_attn_mask, spacestamps, timestamps, targets_mask = \
+        self.embedder(spikes, space_attn_mask, time_attn_mask, spacestamps, timestamps, targets_mask)
+
+        B, T, _ = x.size() 
 
         if self.use_space:
             targets_mask = targets_mask & space_attn_mask.unsqueeze(-1).expand(B,T,N)
         if self.use_time:
             targets_mask = targets_mask & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-
-        # Embed neural data
-        x, space_attn_mask, time_attn_mask, spacestamps, timestamps = \
-        self.embedder(spikes, space_attn_mask, time_attn_mask, spacestamps, timestamps)
-
-        B, T, N = x.size() 
 
         context_mask = self.context_mask[:T,:T].to(x.device).unsqueeze(0).expand(B,T,T)
         if self.use_space:
@@ -368,7 +378,7 @@ class SpaceTimeTransformer(nn.Module):
             x = layer(x, attn_mask=attn_mask)
         x = self.out_norm(x)
 
-        return x, targets_mask
+        return x, targets_mask, spikes
         
 
 
@@ -397,7 +407,7 @@ class NDT2(nn.Module):
         # Build decoder
         if self.method == "ssl":
             assert config.encoder.masker.active, "Can't pretrain with inactive masking"
-            n_outputs = config.encoder.embedder.n_channels
+            n_outputs = self.encoder.n_channels
         elif self.method == "sl":
             n_outputs = kwargs["output_size"]
         else:
@@ -456,16 +466,17 @@ class NDT2(nn.Module):
         targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
     ) -> NDT2Output:   
 
+        # Encode neural data
+        x, targets_mask, spikes = self.encoder(spikes, spikes_mask, spikes_timestamp)
+
         if self.method == "ssl":
             targets = spikes.clone()
-
-        # Encode neural data
-        x, targets_mask = self.encoder(spikes, spikes_mask, spikes_timestamp)
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
             # Grab the spike embeddings
             x = x[:,(self.encoder.max_time_F * self.encoder.n_cls_tokens):]
+            targets_mask = targets_mask[:,(self.encoder.max_time_F * self.encoder.n_cls_tokens):]
             outputs = self.decoder(x)
         elif self.method == "sl":
             # Grab the prepended [cls] embeddings

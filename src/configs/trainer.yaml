@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: ndt2-ssl
+wandb_project: ndt2-ssl #decoding  #ndt1-ssl 
 log_to_wandb: false
 
 verbosity: 0
@@ -10,8 +10,8 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: ndt2-ssl
-  run_name: 671c7ea7
+  project: ndt2-ssl # ndt1-ssl  # decoding
+  run_name: 671c7ea7_test_run
 
 # Logging directories
 dirs:
@@ -19,8 +19,9 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt2/model_best_behav.pt
-  dataset_dir: berkott/ibl_ssl_data
+  # pretrained_model_path: checkpoints/models/ndt2/model_best_behav.pt
+  pretrained_model_path: results/train/model_STPatch/method_ssl/model_epoch.pt
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   
 
@@ -35,6 +36,7 @@ training:
   save_plot_every_n_epochs: 20  # Plot the model output every n epochs
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
+  n_sample_neurons: null  # 200
 
 
 
@@ -62,13 +64,12 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100 # max time sequence length
-  max_space_length: 8 # max space(neuron) sequence length
-  n_neurons_per_patch: 32 # number of neurons per patch
-  patching: true # patching the neurons
+  max_space_length: 200 # max space(neuron) sequence length
   sort_by_depth: false
-  brain_region: GRN
-
-  include_behav: true # include behavior data
+  brain_region: all
+  patching: false
+  
+  include_behav: true  #true # include behavior data
   target: choice
 
 # Method configuration. Contains kwargs that are specific to the training method.
@@ -76,10 +77,10 @@ method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: ssl  #sl 
+    method_name: ssl  # sl
 
     use_lograte: true
-    loss: poisson_nll  # cross_entropy # mse/other distirbutions (todo)
+    loss: poisson_nll  # cross_entropy  # mse/other distirbutions (todo)
     output_size: 2
     clf: false
     reg: false
@@ -101,8 +102,8 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
-  wd: 0.01
+  lr: 1.e-4 #1.e-3
+  wd: 0.01 #0.1 #0.001
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
   gamma: 0.95     # step

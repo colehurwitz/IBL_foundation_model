@@ -139,3 +139,4 @@ def config_from_kwargs(kwargs):
             cur[key.split(".")[-1]] = value
 
     return DictConfig(config)
+    

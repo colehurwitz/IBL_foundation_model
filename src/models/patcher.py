@@ -47,13 +47,13 @@ class Patcher(nn.Module):
         spikes_patches = torch.zeros((B, self.n_time_patches, self.n_space_patches, self.patch_size))
         for t_idx in range(self.n_time_patches):
             for s_idx in range(self.n_space_patches):
-                spikes_patches[:,t_idx,s_idx] = spikes[:,t_idx*self.time_patch_size:(t_idx+1)*self.time_patch_size,s_idx*self.space_patch_size:(s_idx+1)*self.space_patch_size]
+                spikes_patches[:,t_idx,s_idx] = spikes[:,t_idx*self.time_patch_size:(t_idx+1)*self.time_patch_size,s_idx*self.space_patch_size:(s_idx+1)*self.space_patch_size].squeeze()
 
         # patch target masks
         target_masks = torch.zeros((B, self.n_time_patches, self.n_space_patches, self.patch_size))
         for t_idx in range(self.n_time_patches):
             for s_idx in range(self.n_space_patches):
-                target_masks[:,t_idx,s_idx] = _target_masks[:,t_idx*self.time_patch_size:(t_idx+1)*self.time_patch_size,s_idx*self.space_patch_size:(s_idx+1)*self.space_patch_size]
+                target_masks[:,t_idx,s_idx] = _target_masks[:,t_idx*self.time_patch_size:(t_idx+1)*self.time_patch_size,s_idx*self.space_patch_size:(s_idx+1)*self.space_patch_size].squeeze()
 
         # create space and time attention masks
         _time_attn_mask = _time_attn_mask.expand(B,-1,self.n_space_patches)
@@ -78,15 +78,15 @@ class Patcher(nn.Module):
         spacestamps = spacestamps.expand(B,self.n_time_patches,-1)
 
         spikes_patches = spikes_patches.to(spikes.device).flatten(1,-2)
-        time_attn_mask = time_attn_mask.bool().to(spikes.device).flatten(1)
-        space_attn_mask = space_attn_mask.bool().to(spikes.device).flatten(1)
-        timestamps = timestamps.bool().to(spikes.device).flatten(1)
-        spacestamps = spacestamps.bool().to(spikes.device).flatten(1)
-        target_masks = target_masks.bool().to(spikes.device).flatten(1,-2)
+        time_attn_mask = time_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
+        space_attn_mask = space_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
+        timestamps = timestamps.to(torch.int64).to(spikes.device).flatten(1)
+        spacestamps = spacestamps.to(torch.int64).to(spikes.device).flatten(1)
+        target_masks = target_masks.to(torch.int64).to(spikes.device).flatten(1,-2)
 
         return spikes_patches, time_attn_mask, space_attn_mask, timestamps, spacestamps, target_masks
 
-    def _attention_mask(seq_length: int, pad_length: int,) -> torch.tensor:
+    def _attention_mask(self, seq_length: int, pad_length: int) -> torch.tensor:
         mask = torch.ones(seq_length)
         if pad_length:
             mask[-pad_length:] = 0
