@@ -11,7 +11,7 @@ wandb:
   use: true
   entity: null
   project: ndt2-ssl # ndt1-ssl  # decoding
-  run_name: 671c7ea7_test_run
+  run_name: 671c7ea7
 
 # Logging directories
 dirs:
@@ -33,7 +33,7 @@ training:
   test_batch_size: 1024  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 20  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
   n_sample_neurons: null  # 200
@@ -64,10 +64,10 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100 # max time sequence length
-  max_space_length: 200 # max space(neuron) sequence length
+  max_space_length: 700 #668 # max space(neuron) sequence length
   sort_by_depth: false
   brain_region: all
-  patching: false
+  patching: true
   
   include_behav: true  #true # include behavior data
   target: choice
@@ -102,7 +102,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4 #1.e-3
+  lr: 1.e-3 #1.e-4
   wd: 0.01 #0.1 #0.001
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

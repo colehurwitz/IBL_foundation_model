@@ -21,9 +21,7 @@ encoder:
 
   patcher:
     active: true       
-    space_patch_size: 64
-    time_patch_size: 5
-    time_stride: null
+    time_stride: 0
 
   # Context available for each timestep
   context:
@@ -32,7 +30,7 @@ encoder:
 
   # Embedding layer
   embedder:
-    n_neurons: 668
+    n_neurons: 700 #668
     n_timesteps: 100
     max_time_F: 2
     max_space_F: 167
