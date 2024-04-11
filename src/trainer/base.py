@@ -28,12 +28,17 @@ class Trainer():
         self.lr_scheduler = kwargs.get("lr_scheduler", None)
         self.config = kwargs.get("config", None)
 
+        if self.config.method.model_kwargs.clf:
+            self.metric = 'acc'
+        else:
+            self.metric = 'r2'
+                
         self.active_neurons = None
 
     def train(self):
         best_test_loss = torch.tensor(float('inf'))
-        best_eval_trial_avg_r2 = -torch.tensor(float('inf'))
-        best_test_trial_avg_r2 = -torch.tensor(float('inf'))
+        best_eval_trial_avg_metric = -torch.tensor(float('inf'))
+        best_test_trial_avg_metric = -torch.tensor(float('inf'))
         # train loop
         for epoch in range(self.config.training.num_epochs):
             train_epoch_results = self.train_epoch(epoch)
@@ -43,28 +48,36 @@ class Trainer():
             # if eval_epoch_results dict is not empty
             if eval_epoch_results:
                 print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']}")
-                if eval_epoch_results['eval_trial_avg_r2'] > best_eval_trial_avg_r2:
-                    best_eval_trial_avg_r2 = eval_epoch_results['eval_trial_avg_r2']
-                    print(f"epoch: {epoch} best eval trial avg r2: {best_eval_trial_avg_r2}")
+                if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                    best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
+                    print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
             # if test_epoch_results dict is not empty
             if test_epoch_results:
-                if test_epoch_results['test_trial_avg_r2'] > best_test_trial_avg_r2:
-                    best_test_trial_avg_r2 = test_epoch_results['test_trial_avg_r2']
-                    print(f"epoch: {epoch} best test trial avg r2: {best_test_trial_avg_r2}")
+                if test_epoch_results[f'test_trial_avg_{self.metric}'] > best_test_trial_avg_metric:
+                    best_test_trial_avg_metric = test_epoch_results[f'test_trial_avg_{self.metric}']
+                    print(f"epoch: {epoch} best test trial avg {self.metric}: {best_test_trial_avg_metric}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
-                    gt_pred_fig = self.plot_epoch(gt=test_epoch_results['test_gt'], preds=test_epoch_results['test_preds'], epoch=epoch)
-                    if self.config.wandb.use:
-                        wandb.log({"best_epoch": epoch,
-                                "best_gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
-                                "best_r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
-                    else:
-                        gt_pred_fig['plot_gt_pred'].savefig(os.path.join(self.log_dir, f"best_gt_pred_fig_{epoch}.png"))
-                        gt_pred_fig['plot_r2'].savefig(os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png"))
+                    if self.config.method.model_kwargs.method_name == 'ssl':
+                        gt_pred_fig = self.plot_epoch(
+                            gt=test_epoch_results['test_gt'], 
+                            preds=test_epoch_results['test_preds'], epoch=epoch
+                        )
+                        if self.config.wandb.use:
+                            wandb.log({"best_epoch": epoch,
+                                    "best_gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
+                                    "best_r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
+                        else:
+                            gt_pred_fig['plot_gt_pred'].savefig(
+                                os.path.join(self.log_dir, f"best_gt_pred_fig_{epoch}.png")
+                            )
+                            gt_pred_fig['plot_r2'].savefig(
+                                os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png")
+                            )
                 if test_epoch_results['test_loss'] < best_test_loss:
                     best_test_loss = test_epoch_results['test_loss']
                     print(f"epoch: {epoch} best test loss: {best_test_loss}")
-                print(f"epoch: {epoch} test loss: {test_epoch_results['test_loss']} r2: {test_epoch_results['test_trial_avg_r2']}")
+                print(f"epoch: {epoch} test loss: {test_epoch_results['test_loss']} {self.metric}: {test_epoch_results[f'test_trial_avg_{self.metric}']}")
 
             # save model by epoch
             if epoch % self.config.training.save_every == 0:
@@ -72,26 +85,39 @@ class Trainer():
 
             # plot epoch
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
-                gt_pred_fig = self.plot_epoch(gt=test_epoch_results['test_gt'], preds=test_epoch_results['test_preds'], epoch=epoch)
-                if self.config.wandb.use:
-                    wandb.log({"gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
-                               "r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
-                else:
-                    gt_pred_fig['plot_gt_pred'].savefig(os.path.join(self.log_dir, f"gt_pred_fig_{epoch}.png"))
-                    gt_pred_fig['plot_r2'].savefig(os.path.join(self.log_dir, f"r2_fig_{epoch}.png"))
+                if self.config.method.model_kwargs.method_name == 'ssl':
+                    gt_pred_fig = self.plot_epoch(
+                        gt=test_epoch_results['test_gt'], 
+                        preds=test_epoch_results['test_preds'], 
+                        epoch=epoch
+                    )
+                    if self.config.wandb.use:
+                        wandb.log({
+                            "gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
+                            "r2_fig": wandb.Image(gt_pred_fig['plot_r2'])
+                        })
+                    else:
+                        gt_pred_fig['plot_gt_pred'].savefig(
+                            os.path.join(self.log_dir, f"gt_pred_fig_{epoch}.png")
+                        )
+                        gt_pred_fig['plot_r2'].savefig(
+                            os.path.join(self.log_dir, f"r2_fig_{epoch}.png")
+                        )
 
             # wandb log
             if self.config.wandb.use:
-                wandb.log({"train_loss": train_epoch_results['train_loss'],
-                           "test_loss": test_epoch_results['test_loss'],
-                           "test_trial_avg_r2": test_epoch_results['test_trial_avg_r2']})
+                wandb.log({
+                    "train_loss": train_epoch_results['train_loss'],
+                    "test_loss": test_epoch_results['test_loss'],
+                    f"test_trial_avg_{self.metric}": test_epoch_results[f'test_trial_avg_{self.metric}']
+                })
                 
         # save last model
         self.save_model(name="last", epoch=epoch)
         
         if self.config.wandb.use:
             wandb.log({"best_test_loss": best_test_loss,
-                       "best_test_trial_avg_r2": best_test_trial_avg_r2})
+                       f"best_test_trial_avg_{self.metric}": best_test_trial_avg_metric})
             
     def train_epoch(self, epoch):
         train_loss = 0.
@@ -145,19 +171,30 @@ class Trainer():
                     preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
+            
         if self.config.method.model_kwargs.loss == "poisson_nll":
             preds = torch.exp(preds)
+        elif self.config.method.model_kwargs.loss == "cross_entropy":
+            preds = torch.nn.functional.softmax(preds, dim=1)
+            
         if self.active_neurons is None:
             self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
-        
-        results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
-                               pred = preds.mean(0)[..., self.active_neurons].T, 
-                               metrics=["r2"], 
-                               device=self.accelerator.device)
+
+        if self.config.method.model_kwargs.method_name == 'ssl':
+            results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
+                                   pred = preds.mean(0)[..., self.active_neurons].T, 
+                                   metrics=["r2"], 
+                                   device=self.accelerator.device)
+        elif self.config.method.model_kwargs.method_name == 'sl':
+            if self.config.method.model_kwargs.clf:
+                results = metrics_list(gt = gt.argmax(1),
+                                       pred = preds.argmax(1), 
+                                       metrics=[self.metric], 
+                                       device=self.accelerator.device)
 
         return {
             "test_loss": test_loss/test_examples,
-            "test_trial_avg_r2": results['r2'],
+            f"test_trial_avg_{self.metric}": results[self.metric],
             "test_gt": gt,
             "test_preds": preds,
         }
