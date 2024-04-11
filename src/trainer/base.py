@@ -160,14 +160,14 @@ class Trainer():
             preds = []
             with torch.no_grad():  
                 for batch in self.test_dataloader:
-                    if self.config.data.patching:
-                        gt.append(outputs.targets.clone())
-                    else:
-                        gt.append(batch['spikes_data'].clone())
                     outputs = self._forward_model_outputs(batch)
                     loss = outputs.loss
                     test_loss += loss.item()
                     test_examples += outputs.n_examples
+                    if self.config.data.patching:
+                        gt.append(outputs.targets.clone())
+                    else:
+                        gt.append(batch['spikes_data'].clone())
                     preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
