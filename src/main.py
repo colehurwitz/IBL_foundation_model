@@ -5,7 +5,7 @@ from utils.utils import set_seed
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
-from models.ndt2 import NDT2
+from models.stpatch import STPatch
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
 import numpy as np
@@ -70,24 +70,20 @@ else:
 train_dataloader = make_loader(train_dataset, 
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
-                         patching=config.data.patching,
                          pad_value=-1.,
                          bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
                          dataset_name=config.data.dataset_name,
                          shuffle=True)
 
 test_dataloader = make_loader(test_dataset, 
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
-                         patching=config.data.patching,
                          pad_value=-1.,
                          bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
                          dataset_name=config.data.dataset_name,
                          shuffle=False)
 
@@ -95,7 +91,7 @@ test_dataloader = make_loader(test_dataset,
 accelerator = Accelerator()
 
 # load model
-NAME2MODEL = {"NDT1": NDT1, "NDT2": NDT2}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 model = accelerator.prepare(model)
