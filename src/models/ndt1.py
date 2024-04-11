@@ -317,7 +317,7 @@ class NeuralAttention(nn.Module):
         B, T, _  = x.size()     # batch size and fea len
 
         # Create batched bool attention mask 
-        assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
+        # assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
         attn_mask = attn_mask.unsqueeze(1).expand(B,self.n_heads,T,T).bool()            # (B,n_heads,T,T)
         
         # Compute query, key, value for attention

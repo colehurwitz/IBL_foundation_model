@@ -21,7 +21,7 @@ encoder:
 
   # Embedding layer
   embedder:
-    n_channels: 16        # number of neurons recorded 
+    n_channels: 32        # number of neurons recorded 
     max_space_F: 15     # max feature len in space dimension
     max_time_F: 50       # max feature len in time dimension
     max_spikes: 0         # max number of spikes in a single time bin
@@ -34,6 +34,8 @@ encoder:
     scale: 1              # scale the embedding multiplying by this number
     bias: true            # use bias in the embedding layer
     dropout: 0.2          # dropout in embedding layer
+
+    n_cls_tokens: 1       # number of [cls] tokens for downstream tasks, e.g., behavior/region decoding
 
 
   # Transformer

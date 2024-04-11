@@ -1,5 +1,5 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
-from utils.dataset_utils import get_user_datasets, load_ibl_dataset
+from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
@@ -15,12 +15,12 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
+    "model": "include:src/configs/ndt2.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1.yaml", config)
+config = update_config("src/configs/ndt2.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
@@ -37,12 +37,28 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
+eid = None
 train_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                            config.dirs.huggingface_org,
+                           eid=eid,
                            num_sessions=config.data.num_sessions,
                            split_method=config.data.split_method,
                            test_session_eid=config.data.test_session_eid,
                            seed=config.seed)
+if config.data.use_aligned_test:
+    # aligned dataset
+    if eid is None:
+        test_dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
+        data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
+        test_dataset = concatenate_datasets([test_dataset["train"], test_dataset["val"], test_dataset["test"]])
+        test_dataset = test_dataset.select_columns(data_columns)
+    else:
+        aligned_dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
+        aligned_dataset = concatenate_datasets([aligned_dataset["train"], aligned_dataset["val"], aligned_dataset["test"]])
+        train_dataset, test_dataset = split_both_dataset(aligned_dataset=aligned_dataset,
+                                                         unaligned_dataset=train_dataset,
+                                                         seed=config.seed)
+
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
