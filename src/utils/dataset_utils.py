@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.sparse import csr_array
-from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets
+from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict
 import h5py
 import os
 import torch
@@ -160,15 +160,16 @@ def load_ibl_dataset(cache_dir,
     user_datasets = get_user_datasets(user_or_org_name)
     print("Total session-wise datasets found: ", len(user_datasets))
     cache_dir = os.path.join(cache_dir, "ibl", user_or_org_name)
+    test_session_eid_dir = []
+    train_session_eid_dir = []
     if eid is not None:
         eid_dir = os.path.join(user_or_org_name, eid)
         if eid_dir not in user_datasets:
             raise ValueError(f"Dataset with eid: {eid} not found in the user's datasets")
         else:
+            train_session_eid_dir = [eid_dir]
             user_datasets = [eid_dir]
 
-    test_session_eid_dir = []
-    train_session_eid_dir = []
     if len(test_session_eid) > 0:
         test_session_eid_dir = [os.path.join(user_or_org_name, eid) for eid in test_session_eid]
         print("Test session-wise datasets found: ", len(test_session_eid_dir))
@@ -199,8 +200,8 @@ def load_ibl_dataset(cache_dir,
         all_sessions_datasets = concatenate_datasets(all_sessions_datasets)
         # split the dataset to train and test
         dataset = all_sessions_datasets.train_test_split(test_size=split_size, seed=seed)
-        train_dataset = dataset["train"].select_columns(DATA_COLUMNS)
-        test_dataset = dataset["test"].select_columns(DATA_COLUMNS)
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
     elif split_method == 'session_based':
         print("Loading train dataset sessions...")
         for dataset_eid in tqdm(train_session_eid_dir):
@@ -215,10 +216,64 @@ def load_ibl_dataset(cache_dir,
             all_sessions_datasets.append(session_dataset)
         test_dataset = concatenate_datasets(all_sessions_datasets)
         
-        train_dataset = train_dataset.select_columns(DATA_COLUMNS)
-        test_dataset = test_dataset.select_columns(DATA_COLUMNS)
+        train_dataset = train_dataset
+        test_dataset = test_dataset
     else:
         raise ValueError("Invalid split method. Please choose either 'random_split' or 'session_based'")
     
     return train_dataset, test_dataset
+
+def _time_extract(data):
+    data['time'] = data['intervals'][0]
+    return data
+
+# split the aligned and unaligned dataset together.
+def split_both_dataset(
+        aligned_dataset,
+        unaligned_dataset,
+        train_size=0.9,
+        test_size=0.1,
+        shuffle=True,
+        seed=42
+):
+    assert train_size + test_size == 1, "The sum of train/test is not equal to 1."
+
+    aligned_dataset = aligned_dataset.map(_time_extract)
+    unaligned_dataset = unaligned_dataset.map(_time_extract)
+
+    # split the aligned data first
+    _tmp1 = aligned_dataset.train_test_split(train_size=train_size, test_size=test_size, shuffle=shuffle, seed=seed)
+    test_alg = _tmp1['test']
+    train_alg = _tmp1['train']
+
+
+    new_aligned_dataset = DatasetDict({
+        'train': train_alg,
+        'test': test_alg
+    })
+
+    # split the unaligned data according to the aligned data
+    times_test = test_alg['time']
+
+    train_idxs = []
+    test_idxs = []
+
+    for i, data_ual in enumerate(unaligned_dataset):
+        time_ual = data_ual['time']
+
+        if any(abs(time_ual - time_test) <= 2 for time_test in times_test):
+            test_idxs.append(i)
+
+        else:
+            train_idxs.append(i)
+
+    train_ual = unaligned_dataset.select(train_idxs)
+    test_ual = unaligned_dataset.select(test_idxs)
+
+    new_unaligned_dataset = DatasetDict({
+        'train': train_ual,
+        'test': test_ual
+    })
+
+    return new_aligned_dataset, new_unaligned_dataset
             

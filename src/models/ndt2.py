@@ -13,8 +13,8 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
-# DEFAULT_CONFIG = "src/configs/ndt2.yaml"
-DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
+DEFAULT_CONFIG = "src/configs/ndt2.yaml"
+# DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
 
 @dataclass
 class NDT2Output(ModelOutput):
