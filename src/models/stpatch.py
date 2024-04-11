@@ -1,4 +1,5 @@
 import os
+from math import floor, ceil
 from dataclasses import dataclass
 from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
@@ -10,18 +11,21 @@ import torch.nn.functional as F
 from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
+from models.masker import Masker
+from models.patcher import Patcher
+
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
-DEFAULT_CONFIG = "src/configs/ndt2.yaml"
-# DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt2.yaml"
+DEFAULT_CONFIG = "src/configs/stpatch.yaml"
 
 @dataclass
-class NDT2Output(ModelOutput):
+class STPatchOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     n_examples: Optional[torch.LongTensor] = None
     preds: Optional[torch.FloatTensor] = None
-
+    targets: Optional[torch.FloatTensor] = None
+  
 
 # Create buffer of biggest possible context mask 
 def create_context_mask(
@@ -44,82 +48,27 @@ def create_context_mask(
     return mask
 
 
-class Masker(nn.Module):
-    '''
-    Mask spikes: (1) time steps (2) random patches.
-    '''
-    def __init__(self, embed_mode, config: DictConfig):
-        super().__init__()
-
-        self.mode = config.mode
-        self.ratio = config.ratio
-        self.zero_ratio = config.zero_ratio
-        self.random_ratio = config.random_ratio
-        self.embed_mode = embed_mode
-        self.n_time_steps = config.n_time_steps
-
-    def forward(
-        self, 
-        spikes: torch.FloatTensor,                      # (n_batch, n_token, n_channels)
-    ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (n_batch, n_token, n_channels), (n_batch, n_token, n_channels)
-
-        # (n_batch, n_token, n_channels) -> (n_batch, n_time_bins, n_patches, n_channels)
-        B, T, N = spikes.shape
-        spikes = spikes.reshape(B, self.n_time_steps, T//self.n_time_steps, N)
-        
-        mask_ratio = deepcopy(self.ratio)
-
-        # get masking probabilities
-        if self.mode == "full":
-            mask_probs = torch.full(spikes[:,:,:,0].shape, mask_ratio) # (n_batch, n_time_bins, n_patches)
-        elif self.mode == "timestep":
-            mask_probs = torch.full(spikes[:,:,0,0].shape, mask_ratio) # (n_batch, n_time_bins)
-        else:
-            raise Exception(f"Masking mode {self.mode} not implemented")
-
-        # create mask
-        mask = torch.bernoulli(mask_probs).to(spikes.device)
-
-        # expand mask
-        if self.mode == "timestep":
-            # (n_batch, n_time_bins, n_patches, n_channels)
-            mask = mask.unsqueeze(-1).unsqueeze(-1).expand_as(spikes).bool()  
-        elif self.mode == "full":
-            # (n_batch, n_time_bins, n_patches, n_channels)
-            mask = mask.unsqueeze(-1).expand_as(spikes).bool()                
-
-        # mask data
-        zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
-        spikes[zero_idx] = 0
-        random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
-        random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device) )
-        if self.embed_mode == "identity":
-            random_spikes = random_spikes.round()
-        else:
-            random_spikes = random_spikes.float()
-
-        spikes[random_idx] = random_spikes[random_idx]
-
-        # (n_batch, n_time_bins, n_patches, n_channels) -> (n_batch, n_token, n_channels) 
-        spikes, mask = spikes.flatten(1,-2), mask.flatten(1,-2)
-
-        return spikes, mask.to(torch.int64)
-
-
 class NeuralEmbeddingLayer(nn.Module):
 
     def __init__(self, hidden_size, config: DictConfig):
         super().__init__()
 
         self.bias = config.bias
-        # NDT1,: n_channels = n_neurons vs. NDT2: n_channels = n_neurons_per_patch
-        self.input_dim = config.n_channels*config.mult
-       
-        self.max_time_F = config.max_time_F
-        self.max_space_F = config.max_space_F
 
+        self.n_neurons = config.n_neurons
+        self.n_timesteps = config.n_timesteps
+        self.max_space_F = config.max_space_F
+        self.max_time_F = config.max_time_F
+
+        self.n_space_patches = floor(self.n_neurons/self.max_space_F)
+        self.n_time_patches = floor(self.n_timesteps/self.max_time_F)
+        self.n_channels = self.max_time_F * self.max_space_F
+
+        self.input_dim = self.n_channels*config.mult
+        self.mode = config.mode
+       
         if config.mode == "linear":
-            self.embed_spikes = nn.Linear(config.n_channels, self.input_dim, bias=config.bias)
+            self.embed_spikes = nn.Linear(self.n_channels, self.input_dim, bias=config.bias)
         elif config.mode == "identity":
             self.embed_spikes = nn.Identity()
         else:
@@ -128,7 +77,7 @@ class NeuralEmbeddingLayer(nn.Module):
         # initiate [cls] tokens for downstream tasks
         self.n_cls_tokens = config.n_cls_tokens
         if self.n_cls_tokens != 0:
-            self.cls_tokens = nn.Parameter(torch.zeros(1, self.max_time_F*self.n_cls_tokens, self.input_dim))
+            self.cls_tokens = nn.Parameter(torch.zeros(1, self.n_time_patches*self.n_cls_tokens, self.input_dim))
 
         self.projection = nn.Linear(self.input_dim, hidden_size)
 
@@ -138,25 +87,17 @@ class NeuralEmbeddingLayer(nn.Module):
         # embedding scale
         self.scale = hidden_size ** 0.5 if config.scale == None else config.scale
 
-        # embed space postion
-        self.space_pos = config.space_pos
-        if self.space_pos:
-            self.embed_space_pos = nn.Embedding(self.max_time_F*(self.max_space_F+self.n_cls_tokens), hidden_size)
+        # embed patch postion
+        self.embed_space_pos = nn.Embedding(self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size)
+        self.embed_time_pos = nn.Embedding(self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size)
 
-        # embed time postion
-        self.time_pos = config.time_pos
-        if self.time_pos:
-            self.embed_time_pos = nn.Embedding(self.max_time_F*(self.max_space_F+self.n_cls_tokens), hidden_size)
-        
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(
         self, 
         spikes:               torch.FloatTensor,                   # (n_batch, n_token, n_channels)
-        spikes_space_mask:    Optional[torch.LongTensor],          # (n_batch, n_token)
-        spikes_time_mask:     Optional[torch.LongTensor],          # (n_batch, n_token)
-        spikes_spacestamp:    Optional[torch.LongTensor],          # (n_batch, n_token)
-        spikes_timestamp:     Optional[torch.LongTensor],          # (n_batch, n_token)
+        spacestamps:          torch.LongTensor,
+        timestamps:           torch.LongTensor,
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -175,37 +116,12 @@ class NeuralEmbeddingLayer(nn.Module):
         x = self.act(x) * self.scale
 
         x = self.projection(x)
+       
+        # Embed patch position
+        x += self.embed_space_pos(spacestamps)
+        x += self.embed_time_pos(timestamps)
 
-        # Prepend space and time stamps for [cls] tokens
-        if self.n_cls_tokens != 0:
-            # TO DO: There may be better ways to handle the cls space & time stamps
-            spikes_spacestamp = torch.arange(self.max_space_F+self.n_cls_tokens).to(torch.int64)[None,:]
-            spikes_spacestamp = spikes_spacestamp.expand(self.max_time_F, -1)[None,:]
-            spikes_spacestamp = spikes_spacestamp.expand(B, -1, -1).flatten(1).to(spikes.device)
-            spikes_timestamp = torch.arange(self.max_time_F).to(torch.int64)[:,None]
-            spikes_timestamp = spikes_timestamp.expand(-1, self.max_space_F+self.n_cls_tokens)[None,:]
-            spikes_timestamp = spikes_timestamp.expand(B, -1, -1).flatten(1).to(spikes.device)
-
-        # Prepend space and time masks for [cls] tokens
-        if self.n_cls_tokens != 0:
-            # TO DO: There may be better ways to handle the cls space & time masks
-            cls_mask = torch.ones((B, self.max_time_F, self.n_cls_tokens)).to(spikes.device)
-            spikes_space_mask = torch.cat(
-                (cls_mask, spikes_space_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
-            ).flatten(1).to(torch.int64)
-            spikes_time_mask = torch.cat(
-                (cls_mask, spikes_time_mask.reshape((-1, self.max_time_F, self.max_space_F))), dim=2
-            ).flatten(1).to(torch.int64)
-
-        # Embed space position
-        if self.space_pos:
-            x += self.embed_space_pos(spikes_spacestamp)
-
-        # Embed time position
-        if self.time_pos:
-            x += self.embed_time_pos(spikes_timestamp)
-
-        return self.dropout(x), spikes_space_mask, spikes_time_mask, spikes_spacestamp, spikes_timestamp
+        return self.dropout(x)
 
 
 class NeuralMLP(nn.Module):
@@ -340,23 +256,32 @@ class SpaceTimeTransformer(nn.Module):
         self.hidden_size = config.transformer.hidden_size
         self.n_layers = config.transformer.n_layers
 
-        self.use_space = config.transformer.use_space
-        self.use_time = config.transformer.use_time
-
         self.max_time_F = config.embedder.max_time_F
         self.max_space_F = config.embedder.max_space_F
+
+        self.n_space_patches = floor(config.embedder.n_neurons/self.max_space_F)
+        self.n_time_patches = floor(config.embedder.n_timesteps/self.max_time_F)
+
+        self.n_channels = self.max_time_F * self.max_space_F
 
         self.n_cls_tokens = config.embedder.n_cls_tokens
 
         # Masker
         self.mask = config.masker.active
         if self.mask:
-            self.masker = Masker(config.embedder.mode, config.masker)
+            self.masker = Masker(config.masker)
+
+        # Patcher
+        self.patch = config.patcher.active
+        if self.patch:
+            self.patcher = Patcher(
+                self.max_space_F, self.max_time_F, self.n_cls_tokens, config.patcher
+            )
 
         # Context span mask
         context_mask = create_context_mask(
             config.context.forward, config.context.backward, 
-            config.embedder.max_space_F+self.n_cls_tokens, config.embedder.max_time_F
+            self.max_space_F+self.n_cls_tokens, self.max_time_F
         )
         self.register_buffer("context_mask", context_mask, persistent=False)
 
@@ -366,7 +291,7 @@ class SpaceTimeTransformer(nn.Module):
         # Transformer
         self.layers = nn.ModuleList(
             [NeuralEncoderLayer(
-                idx, self.max_time_F*(self.max_space_F+self.n_cls_tokens), config.transformer
+                idx, self.n_time_patches*(self.n_space_patches+self.n_cls_tokens), config.transformer
             ) for idx in range(self.n_layers)]
         )
         self.out_norm = nn.LayerNorm(self.hidden_size) 
@@ -374,10 +299,10 @@ class SpaceTimeTransformer(nn.Module):
     def forward(
             self, 
             spikes:                  torch.FloatTensor,  # (n_batch, n_token, n_channels)
-            spikes_space_mask:       torch.LongTensor,   # (n_batch, n_token)
-            spikes_time_mask:        torch.LongTensor,   # (n_batch, n_token)
-            spikes_spacestamp:       torch.LongTensor,   # (n_batch, n_token)
-            spikes_timestamp:        torch.LongTensor,   # (n_batch, n_token)
+            pad_space_len,
+            pad_time_len,
+            spikes_mask:      Optional[torch.LongTensor] = None,          # (bs, seq_len)
+            spikes_timestamp: Optional[torch.LongTensor] = None,          # (bs, seq_len)
     ) -> torch.FloatTensor:                              # (n_batch, n_token, hidden_size)
 
         B, T, N = spikes.size() # n_batch, n_token, n_channels
@@ -385,34 +310,27 @@ class SpaceTimeTransformer(nn.Module):
         # Mask neural data
         if self.mask:
             spikes, targets_mask = self.masker(spikes)
-            if self.use_space:
-                targets_mask = targets_mask & spikes_space_mask.unsqueeze(-1).expand(B,T,N)
-            if self.use_time:
-                targets_mask = targets_mask & spikes_time_mask.unsqueeze(-1).expand(B,T,N)
         else:
             targets_mask = None
 
+        # Patch neural data
+        if self.patch:
+            spikes, space_attn_mask, time_attn_mask, spacestamps, timestamps, target_masks =\
+            self.patcher(spikes, targets_mask, pad_space_len, pad_time_len)
+
         # Embed neural data
-        x, spikes_space_mask, spikes_time_mask, spikes_spacestamp, spikes_timestamp = \
-        self.embedder(spikes, spikes_space_mask, spikes_time_mask, spikes_spacestamp, spikes_timestamp)
+        x = self.embedder(spikes, spacestamps, timestamps)
 
         _, T, _ = x.size() 
 
         context_mask = self.context_mask[:T,:T].to(x.device).unsqueeze(0).expand(B,T,T)
-        if self.use_space:
-            spikes_space_mask = spikes_space_mask.unsqueeze(-1).expand(B,T,T)
-        if self.use_time:
-            spikes_time_mask = spikes_time_mask.unsqueeze(-1).expand(B,T,T)
+        space_attn_mask = space_attn_mask.unsqueeze(1).expand(B,T,T)
+        time_attn_mask = time_attn_mask.unsqueeze(1).expand(B,T,T)
+        
         attn_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
         # hack so that even padded spikes attend to themselves and avoid attention issues
 
-        if self.use_space & self.use_time:
-            attn_mask = attn_mask | (context_mask & spikes_space_mask & spikes_time_mask)
-        else:
-            if self.use_space:
-                attn_mask = attn_mask | (context_mask & spikes_space_mask)
-            elif self.use_time:
-                attn_mask = attn_mask | (context_mask & spikes_time_mask)
+        attn_mask = attn_mask | (context_mask & space_attn_mask & time_attn_mask)
 
         # Forward transformer
         for idx, layer in enumerate(self.layers):
@@ -423,7 +341,7 @@ class SpaceTimeTransformer(nn.Module):
         
 
 
-class NDT2(nn.Module):
+class STPatch(nn.Module):
     def __init__(
         self, 
         config: DictConfig,
@@ -433,6 +351,8 @@ class NDT2(nn.Module):
 
         config = update_config(DEFAULT_CONFIG, config)
         self.method = kwargs["method_name"]
+
+        self.pad_value = -1.
         
         # Build encoder
         encoder_pt_path = config["encoder"].pop("from_pt", None)
@@ -448,7 +368,7 @@ class NDT2(nn.Module):
         # Build decoder
         if self.method == "ssl":
             assert config.encoder.masker.active, "Can't pretrain with inactive masking"
-            n_outputs = config.encoder.embedder.n_channels
+            n_outputs = config.encoder.embedder.max_time_F * config.encoder.embedder.max_space_F
         elif self.method == "sl":
             n_outputs = kwargs["output_size"]
         else:
@@ -458,7 +378,7 @@ class NDT2(nn.Module):
         if self.method == "sl":
             decoder_layers.append(
                 nn.Linear(
-                    (self.encoder.max_time_F * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
+                    self.encoder.n_cls_tokens * self.encoder.hidden_size, n_outputs
                 )
             )
         else:
@@ -499,32 +419,43 @@ class NDT2(nn.Module):
 
     def forward(
         self, 
-        spikes:            torch.FloatTensor,                   # (n_batch, n_token, n_channels)
-        spikes_space_mask: torch.LongTensor,                    # (n_batch, n_token)
-        spikes_time_mask:  torch.LongTensor,                    # (n_batch, n_token)
-        spikes_spacestamp: torch.LongTensor,                    # (n_batch, n_token)
-        spikes_timestamp:  torch.LongTensor,                    # (n_batch, n_token)
+        spikes:            torch.FloatTensor,                   # (n_batch, seq_len, n_neurons)
+        spikes_mask:      Optional[torch.LongTensor] = None,          # (bs, seq_len)
+        spikes_timestamp: Optional[torch.LongTensor] = None,          # (bs, seq_len)
         targets:           Optional[torch.FloatTensor] = None,  # (n_batch, target_len) 
         spikes_lengths:    Optional[torch.LongTensor] = None,   # (n_batch)
         targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
-    ) -> NDT2Output:   
+    ) -> STPatchOutput:   
 
         if self.method == "ssl":
             targets = spikes.clone()
+            _, T, N = targets.size()
+
+        # Track padded values to prevent them from being used
+        if (spikes[0,:,0] == self.pad_value).sum() == 0:
+            pad_time_len = T
+        else:
+            pad_time_len = ((spikes[0,:,0] == self.pad_value).nonzero()).min().item() 
+            
+        if (spikes[0,0,:] == self.pad_value).sum() == 0:
+            pad_space_len = N
+        else:
+            pad_space_len = ((spikes[0,0,:] == self.pad_value).nonzero()).min().item() 
 
         # Encode neural data
-        x, targets_mask = self.encoder(
-            spikes, spikes_space_mask, spikes_time_mask, spikes_spacestamp, spikes_timestamp, 
-        )
+        x, targets_mask = self.encoder(spikes, pad_space_len, pad_time_len)
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
             # Grab the spike embeddings
-            x = x[:,(self.encoder.max_time_F * self.encoder.n_cls_tokens):]
-            outputs = self.decoder(x)
+            x = x[:,self.encoder.n_time_patches*self.encoder.n_cls_tokens:]
+            outputs = self.decoder(x).reshape((-1, pad_time_len, pad_space_len))
+            targets = targets[:,:pad_time_len, :pad_space_len]
+            targets_mask = targets_mask.reshape((-1, T, N))[:,:pad_time_len, :pad_space_len]
+            
         elif self.method == "sl":
             # Grab the prepended [cls] embeddings
-            x = x[:,:(self.encoder.max_time_F * self.encoder.n_cls_tokens)]
+            x = x[:,:self.encoder.n_time_patches*self.encoder.n_cls_tokens]
             x = x.flatten(start_dim=1)  
             outputs = self.decoder(x)      
 
@@ -536,10 +467,11 @@ class NDT2(nn.Module):
             loss = self.loss_fn(outputs, targets).sum()
             n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
 
-        return NDT2Output(
+        return STPatchOutput(
             loss=loss,
             n_examples=n_examples,
             preds=outputs,
+            targets=targets,
         )  
 
     def save_checkpoint(self, save_dir):

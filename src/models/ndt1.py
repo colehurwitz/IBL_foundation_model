@@ -15,8 +15,6 @@ from models.model_output import ModelOutput
 from models.masker import Masker
 
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
-# DEFAULT_CONFIG = "/home/yizi/IBL_foundation_model/src/configs/ndt1.yaml"
-
 
 @dataclass
 class NDT1Output(ModelOutput):
