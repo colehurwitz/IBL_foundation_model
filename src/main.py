@@ -68,6 +68,7 @@ else:
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
+                         target=config.data.target,
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
@@ -78,6 +79,7 @@ train_dataloader = make_loader(train_dataset,
                          shuffle=True)
 
 test_dataloader = make_loader(test_dataset, 
+                         target=config.data.target,
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
