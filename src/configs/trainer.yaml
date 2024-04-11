@@ -62,12 +62,11 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 50 # max time sequence length
-  max_space_length: 15 # max space(neuron) sequence length
-  n_neurons_per_patch: 32 # number of neurons per patch
+  max_time_length: 100 # max time sequence length
+  max_space_length: 700 # max space(neuron) sequence length
   patching: true # patching the neurons
   sort_by_depth: false
-  brain_region: GRN
+  brain_region: all
 
   include_behav: true # include behavior data
   target: choice
