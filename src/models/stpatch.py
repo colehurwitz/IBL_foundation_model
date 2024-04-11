@@ -378,7 +378,7 @@ class STPatch(nn.Module):
         if self.method == "sl":
             decoder_layers.append(
                 nn.Linear(
-                    self.encoder.n_cls_tokens * self.encoder.hidden_size, n_outputs
+                    (self.encoder.n_time_patches * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
                 )
             )
         else:
@@ -427,9 +427,10 @@ class STPatch(nn.Module):
         targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
     ) -> STPatchOutput:   
 
+        _, T, N = spikes.size()
+        
         if self.method == "ssl":
             targets = spikes.clone()
-            _, T, N = targets.size()
 
         # Track padded values to prevent them from being used
         if (spikes[0,:,0] == self.pad_value).sum() == 0:

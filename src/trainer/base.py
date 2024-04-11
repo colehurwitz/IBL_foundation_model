@@ -141,7 +141,8 @@ class Trainer():
         return self.model(
             batch['spikes_data'], 
             batch['attention_mask'], 
-            batch['spikes_timestamps']
+            batch['spikes_timestamps'],
+            targets = batch['target']
         ) 
     def eval_epoch(self):
         # TODO: implement this for decoding
