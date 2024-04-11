@@ -10,7 +10,7 @@ from utils.utils import set_seed,move_batch_to_device, viz_single_cell
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
-from models.ndt2 import NDT2
+from models.stpatch import STPatch
 
 
 
@@ -74,24 +74,20 @@ else:
 train_dataloader = make_loader(train_dataset, 
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
-                         patching=config.data.patching,
                          pad_value=-1.,
                          bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
                          dataset_name=config.data.dataset_name,
                          shuffle=True)
 
 test_dataloader = make_loader(test_dataset, 
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
-                         patching=config.data.patching,
                          pad_value=-1.,
                          bin_size=bin_size,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
                          dataset_name=config.data.dataset_name,
                          shuffle=False)
 
@@ -99,7 +95,7 @@ test_dataloader = make_loader(test_dataset,
 accelerator = Accelerator()
 
 # load model
-NAME2MODEL = {"NDT1": NDT1, "NDT2": NDT2}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 # load pretrained model
@@ -114,23 +110,15 @@ with torch.no_grad():
     for batch in test_dataloader:
         batch = move_batch_to_device(batch, accelerator.device)
         if config.data.patching:
-            gt.append(batch['neuron_patches'].clone().reshape((-1, config.data.max_time_length, config.data.max_space_length*config.data.n_neurons_per_patch)))
+            gt.append(outputs.targets.clone())
         else:
             gt.append(batch['spikes_data'].clone())
-        if config.data.patching:
-            outputs = model(
-                batch['neuron_patches'].flatten(1,-2), 
-                batch['space_attention_mask'].flatten(1), 
-                batch['time_attention_mask'].flatten(1),
-                batch['spikes_spacestamps'].flatten(1),
-                batch['spikes_timestamps'].flatten(1)
-            )
-            preds.append(outputs.preds.clone().reshape((-1, config.data.max_time_length, config.data.max_space_length*config.data.n_neurons_per_patch)))
-        else:
-            outputs = model(batch['spikes_data'], 
-                              batch['attention_mask'], 
-                              batch['spikes_timestamps'])
-            preds.append(outputs.preds.clone())
+        outputs = model(
+            batch['spikes_data'], 
+            batch['attention_mask'], 
+            batch['spikes_timestamps']
+        )
+        preds.append(outputs.preds.clone())
 
 gt = torch.cat(gt, dim=0)
 preds = torch.cat(preds, dim=0)
