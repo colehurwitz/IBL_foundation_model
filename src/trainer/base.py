@@ -112,18 +112,11 @@ class Trainer():
     
     def _forward_model_outputs(self, batch):
         batch = move_batch_to_device(batch, self.accelerator.device)
-        if self.config.data.patching:
-            return self.model(
-                batch['neuron_patches'].flatten(1,-2), 
-                batch['space_attention_mask'].flatten(1), 
-                batch['time_attention_mask'].flatten(1),
-                batch['spikes_spacestamps'].flatten(1),
-                batch['spikes_timestamps'].flatten(1)
-            )
-        else:
-            return self.model(batch['spikes_data'], 
-                              batch['attention_mask'], 
-                              batch['spikes_timestamps']) 
+        return self.model(
+            batch['spikes_data'], 
+            batch['attention_mask'], 
+            batch['spikes_timestamps']
+        ) 
     def eval_epoch(self):
         # TODO: implement this for decoding
         self.model.eval()
@@ -142,18 +135,14 @@ class Trainer():
             with torch.no_grad():  
                 for batch in self.test_dataloader:
                     if self.config.data.patching:
-                        gt.append(batch['neuron_patches'].clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
+                        gt.append(outputs.targets.clone())
                     else:
                         gt.append(batch['spikes_data'].clone())
                     outputs = self._forward_model_outputs(batch)
                     loss = outputs.loss
                     test_loss += loss.item()
                     test_examples += outputs.n_examples
-                    if self.config.data.patching:
-                        preds.append(outputs.preds.clone().reshape((-1, self.config.data.max_time_length, self.config.data.max_space_length*self.config.data.n_neurons_per_patch)))
-                    else:
-                        preds.append(outputs.preds.clone())
-            
+                    preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
         if self.config.method.model_kwargs.loss == "poisson_nll":
