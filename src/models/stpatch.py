@@ -1,5 +1,4 @@
 import os
-from math import floor, ceil
 from dataclasses import dataclass
 from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
@@ -60,8 +59,8 @@ class NeuralEmbeddingLayer(nn.Module):
         self.max_space_F = config.max_space_F
         self.max_time_F = config.max_time_F
 
-        self.n_space_patches = floor(self.n_neurons/self.max_space_F)
-        self.n_time_patches = floor(self.n_timesteps/self.max_time_F)
+        self.n_space_patches = self.n_neurons//self.max_space_F
+        self.n_time_patches = self.n_timesteps//self.max_time_F
         self.n_channels = self.max_time_F * self.max_space_F
 
         self.input_dim = self.n_channels*config.mult
@@ -259,8 +258,8 @@ class SpaceTimeTransformer(nn.Module):
         self.max_time_F = config.embedder.max_time_F
         self.max_space_F = config.embedder.max_space_F
 
-        self.n_space_patches = floor(config.embedder.n_neurons/self.max_space_F)
-        self.n_time_patches = floor(config.embedder.n_timesteps/self.max_time_F)
+        self.n_space_patches = config.embedder.n_neurons//self.max_space_F
+        self.n_time_patches = config.embedder.n_timesteps//self.max_time_F
 
         self.n_channels = self.max_time_F * self.max_space_F
 
@@ -281,7 +280,7 @@ class SpaceTimeTransformer(nn.Module):
         # Context span mask
         context_mask = create_context_mask(
             config.context.forward, config.context.backward, 
-            self.max_space_F+self.n_cls_tokens, self.max_time_F
+            self.n_time_patches+self.n_cls_tokens, self.n_time_patches
         )
         self.register_buffer("context_mask", context_mask, persistent=False)
 

@@ -6,7 +6,7 @@ from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metric
     plot_rate_and_spike
 from src.utils.config_utils import config_from_kwargs, update_config
 from src.models.ndt1 import NDT1
-from src.models.ndt2 import NDT2
+from src.models.stpatch import STPatch
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
@@ -15,7 +15,7 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import os
 
-NAME2MODEL = {"NDT1": NDT1, "NDT2": NDT2}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -57,12 +57,10 @@ def load_model_data_local(**kwargs):
         dataset,
         batch_size=10000,
         pad_to_right=True,
-        patching=config.data.patching,
         pad_value=-1.,
         bin_size=bin_size,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
-        n_neurons_per_patch=config.data.n_neurons_per_patch,
         dataset_name=config.data.dataset_name,
         shuffle=False
     )
