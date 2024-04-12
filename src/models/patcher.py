@@ -1,4 +1,3 @@
-from math import floor, ceil
 from typing import Tuple, Optional, List
 
 import torch
@@ -37,8 +36,8 @@ class Patcher(nn.Module):
 
         B, T, N = spikes.size()
 
-        self.n_time_patches = floor(T/self.max_time_F)
-        self.n_space_patches = floor(N/self.max_space_F)
+        self.n_time_patches = T//self.max_time_F 
+        self.n_space_patches = N//self.max_space_F
         self.n_channels = self.max_time_F * self.max_space_F
 
         # Group spikes into patches

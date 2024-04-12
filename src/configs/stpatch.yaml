@@ -30,10 +30,10 @@ encoder:
 
   # Embedding layer
   embedder:
-    n_neurons: 700 
-    n_timesteps: 100
-    max_time_F: 2
-    max_space_F: 167
+    n_neurons: 704        # n_neurons has to be a multiple of max_space_F 
+    n_timesteps: 100      # n_timesteps has to be a multiple of max_time_F
+    max_time_F: 1
+    max_space_F: 64
     max_spikes: 0         # max number of spikes in a single time bin
 
     mode: linear          # linear/embed/identity
