@@ -69,12 +69,12 @@ data:
   brain_region: all
 
   include_behav: true # include behavior data
-  target: choice
+  target: null
 
   num_sessions: 3
-  test_session_eid: [] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
-  split_method: random_split # random_split/session_based
+  split_method: session_based # random_split/session_based
 
   use_aligned_test: False
 
