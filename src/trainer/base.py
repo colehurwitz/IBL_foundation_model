@@ -140,11 +140,12 @@ class Trainer():
         batch = move_batch_to_device(batch, self.accelerator.device)
         return self.model(
             batch['spikes_data'], 
-            batch['time_attn_mask'],
-            batch['space_attn_mask'],
-            batch['spikes_timestamps'], 
-            batch['spikes_spacestamps'], 
-            targets = batch['target']
+            time_attn_mask=batch['time_attn_mask'],
+            space_attn_mask=batch['space_attn_mask'],
+            spikes_timestamps=batch['spikes_timestamps'], 
+            spikes_spacestamps=batch['spikes_spacestamps'], 
+            targets = batch['target'],
+            neuron_regions=batch['neuron_regions']
         ) 
     def eval_epoch(self):
         # TODO: implement this for decoding
