@@ -111,8 +111,13 @@ def co_smoothing(
                     heldout_idxs=np.array([n_i])
                 )
 
-                outputs = model(mask_result['spikes'], batch['attention_mask'],
-                                batch['spikes_timestamps'])
+                outputs = model(
+                    mask_result['spikes'], 
+                    batch['time_attn_mask'],
+                    batch['space_attn_mask'],
+                    batch['spikes_timestamps'],
+                    batch['spikes_spacestamps']
+                )
 
         # exponential the poisson rates
         outputs.preds = torch.exp(outputs.preds)

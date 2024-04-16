@@ -580,8 +580,10 @@ class NDT1(nn.Module):
     def forward(
         self, 
         spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
-        spikes_mask:      torch.LongTensor,   # (bs, seq_len)
-        spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
+        time_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+        space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+        spikes_timestamps: torch.LongTensor,   # (bs, seq_len)
+        spikes_spacestamps: torch.LongTensor,   # (bs, seq_len)
         targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len)
         spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs) 
         targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
@@ -595,7 +597,7 @@ class NDT1(nn.Module):
                 targets = targets.to(torch.int64)
 
         # Encode neural data
-        x, targets_mask = self.encoder(spikes, spikes_mask, spikes_timestamp, block_idx, date_idx)
+        x, targets_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx)
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits

@@ -205,20 +205,20 @@ class BaseDataset(torch.utils.data.Dataset):
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
             binned_spikes_data = binned_spikes_data.T
                 
-        # add spikes timestamps [bs, n_spikes]
-        # multiply by 100 to convert to int64
-        # spikes_timestamps = _spikes_timestamps(self.max_time_length, self.bin_size) * 100
-        # spikes_timestamps = spikes_timestamps.astype(np.int64)
         spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)
+        spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
 
         # add attention mask
-        attention_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
+        time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
+        space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
 
         return {
             "spikes_data": binned_spikes_data,
+            "time_attn_mask": time_attn_mask,
+            "space_attn_mask": space_attn_mask,
             "spikes_timestamps": spikes_timestamps,
-            "attention_mask": attention_mask,
+            "spikes_spacestamps": spikes_spacestamps,
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
             "neuron_regions": list(neuron_regions)
