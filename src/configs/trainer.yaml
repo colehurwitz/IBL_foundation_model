@@ -30,7 +30,7 @@ dirs:
 training:
   num_epochs: 50
   train_batch_size: 8
-  test_batch_size: 32  
+  test_batch_size: 8  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 1  # Plot the model output every n epochs
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 50    # max_time_length has to be a multiple of time patch size
-  max_space_length: 768   # max_space_length has to be a multiple of space patch size
+  max_space_length: 384   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
