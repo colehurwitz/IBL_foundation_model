@@ -140,8 +140,10 @@ class Trainer():
         batch = move_batch_to_device(batch, self.accelerator.device)
         return self.model(
             batch['spikes_data'], 
-            batch['attention_mask'], 
-            batch['spikes_timestamps'],
+            batch['time_attn_mask'],
+            batch['space_attn_mask'],
+            batch['spikes_timestamps'], 
+            batch['spikes_spacestamps'], 
             targets = batch['target']
         ) 
     def eval_epoch(self):
@@ -223,5 +225,3 @@ class Trainer():
             "epoch": epoch,
         }
         torch.save(dict_config, os.path.join(self.log_dir, f"model_{name}.pt"))
-
-

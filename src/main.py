@@ -14,11 +14,11 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
+    "model": "include:src/configs/ndt2.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1.yaml", config)
+config = update_config("src/configs/ndt2.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
