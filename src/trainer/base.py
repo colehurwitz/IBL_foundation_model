@@ -145,7 +145,7 @@ class Trainer():
             spikes_timestamps=batch['spikes_timestamps'], 
             spikes_spacestamps=batch['spikes_spacestamps'], 
             targets = batch['target'],
-            neuron_regions=batch['neuron_regions']
+            neuron_regions=np.asarray(batch['neuron_regions']).T
         ) 
     def eval_epoch(self):
         # TODO: implement this for decoding
