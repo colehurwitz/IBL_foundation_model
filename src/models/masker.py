@@ -1,5 +1,7 @@
 from typing import Tuple, Optional, List
 
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,7 +26,8 @@ CONFIG:
     max_timespan: max length of the expanded mask in ``temporal`` mode
     channels: list of ``int`` containing the indx of channels to mask in ``co-smooth`` mode
     mask_regions: list of ``str`` containing the names of regions to mask in ``inter-region`` mode
-    target_regions: list of ``str`` containing the names of the targe region in ``intra-region`` mode
+    target_regions: list of ``str`` containing the names of the target region in ``intra-region`` mode
+    n_mask_regions: number of regions to select from mask_regions or target_regions
 """
 class Masker(nn.Module):
 
@@ -42,11 +45,12 @@ class Masker(nn.Module):
         self.channels = config.channels
         self.mask_regions = config.mask_regions
         self.target_regions = config.target_regions
+        self.n_mask_regions = config.n_mask_regions
 
     def forward(
         self, 
         spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
-        regions: np.ndarray = None,                # (bs, n_channels)     
+        neuron_regions: np.ndarray = None,                # (bs, n_channels)     
     ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
 
         if not self.training and not self.force_active:
@@ -71,21 +75,22 @@ class Masker(nn.Module):
             for c in self.channels:
                 mask_probs[c] = 1
         elif self.mode == "inter-region":
-            assert regions is not None, "Can't mask region without brain region information"
+            assert neuron_regions is not None, "Can't mask region without brain region information"
             assert self.mask_regions is not None, "No regions to mask"
-
+            mask_regions = random.sample(self.mask_regions, self.n_mask_regions)
             mask_probs = torch.zeros(spikes.shape[0],spikes.shape[2])
-            for region in self.mask_regions:
-                region_indx = torch.tensor(regions == region, device=spikes.device)
+            for region in mask_regions:
+                region_indx = torch.tensor(neuron_regions == region, device=spikes.device)
                 mask_probs[region_indx] = 1      
         elif self.mode == "intra-region":
-            assert regions is not None, "Can't mask region without brain region information"
+            assert neuron_regions is not None, "Can't mask region without brain region information"
             assert self.target_regions is not None, "No target regions"
 
+            target_regions = random.sample(self.target_regions, self.n_mask_regions)
             mask_probs = torch.ones(spikes.shape[0],spikes.shape[2])
             targets_mask = torch.zeros(spikes.shape[0],spikes.shape[2])
-            for region in self.target_regions:
-                region_indx = torch.tensor(regions == region, device=spikes.device)
+            for region in target_regions:
+                region_indx = torch.tensor(neuron_regions == region, device=spikes.device)
                 mask_probs[region_indx] = mask_ratio
                 targets_mask[region_indx] = 1
         else:
