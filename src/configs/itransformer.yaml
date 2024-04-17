@@ -3,7 +3,7 @@ model_class: iTransformer
 # List of masks
 masker: 
   neuron:
-    active: true         
+    force_active: true         
     mode: neuron      # masking mode
     ratio: 0.1          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
@@ -14,8 +14,7 @@ masker:
     mask_regions: null       # brain regions to mask in ``inter-region`` mode
     target_regions: null    # brain regions to predict in ``intra-region`` mode
   temporal: 
-    active: true         
-    mode: temporal      # masking mode
+    force_mode: temporal      # masking mode
     ratio: 0.1          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
