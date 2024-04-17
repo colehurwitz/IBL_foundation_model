@@ -126,7 +126,7 @@ trainer_kwargs = {
 trainer_ = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
-    eval_dataloader=None,
+    eval_dataloader=test_dataloader,
     test_dataloader=test_dataloader,
     optimizer=optimizer,
     **trainer_kwargs
