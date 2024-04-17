@@ -227,7 +227,7 @@ class BaseDataset(torch.utils.data.Dataset):
             "spikes_spacestamps": spikes_spacestamps,
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
-            "neuron_regions": list(neuron_regions)
+            "neuron_regions": neuron_regions
         }
     
     def __len__(self):
