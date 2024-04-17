@@ -9,13 +9,19 @@ from src.models.ndt1 import NDT1
 from src.models.stpatch import STPatch
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
+from scipy.special import gammaln
 import matplotlib.pyplot as plt
 import torch
+from tqdm import tqdm
 import numpy as np
 from sklearn.cluster import SpectralClustering
 import os
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -75,11 +81,12 @@ def load_model_data_local(**kwargs):
 
 # --------------------------------------------------------------------------------------------------
 # Evaluation
-# 1. Co-smoothing TODO: add more behaviors, add n!=1
-# 2. R2 scatter plot
+# 1. Co-smoothing_r2 (R2 and shuqi's plot) TODO: add more behaviors, add n!=1
+# 2. Co-smoothing_bps (co-bps, adapted from NLB repo) TODO: how to choose the held-out neurons?
+# 3. R2 scatter plot
 # --------------------------------------------------------------------------------------------------
 
-def co_smoothing(
+def co_smoothing_r2(
         model,
         accelerator,
         test_dataloader,
@@ -112,7 +119,7 @@ def co_smoothing(
                 )
 
                 outputs = model(
-                    mask_result['spikes'], 
+                    mask_result['spikes'],
                     batch['time_attn_mask'],
                     batch['space_attn_mask'],
                     batch['spikes_timestamps'],
@@ -187,6 +194,72 @@ def co_smoothing(
     np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
 
 
+def co_smoothing_bps(
+        model,
+        accelerator,
+        test_dataloader,
+        mode='per_neuron',              # manual / active / region / per_neuron / etc (TODO)
+        held_out_list=None,             # list for manual mode
+):
+    for batch in test_dataloader:
+        break
+
+    if mode == 'per_neuron':
+        bps_result_list = []
+
+        # loop through all the neurons
+        for n_i in tqdm(range(batch['spikes_data'].shape[-1]), desc='neuron'):
+        # for n_i in tqdm(range(200), desc='neuron'):
+
+            # validate the model on test set
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    mask_result = heldout_mask(
+                        batch['spikes_data'],
+                        mode='manual',
+                        heldout_idxs=np.array([n_i])
+                    )
+
+                    outputs = model(
+                        mask_result['spikes'],
+                        batch['time_attn_mask'],
+                        batch['space_attn_mask'],
+                        batch['spikes_timestamps'],
+                        batch['spikes_spacestamps']
+                    )
+
+            # exponential the poisson rates
+            outputs.preds = torch.exp(outputs.preds)
+
+            # got the numpy array for gt and pred
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().numpy()
+
+            gt_held_out = gt_spikes[:, :, [n_i]]
+            pred_held_out = pred_spikes[:, :, [n_i]]
+
+            bps = bits_per_spike(pred_held_out, gt_held_out)
+            # print(bps)
+            if np.isinf(bps):
+                continue
+            bps_result_list.append(bps)
+
+        bps_all = np.array(bps_result_list)
+        bps_mean = np.mean(bps_all)
+        bps_std = np.std(bps_all)
+        plt.hist(bps_all, bins=30, alpha=0.75, color='red', edgecolor='black')
+        plt.xlabel('bits per spike')
+        plt.ylabel('count')
+        plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)))
+        plt.show()
+
+    else:
+        raise NotImplementedError('mode not implemented')
+
+
+
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
     B_path = kwargs['B_path'],
@@ -229,11 +302,11 @@ def compare_R2_scatter(**kwargs):
 # --------------------------------------------------------------------------------------------------
 
 def heldout_mask(
-        spike_data,  # (K, T, N)
-        mode='manual',  # manual/most-active/region/etc (TODO)
-        heldout_idxs=np.array([]),  # list for manual mode
-        n_active=1,  # n_neurons for most-active mode
-        region=[]  # list for region-mask mode
+        spike_data,                     # (K, T, N)
+        mode='manual',                  # manual / active / region / per_neuron / etc (TODO)
+        heldout_idxs=np.array([]),      # list for manual mode
+        n_active=1,                     # n_neurons for most-active mode
+        region=None                     # list for region mode
 ):
     mask = torch.ones(spike_data.shape).to(spike_data.device)
 
@@ -254,6 +327,85 @@ def heldout_mask(
     spike_data_masked = spike_data * mask
 
     return {"spikes": spike_data_masked, "heldout_idxs": hd}
+
+
+# --------------------------------------------------------------------------------------------------
+# copied from NLB repo
+# standard evaluation metrics
+# --------------------------------------------------------------------------------------------------
+
+def neg_log_likelihood(rates, spikes, zero_warning=True):
+    """Calculates Poisson negative log likelihood given rates and spikes.
+    formula: -log(e^(-r) / n! * r^n)
+           = r - n*log(r) + log(n!)
+
+    Parameters
+    ----------
+    rates : np.ndarray
+        numpy array containing rate predictions
+    spikes : np.ndarray
+        numpy array containing true spike counts
+    zero_warning : bool, optional
+        Whether to print out warning about 0 rate
+        predictions or not
+
+    Returns
+    -------
+    float
+        Total negative log-likelihood of the data
+    """
+    assert (
+            spikes.shape == rates.shape
+    ), f"neg_log_likelihood: Rates and spikes should be of the same shape. spikes: {spikes.shape}, rates: {rates.shape}"
+
+    if np.any(np.isnan(spikes)):
+        mask = np.isnan(spikes)
+        rates = rates[~mask]
+        spikes = spikes[~mask]
+
+    assert not np.any(np.isnan(rates)), "neg_log_likelihood: NaN rate predictions found"
+
+    assert np.all(rates >= 0), "neg_log_likelihood: Negative rate predictions found"
+    if np.any(rates == 0):
+        if zero_warning:
+            logger.warning(
+                "neg_log_likelihood: Zero rate predictions found. Replacing zeros with 1e-9"
+            )
+        rates[rates == 0] = 1e-9
+
+    result = rates - spikes * np.log(rates) + gammaln(spikes + 1.0)
+    # print('nll_score', np.sum(result))
+    # print('rate', rates.reshape(-1, rates.shape[1]*rates.shape[2]), '\nspikes', spikes.reshape(-1, spikes.shape[1]*spikes.shape[2]), '\nresult', result.reshape(-1, result.shape[1]*result.shape[2]))
+    # print(rates.shape, spikes.shape, result.shape)
+    return np.sum(result)
+
+
+def bits_per_spike(rates, spikes):
+    """Computes bits per spike of rate predictions given spikes.
+    Bits per spike is equal to the difference between the log-likelihoods (in base 2)
+    of the rate predictions and the null model (i.e. predicting mean firing rate of each neuron)
+    divided by the total number of spikes.
+
+    Parameters
+    ----------
+    rates : np.ndarray
+        3d numpy array containing rate predictions
+    spikes : np.ndarray
+        3d numpy array containing true spike counts
+
+    Returns
+    -------
+    float
+        Bits per spike of rate predictions
+    """
+    nll_model = neg_log_likelihood(rates, spikes)
+    null_rates = np.tile(
+        np.nanmean(spikes, axis=tuple(range(spikes.ndim - 1)), keepdims=True),
+        spikes.shape[:-1] + (1,),
+    )
+    nll_null = neg_log_likelihood(null_rates, spikes, zero_warning=False)
+    # print(np.nansum(spikes))
+    return (nll_null - nll_model) / np.nansum(spikes) / np.log(2)
 
 
 # --------------------------------------------------------------------------------------------------
