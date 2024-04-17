@@ -6,6 +6,7 @@ from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
+from models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
 import numpy as np
@@ -18,11 +19,10 @@ kwargs = {
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
+log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.model.encoder.masker.mode))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
@@ -39,7 +39,7 @@ if "ibl" in config.data.dataset_name:
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
     # show the columns
     
-    bin_size = dataset["train"]["bin_size"][0]
+    bin_size = dataset["train"]["binsize"][0]
     
 
     # split the dataset to train and test
@@ -58,6 +58,9 @@ if "ibl" in config.data.dataset_name:
         train_dataset = dataset["train"]
         test_dataset = dataset["test"]
 
+    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
+        config["model"]["encoder"]["neuron_regions"] = list(set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
+
     print(dataset.column_names)
     print(f"bin_size: {bin_size}")
 
@@ -69,6 +72,7 @@ else:
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
                          target=config.data.target,
+                         load_meta=True,
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
@@ -80,6 +84,7 @@ train_dataloader = make_loader(train_dataset,
 
 test_dataloader = make_loader(test_dataset, 
                          target=config.data.target,
+                         load_meta=True,
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
@@ -93,7 +98,7 @@ test_dataloader = make_loader(test_dataset,
 accelerator = Accelerator()
 
 # load model
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 model = accelerator.prepare(model)
@@ -113,7 +118,7 @@ trainer_kwargs = {
     "lr_scheduler": lr_scheduler,
     "config": config,
 }
-trainer = make_trainer(
+trainer_ = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
     eval_dataloader=None,
@@ -123,4 +128,8 @@ trainer = make_trainer(
 )
 
 # train loop
-trainer.train()
+trainer_.train()
+
+rl(models)
+rl(models.itransformer)
+from models.itransformer import *
