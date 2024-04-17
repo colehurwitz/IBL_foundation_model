@@ -9,7 +9,7 @@ from torchvision.ops import MLP
 import numpy as np
 
 from transformers.activations import ACT2FN
-ACT2FN["softsign"] = nn.Softsign()
+ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
@@ -51,7 +51,7 @@ class iTransformerEncoder(nn.Module):
             MLP(
                 in_channels=config.embedder.max_n_bins, 
                 hidden_channels=[config.hidden_size, config.hidden_size],
-                activation_layer=ACT2FN[config.embedder.activation].__class__,
+                # activation_layer=ACT2FN[config.embedder.activation].__class__,
                 bias=config.embedder.bias,
                 dropout=config.embedder.dropout,
             ),

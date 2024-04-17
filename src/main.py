@@ -29,7 +29,7 @@ if not os.path.exists(log_dir):
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name, config.model.encoder.masker.mode))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -37,9 +37,11 @@ set_seed(config.seed)
 # download dataset from huggingface
 if "ibl" in config.data.dataset_name:
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    # show the columns
-    
-    bin_size = dataset["train"]["binsize"][0]
+
+    try:
+        bin_size = dataset["train"]["binsize"][0]
+    except:
+        bin_size = dataset["train"]["bin_size"][0]
     
 
     # split the dataset to train and test
@@ -53,7 +55,10 @@ if "ibl" in config.data.dataset_name:
         dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
         dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
         dataset = dataset.train_test_split(test_size=0.1, seed=config.seed)
-        bin_size = dataset["train"]["binsize"][0]
+        try:
+            bin_size = dataset["train"]["binsize"][0]
+        except:
+            bin_size = dataset["train"]["bin_size"][0]
 
         train_dataset = dataset["train"]
         test_dataset = dataset["test"]
@@ -72,7 +77,7 @@ else:
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
                          target=config.data.target,
-                         load_meta=True,
+                         load_meta=config.data.load_meta,
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
@@ -84,7 +89,7 @@ train_dataloader = make_loader(train_dataset,
 
 test_dataloader = make_loader(test_dataset, 
                          target=config.data.target,
-                         load_meta=True,
+                         load_meta=config.data.load_meta,
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
@@ -121,7 +126,7 @@ trainer_kwargs = {
 trainer_ = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
-    eval_dataloader=None,
+    eval_dataloader=test_dataloader,
     test_dataloader=test_dataloader,
     optimizer=optimizer,
     **trainer_kwargs
