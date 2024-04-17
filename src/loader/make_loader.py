@@ -11,6 +11,7 @@ def make_loader(dataset,
                  max_space_length = 100,
                  bin_size = 0.05,
                  brain_region = 'all',
+                 load_meta=False,
                  dataset_name = "ibl",
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
@@ -22,7 +23,8 @@ def make_loader(dataset,
                           pad_to_right=pad_to_right,
                           dataset_name=dataset_name,
                           sort_by_depth = sort_by_depth,
-                          brain_region = brain_region
+                          brain_region = brain_region,
+                          load_meta=load_meta,
                             )
     print(f"len(dataset): {len(dataset)}")
     dataloader = torch.utils.data.DataLoader(dataset,

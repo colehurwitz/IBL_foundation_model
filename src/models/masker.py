@@ -95,7 +95,8 @@ class Masker(nn.Module):
 
         # Expand mask
         if self.mode == "temporal":
-            mask = self.expand_timesteps(mask, timespan)
+            if timespan > 1:
+                mask = self.expand_timesteps(mask, timespan)
             mask = mask.unsqueeze(2).expand_as(spikes).bool()    
         elif self.mode in ["neuron","region","intra-region","inter-region"]:
             mask = mask.unsqueeze(1).expand_as(spikes).bool()    
