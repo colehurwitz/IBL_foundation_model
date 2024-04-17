@@ -16,8 +16,8 @@ encoder:
     max_timespan: 1     # max span of mask if expanded
     channels: null
     # [579, 21, 486, 316, 521, 71, 32, 561, 445, 470, 205, 41, 230, 306, 592, 148, 484, 592, 181, 94, 120, 601, 414, 497, 263, 447, 16, 537, 396, 323, 68, 444, 325, 137, 223, 434, 131, 363, 280, 419, 332, 218, 130, 580, 381, 560, 576, 145, 280, 234, 258, 37, 9, 324, 199, 610, 529, 196, 164, 348]     # neurons to mask in ``co-smooth`` mode
-    mask_regions: null       # brain regions to mask in ``region`` mode
-    target_regions: null
+    mask_regions: null       # brain regions to mask in ``inter-region`` mode
+    target_regions: null    # brain regions to predict in ``intra-region`` mode
   # Context available for each timestep
   context:
     forward: -1

@@ -196,13 +196,19 @@ class BaseDataset(torch.utils.data.Dataset):
         # pad along space dimension
         if num_neurons > self.max_space_length:
             binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
+            neuron_depths = neuron_depths[:self.max_space_length]
+            neuron_regions = neuron_regions[:self.max_space_length]
         else: 
             if self.pad_to_right:
                 pad_space_length = self.max_space_length - num_neurons
                 binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
+                neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
             else:
                 pad_space_length = num_neurons - self.max_space_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
+                neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
             binned_spikes_data = binned_spikes_data.T
                 
         spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)
