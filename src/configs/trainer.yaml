@@ -20,7 +20,7 @@ dirs:
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: berkott/ibl_ssl_data
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: neurofm123
   
@@ -70,6 +70,8 @@ data:
 
   include_behav: true # include behavior data
   target: null
+
+  load_meta: false
 
   num_sessions: 3
   test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]

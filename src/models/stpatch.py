@@ -80,8 +80,8 @@ class NeuralEmbeddingLayer(nn.Module):
             self.cls_tokens = nn.Parameter(torch.zeros(1, self.n_time_patches*self.n_cls_tokens, self.input_dim))
 
         self.projection = nn.Linear(self.input_dim, hidden_size)
-
-        # activation after embedding
+        
+        # activation after embedding 
         self.act = ACT2FN[config.act] if config.act != "identity" else nn.Identity()
 
         # embedding scale
@@ -111,7 +111,7 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.n_cls_tokens != 0:
             cls_tokens = self.cls_tokens.expand(B, -1, -1)  
             x = torch.cat((cls_tokens, x), dim=1)
-
+        
         # Rescaling
         x = self.act(x) * self.scale
 
