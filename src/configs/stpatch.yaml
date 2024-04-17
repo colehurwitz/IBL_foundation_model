@@ -7,7 +7,7 @@ encoder:
 
   # Mask spikes
   masker:
-    active: true         
+    force_active: true         
     mode: random        # masking mode
     ratio: 0.1          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
