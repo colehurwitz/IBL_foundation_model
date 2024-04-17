@@ -251,7 +251,7 @@ class iTransformer(nn.Module):
         # Encode neural data. x is the masked embedded spikes. targets_mask is True for masked bins
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
         for masker in self.masker.values():
-            spikes, new_mask = masker(spikes)
+            spikes, new_mask = masker(spikes, neuron_regions)
             targets_mask = targets_mask | new_mask
 
         x = self.encoder(spikes, spikes_timestamps, spikes_spacestamps, neuron_regions=neuron_regions)    # (batch, n_channels, hidden_size)
