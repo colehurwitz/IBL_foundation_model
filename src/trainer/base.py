@@ -11,7 +11,6 @@ class Trainer():
             model,
             train_dataloader,
             eval_dataloader,
-            test_dataloader,
             optimizer,
             **kwargs
     ):
@@ -19,7 +18,6 @@ class Trainer():
         self.model = model
         self.train_dataloader = train_dataloader
         self.eval_dataloader = eval_dataloader
-        self.test_dataloader = test_dataloader
         self.optimizer = optimizer
 
         # get arguments from kwargs if they exist
@@ -36,32 +34,24 @@ class Trainer():
         self.active_neurons = None
 
     def train(self):
-        best_test_loss = torch.tensor(float('inf'))
+        best_eval_loss = torch.tensor(float('inf'))
         best_eval_trial_avg_metric = -torch.tensor(float('inf'))
-        best_test_trial_avg_metric = -torch.tensor(float('inf'))
         # train loop
         for epoch in range(self.config.training.num_epochs):
             train_epoch_results = self.train_epoch(epoch)
             eval_epoch_results = self.eval_epoch()
-            test_epoch_results = self.test_epoch()
             print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
-            # if eval_epoch_results dict is not empty
+
             if eval_epoch_results:
-                print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']}")
                 if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
                     best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
                     print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
-            # if test_epoch_results dict is not empty
-            if test_epoch_results:
-                if test_epoch_results[f'test_trial_avg_{self.metric}'] > best_test_trial_avg_metric:
-                    best_test_trial_avg_metric = test_epoch_results[f'test_trial_avg_{self.metric}']
-                    print(f"epoch: {epoch} best test trial avg {self.metric}: {best_test_trial_avg_metric}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
                     if self.config.method.model_kwargs.method_name == 'ssl':
                         gt_pred_fig = self.plot_epoch(
-                            gt=test_epoch_results['test_gt'], 
-                            preds=test_epoch_results['test_preds'], epoch=epoch
+                            gt=eval_epoch_results['eval_gt'], 
+                            preds=eval_epoch_results['eval_preds'], epoch=epoch
                         )
                         if self.config.wandb.use:
                             wandb.log({"best_epoch": epoch,
@@ -74,10 +64,10 @@ class Trainer():
                             gt_pred_fig['plot_r2'].savefig(
                                 os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png")
                             )
-                if test_epoch_results['test_loss'] < best_test_loss:
-                    best_test_loss = test_epoch_results['test_loss']
-                    print(f"epoch: {epoch} best test loss: {best_test_loss}")
-                print(f"epoch: {epoch} test loss: {test_epoch_results['test_loss']} {self.metric}: {test_epoch_results[f'test_trial_avg_{self.metric}']}")
+                if eval_epoch_results['eval_loss'] < best_eval_loss:
+                    best_eval_loss = eval_epoch_results['eval_loss']
+                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
+                print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']} {self.metric}: {eval_epoch_results[f'eval_trial_avg_{self.metric}']}")
 
             # save model by epoch
             if epoch % self.config.training.save_every == 0:
@@ -87,8 +77,8 @@ class Trainer():
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
                 if self.config.method.model_kwargs.method_name == 'ssl':
                     gt_pred_fig = self.plot_epoch(
-                        gt=test_epoch_results['test_gt'], 
-                        preds=test_epoch_results['test_preds'], 
+                        gt=eval_epoch_results['eval_gt'], 
+                        preds=eval_epoch_results['eval_preds'], 
                         epoch=epoch
                     )
                     if self.config.wandb.use:
@@ -108,16 +98,16 @@ class Trainer():
             if self.config.wandb.use:
                 wandb.log({
                     "train_loss": train_epoch_results['train_loss'],
-                    "test_loss": test_epoch_results['test_loss'],
-                    f"test_trial_avg_{self.metric}": test_epoch_results[f'test_trial_avg_{self.metric}']
+                    "eval_loss": eval_epoch_results['eval_loss'],
+                    f"eval_trial_avg_{self.metric}": eval_epoch_results[f'eval_trial_avg_{self.metric}']
                 })
                 
         # save last model
         self.save_model(name="last", epoch=epoch)
         
         if self.config.wandb.use:
-            wandb.log({"best_test_loss": best_test_loss,
-                       f"best_test_trial_avg_{self.metric}": best_test_trial_avg_metric})
+            wandb.log({"best_eval_loss": best_eval_loss,
+                       f"best_eval_trial_avg_{self.metric}": best_eval_trial_avg_metric})
             
     def train_epoch(self, epoch):
         train_loss = 0.
@@ -145,29 +135,22 @@ class Trainer():
             spikes_timestamps=batch['spikes_timestamps'], 
             spikes_spacestamps=batch['spikes_spacestamps'], 
             targets = batch['target'],
-            neuron_regions=np.asarray(batch['neuron_regions']).T
+            neuron_regions=batch['neuron_regions'].T
         ) 
-    def eval_epoch(self):
-        # TODO: implement this for decoding
-        self.model.eval()
-        if self.eval_dataloader:
-            pass
-        else:
-            return None
     
-    def test_epoch(self):
+    def eval_epoch(self):
         self.model.eval()
-        test_loss = 0.
-        test_examples = 0
-        if self.test_dataloader:
+        eval_loss = 0.
+        eval_examples = 0
+        if self.eval_dataloader:
             gt = []
             preds = []
             with torch.no_grad():  
-                for batch in self.test_dataloader:
+                for batch in self.eval_dataloader:
                     outputs = self._forward_model_outputs(batch)
                     loss = outputs.loss
-                    test_loss += loss.item()
-                    test_examples += outputs.n_examples
+                    eval_loss += loss.item()
+                    eval_examples += outputs.n_examples
                     if self.config.data.patching:
                         gt.append(outputs.targets.clone())
                     else:
@@ -197,10 +180,10 @@ class Trainer():
                                        device=self.accelerator.device)
 
         return {
-            "test_loss": test_loss/test_examples,
-            f"test_trial_avg_{self.metric}": results[self.metric],
-            "test_gt": gt,
-            "test_preds": preds,
+            "eval_loss": eval_loss/eval_examples,
+            f"eval_trial_avg_{self.metric}": results[self.metric],
+            "eval_gt": gt,
+            "eval_preds": preds,
         }
     
     def plot_epoch(self, gt, preds, epoch):

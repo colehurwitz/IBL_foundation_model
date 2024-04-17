@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.sparse import csr_array
-from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict
+from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict, load_from_disk
 import h5py
 import os
 import torch
@@ -151,6 +151,7 @@ def get_user_datasets(user_or_org_name):
 
 def load_ibl_dataset(cache_dir,
                      user_or_org_name='neurofm123',
+                     aligned_data_dir=None,
                      eid=None, # specify 1 session for training, random_split will be used
                      num_sessions=5, # total number of sessions for training and testing
                      split_method="session_based",
@@ -158,6 +159,10 @@ def load_ibl_dataset(cache_dir,
                      split_size = 0.1,
                      mode = "train",
                      seed=42):
+    if aligned_data_dir:
+        dataset = load_from_disk(aligned_data_dir)
+        return dataset["train"], dataset["val"], dataset["test"]
+    
     user_datasets = get_user_datasets(user_or_org_name)
     print("Total session-wise datasets found: ", len(user_datasets))
     cache_dir = os.path.join(cache_dir, "ibl", user_or_org_name)

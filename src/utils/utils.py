@@ -225,6 +225,9 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
         # ax.tick_params(bottom=False, left=False)
     plt.tight_layout()
 
+    return {"psth_r2": r2_psth,
+            "pred_r2": r2_single_trial}
+
 """
 :X: [n_trials, n_timesteps, n_variables]
 :y: [n_trials, n_timesteps] (in Hz)
@@ -372,7 +375,7 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
 
     ### plot psth
     axes_psth = [plt.subplot(nrows, len(var_tasklist), k+1) for k in range(len(var_tasklist))]
-    plot_psth(X, y, y_pred,
+    metrics = plot_psth(X, y, y_pred,
               var_tasklist=var_tasklist,
               var_name2idx=var_name2idx,
               var_value2label=var_value2label,
@@ -391,6 +394,7 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
 
     fig_name = 'single_neuron' + str(neuron_idx)
     plt.tight_layout()
+    return metrics
     # plt.show()
 
 def _add_baseline(ax, aligned_tbins=[40]):
@@ -477,3 +481,39 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+    
+def prep_cond_matrix(test_dataset):
+    b_list = []
+    # choice
+    choice = np.array(test_dataset['choice'])
+    choice = np.tile(np.reshape(choice, (choice.shape[0], 1)), (1, 100))
+    b_list.append(choice)
+    # reward
+    reward = np.array(test_dataset['reward'])
+    reward = np.tile(np.reshape(reward, (reward.shape[0], 1)), (1, 100))
+    b_list.append(reward)
+    # block
+    block = np.array(test_dataset['block'])
+    block = np.tile(np.reshape(block, (block.shape[0], 1)), (1, 100))
+    b_list.append(block)
+    # wheel
+    wheel = np.array(test_dataset['wheel-speed'])
+    b_list.append(wheel)
+    behavior_set = np.stack(b_list,axis=-1)
+    return behavior_set
+
+var_name2idx = {'block':[2], 
+                'choice': [0], 
+                'reward': [1], 
+                'wheel': [3],
+                }
+
+var_value2label = {'block': {(0.2,): "p(left)=0.2",
+                            (0.5,): "p(left)=0.5",
+                            (0.8,): "p(left)=0.8",},
+                   'choice': {(-1.0,): "right",
+                            (1.0,): "left"},
+                   'reward': {(0.,): "no reward",
+                            (1.,): "reward", } }
+
+var_tasklist = ['block','choice','reward']
