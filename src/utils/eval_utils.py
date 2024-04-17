@@ -7,6 +7,7 @@ from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metric
 from src.utils.config_utils import config_from_kwargs, update_config
 from src.models.ndt1 import NDT1
 from src.models.stpatch import STPatch
+from models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -17,7 +18,7 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import os
 
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 
 import logging
 
@@ -55,7 +56,10 @@ def load_model_data_local(**kwargs):
     # load the dataset
     r_dataset = load_from_disk(dataset_path)
     dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['test']
-    bin_size = dataset['binsize'][0]
+    try:
+        bin_size = dataset['binsize'][0]
+    except:
+        bin_size = dataset['bin_size'][0]
     print(f'bin size: {bin_size}')
 
     # TODO: update the loader to adapt other models (e.g., patching for NDT2)
@@ -84,6 +88,8 @@ def load_model_data_local(**kwargs):
 # 1. Co-smoothing_r2 (R2 and shuqi's plot) TODO: add more behaviors, add n!=1
 # 2. Co-smoothing_bps (co-bps, adapted from NLB repo) TODO: how to choose the held-out neurons?
 # 3. R2 scatter plot
+# 4. Forward-prediction_r2 (R2 and shuqi's plot w/o PSTH)
+# 5. Forward-prediction_bps (co-bps, adapted from NLB repo)
 # --------------------------------------------------------------------------------------------------
 
 def co_smoothing_r2(
@@ -253,11 +259,10 @@ def co_smoothing_bps(
         plt.xlabel('bits per spike')
         plt.ylabel('count')
         plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)))
-        plt.show()
+        plt.show()        
 
     else:
         raise NotImplementedError('mode not implemented')
-
 
 
 def compare_R2_scatter(**kwargs):
@@ -297,6 +302,121 @@ def compare_R2_scatter(**kwargs):
     axes[1].set_title('R2')
 
 
+def forward_prediction_r2(
+    model,
+    accelerator,
+    test_dataloader,
+    test_dataset,
+    held_out_list=None,
+    **kwargs
+):
+    uuids_list = np.array(test_dataset['cluster_uuids'][0])
+    region_list = np.array(test_dataset['cluster_regions'])[0, :]
+    
+    for batch in test_dataloader:
+        break
+
+    # validate the model on test set
+    model.eval()
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            mask_result = heldout_mask(
+                batch['spikes_data'],
+                mode='forward-pred',
+                heldout_idxs=np.array(held_out_list)
+            )
+            outputs = model(
+                mask_result['spikes'],
+                batch['time_attn_mask'],
+                batch['space_attn_mask'],
+                batch['spikes_timestamps'],
+                batch['spikes_spacestamps']
+            )
+
+    # exponential the poisson rates
+    outputs.preds = torch.exp(outputs.preds)
+
+    # got the numpy array for gt and pred
+    gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+    pred_spikes = outputs.preds.detach().cpu().numpy()
+
+    r2_result_list = []
+    # loop through all the neurons
+    for n_i in tqdm(range(batch['spikes_data'].shape[-1]), desc='neuron'):
+        gt, pred = gt_spikes[:,:,n_i], pred_spikes[:,:,n_i]   
+        r2 = viz_single_cell_no_psth(
+            gt, pred, 
+            neuron_idx=uuids_list[idxs[i]][:4],
+            neuron_region=region_list[idxs[i]],
+            method=method_name, save_path=kwargs['save_path']
+        )
+        r2_result_list.append(r2)
+        plt.show()
+
+    r2_all = np.array(r2_result_list)
+    np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
+    
+
+def forward_prediction_bps(
+    model,
+    accelerator,
+    test_dataloader,
+    held_out_list=None,  
+    **kwargs
+)
+    for batch in test_dataloader:
+        break
+
+    # validate the model on test set
+    model.eval()
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            mask_result = heldout_mask(
+                batch['spikes_data'],
+                mode='forward-pred',
+                heldout_idxs=np.array(held_out_list)
+            )
+
+            outputs = model(
+                mask_result['spikes'],
+                batch['time_attn_mask'],
+                batch['space_attn_mask'],
+                batch['spikes_timestamps'],
+                batch['spikes_spacestamps']
+            )
+
+    # exponential the poisson rates
+    outputs.preds = torch.exp(outputs.preds)
+
+    # got the numpy array for gt and pred
+    gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+    pred_spikes = outputs.preds.detach().cpu().numpy()
+
+    gt_held_out = gt_spikes[:, held_out_list, :]
+    pred_held_out = pred_spikes[:, held_out_list, :]
+
+    bps_result_list = []
+    # loop through all the neurons
+    for n_i in tqdm(range(batch['spikes_data'].shape[-1]), desc='neuron'): 
+        bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+        if np.isinf(bps):
+            continue
+        bps_result_list.append(bps)
+
+    bps_all = np.array(bps_result_list)
+    bps_mean = np.mean(bps_all)
+    bps_std = np.std(bps_all)
+    plt.hist(bps_all, bins=30, alpha=0.75, color='red', edgecolor='black')
+    plt.xlabel('bits per spike')
+    plt.ylabel('count')
+    plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)))
+    plt.show()
+    
+    np.save(os.path.join(kwargs['save_path'], f'co-bps.npy'), bps_all)
+
+
 # --------------------------------------------------------------------------------------------------
 # helper functions
 # --------------------------------------------------------------------------------------------------
@@ -323,6 +443,10 @@ def heldout_mask(
 
     elif mode == 'region':
         raise NotImplementedError('region mask not implemented')
+
+    elif mode == 'forward-pred':
+        hd = heldout_idxs
+        mask[:, hd, :] = 0
 
     spike_data_masked = spike_data * mask
 
@@ -658,6 +782,59 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
     # plt.show()
 
     return r2_psth, r2_trial
+    
+
+def viz_single_cell_no_psth(
+    gt, pred, neuron_idx, neuron_region, method, save_path
+):
+    r2 = 0
+    for _ in range(len(gt)):
+        r2 += r2_score(gt, pred)
+    r2 /= len(gt)
+    
+    y = gt - gt.mean(0)
+    y_pred = pred - pred.mean(0)
+    y_resid = y - y_pred
+    
+    vmin_perc, vmax_perc = 10, 90 
+    vmax = np.percentile(y_pred, vmax_perc)
+    vmin = np.percentile(y_pred, vmin_perc)
+    
+    toshow = [y, y_pred, y_resid]
+    resid_vmax = np.percentile(toshow, vmax_perc)
+    resid_vmin = np.percentile(toshow, vmin_perc)
+    
+    N = len(y)
+    y_labels = ['obs.', 'pred.', 'resid.']
+
+    fig, axes = plt.subplots(3, 1, figsize=(8, 7))
+    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    im1 = axes[0].imshow(y, aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im1, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    axes[0].set_title(f' R2: {r2:.3f}')
+    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    im2 = axes[1].imshow(y_pred, aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im2, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    norm = colors.TwoSlopeNorm(vmin=resid_vmin, vcenter=0, vmax=resid_vmax)
+    im3 = axes[2].imshow(y_resid, aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im3, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    
+    for i, ax in enumerate(axes):
+        ax.set_ylabel(f"{y_labels[i]}"+f"\n(#trials={N})")
+        ax.yaxis.set_ticks([])
+        ax.yaxis.set_ticklabels([])
+        ax.xaxis.set_ticks([])
+        ax.xaxis.set_ticklabels([])
+        ax.spines[['left','bottom', 'right', 'top']].set_visible(False)
+    
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    plt.savefig(os.path.join(save_path, f'{neuron_region}_{neuron_idx}_{r2:.2f}_{method}.png'))
+    plt.tight_layout();
+    return r2
 
 
 def _add_baseline(ax, aligned_tbins=[40]):
@@ -757,3 +934,4 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+        
