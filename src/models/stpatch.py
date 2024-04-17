@@ -267,7 +267,7 @@ class SpaceTimeTransformer(nn.Module):
         self.n_cls_tokens = config.embedder.n_cls_tokens
 
         # Masker
-        self.mask = config.masker.active
+        self.mask = config.masker.force_active
         if self.mask:
             self.masker = Masker(config.masker)
 
@@ -377,7 +377,7 @@ class STPatch(nn.Module):
 
         # Build decoder
         if self.method == "ssl":
-            assert config.encoder.masker.active, "Can't pretrain with inactive masking"
+            assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.max_time_F * config.encoder.embedder.max_space_F
         elif self.method == "sl":
             n_outputs = kwargs["output_size"]
@@ -432,11 +432,12 @@ class STPatch(nn.Module):
         spikes:            torch.FloatTensor,                   # (n_batch, seq_len, n_neurons)
         time_attn_mask:       Optional[torch.LongTensor] = None,   # (bs, seq_len)
         space_attn_mask:      Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        spikes_timestamp:     Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        spikes_spacestamp:    Optional[torch.LongTensor] = None,   # (bs, seq_len)
+        spikes_timestamps:     Optional[torch.LongTensor] = None,   # (bs, seq_len)
+        spikes_spacestamps:    Optional[torch.LongTensor] = None,   # (bs, seq_len)
         targets:           Optional[torch.FloatTensor] = None,  # (n_batch, target_len) 
         spikes_lengths:    Optional[torch.LongTensor] = None,   # (n_batch)
         targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
+        neuron_regions:   Optional[torch.LongTensor] = None,   # (n_batch, n_neurons)
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
@@ -466,7 +467,7 @@ class STPatch(nn.Module):
         # Encode neural data
         # x, targets_mask = self.encoder(spikes, pad_space_len, pad_time_len)
         x, targets_mask = self.encoder(
-            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamp, spikes_spacestamp
+            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps
         )
 
         # Transform neural embeddings into rates/logits
