@@ -16,7 +16,7 @@ from utils.utils import (set_seed,move_batch_to_device,
 from utils.config_utils import config_from_kwargs, update_config
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
-
+from models.itransformer import iTransformer
 
 
 # load config
@@ -71,7 +71,7 @@ test_dataloader = make_loader(test_dataset,
 accelerator = Accelerator()
 
 # load model
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 # load pretrained model
