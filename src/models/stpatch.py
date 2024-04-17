@@ -80,8 +80,8 @@ class NeuralEmbeddingLayer(nn.Module):
             self.cls_tokens = nn.Parameter(torch.zeros(1, self.n_time_patches*self.n_cls_tokens, self.input_dim))
 
         self.projection = nn.Linear(self.input_dim, hidden_size)
-
-        # activation after embedding
+        
+        # activation after embedding 
         self.act = ACT2FN[config.act] if config.act != "identity" else nn.Identity()
 
         # embedding scale
@@ -111,7 +111,7 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.n_cls_tokens != 0:
             cls_tokens = self.cls_tokens.expand(B, -1, -1)  
             x = torch.cat((cls_tokens, x), dim=1)
-
+        
         # Rescaling
         x = self.act(x) * self.scale
 
@@ -298,14 +298,14 @@ class SpaceTimeTransformer(nn.Module):
 
     def forward(
             self, 
-            spikes:                  torch.FloatTensor,  # (n_batch, n_token, n_channels)
-            pad_space_len,
-            pad_time_len,
-            time_attn_mask:       Optional[torch.LongTensor] = None,   # (bs, seq_len)
-            space_attn_mask:      Optional[torch.LongTensor] = None,   # (bs, seq_len)
-            spikes_timestamp:     Optional[torch.LongTensor] = None,   # (bs, seq_len)
-            spikes_spacestamp:    Optional[torch.LongTensor] = None,   # (bs, seq_len)
-    ) -> torch.FloatTensor:                              # (n_batch, n_token, hidden_size)
+            spikes:               torch.FloatTensor,  # (bs, seq_len, n_channels)
+            pad_space_len:        torch.LongTensor,   # (bs,)
+            pad_time_len:         int,
+            time_attn_mask:       torch.LongTensor,   # (bs, seq_len)
+            space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+            spikes_timestamp:     torch.LongTensor,   # (bs, seq_len)
+            spikes_spacestamp:    torch.LongTensor,   # (bs, seq_len)
+    ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
         B, T, N = spikes.size() # n_batch, n_token, n_channels
 
@@ -318,10 +318,6 @@ class SpaceTimeTransformer(nn.Module):
         if self.mask:
             targets_mask = targets_mask & time_attn_mask.unsqueeze(-1).expand(B,T,N)
             targets_mask = targets_mask & space_attn_mask.unsqueeze(1).expand(B,T,N)
-
-        # print(pad_space_len)
-        # print(pad_space_len % self.max_space_F)
-        # print(floor(pad_space_len / self.max_space_F))
 
         # Patch neural data
         if self.patch:
@@ -429,15 +425,15 @@ class STPatch(nn.Module):
 
     def forward(
         self, 
-        spikes:            torch.FloatTensor,                   # (n_batch, seq_len, n_neurons)
-        time_attn_mask:       Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        space_attn_mask:      Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        spikes_timestamps:     Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        spikes_spacestamps:    Optional[torch.LongTensor] = None,   # (bs, seq_len)
-        targets:           Optional[torch.FloatTensor] = None,  # (n_batch, target_len) 
-        spikes_lengths:    Optional[torch.LongTensor] = None,   # (n_batch)
-        targets_lengths:   Optional[torch.LongTensor] = None,   # (n_batch)
-        neuron_regions:   Optional[torch.LongTensor] = None,   # (n_batch, n_neurons)
+        spikes:               torch.FloatTensor,                   # (bs, seq_len, n_channels)
+        time_attn_mask:       torch.LongTensor,                    # (bs, seq_len)
+        space_attn_mask:      torch.LongTensor,                    # (bs, seq_len)
+        spikes_timestamps:    torch.LongTensor,                    # (bs, seq_len)
+        spikes_spacestamps:   torch.LongTensor,                    # (bs, seq_len)
+        targets:              Optional[torch.FloatTensor] = None,  # (bs, target_len) 
+        spikes_lengths:       Optional[torch.LongTensor] = None,   # (bs,)
+        targets_lengths:      Optional[torch.LongTensor] = None,   # (bs,)
+        neuron_regions:       Optional[torch.LongTensor] = None,   # (bs, n_channels)
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
@@ -453,19 +449,13 @@ class STPatch(nn.Module):
 
         pad_space_len = []
         for b in range(B):
-            # print((spikes[b,0] == self.pad_value).nonzero().min())
             if (spikes[b,0] == self.pad_value).sum() == 0:
                 pad_space_len.append(N)
             else:
                 pad_space_len.append((spikes[b,0] == self.pad_value).nonzero().min().item())
         pad_space_len = torch.tensor(pad_space_len)
 
-        # print(pad_space_len)
-            
-        # pad_space_len = ((spikes[0,0,:] == self.pad_value).nonzero()).min().item() 
-
         # Encode neural data
-        # x, targets_mask = self.encoder(spikes, pad_space_len, pad_time_len)
         x, targets_mask = self.encoder(
             spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps
         )
@@ -474,10 +464,7 @@ class STPatch(nn.Module):
         if self.method == "ssl":
             # Grab the spike embeddings
             x = x[:,self.encoder.n_time_patches*self.encoder.n_cls_tokens:]
-            # outputs = self.decoder(x).reshape((-1, pad_time_len, pad_space_len))
             outputs = self.decoder(x).reshape((-1, targets.size()[1], targets.size()[-1]))
-            # targets = targets[:,:pad_time_len, :pad_space_len]
-            # targets_mask = targets_mask.reshape((-1, T, N))[:,:pad_time_len, :pad_space_len]
             
         elif self.method == "sl":
             # Grab the prepended [cls] embeddings
@@ -507,3 +494,4 @@ class STPatch(nn.Module):
     def load_checkpoint(self, load_dir):
         self.encoder.load_state_dict(torch.load(os.path.join(load_dir,"encoder.bin")))
         self.decoder.load_state_dict(torch.load(os.path.join(load_dir,"decoder.bin")))
+        

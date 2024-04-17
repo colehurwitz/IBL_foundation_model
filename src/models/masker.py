@@ -14,6 +14,7 @@ from utils.config_utils import DictConfig
 >``temporal``: all channels of randomly selected timesteps are masked. supports consecutive bin masking
 >``neuron``: all timebins of randomly selected neurons are masked
 >``co-smooth``: a fixed set of channels are masked
+>``forward-pred``: a fixed set of time steps are masked
 >``intra-area``: all neurons except a specific brain region are masked. Some neurons are masked in the target region. The targets are within the unmasked region
 >``inter-area``: neurons in specific brain regions are masked. The targets are the masked regions.
 
@@ -25,6 +26,7 @@ CONFIG:
     expand_prob: probability of expanding the mask for consecutive bin masking in ``temporal`` mode
     max_timespan: max length of the expanded mask in ``temporal`` mode
     channels: list of ``int`` containing the indx of channels to mask in ``co-smooth`` mode
+    timesteps: list of ``int`` containing the indx of time steps to mask in ``forward-pred`` mode
     mask_regions: list of ``str`` containing the names of regions to mask in ``inter-region`` mode
     target_regions: list of ``str`` containing the names of the target region in ``intra-region`` mode
     n_mask_regions: number of regions to select from mask_regions or target_regions
@@ -43,6 +45,7 @@ class Masker(nn.Module):
         self.expand_prob = config.expand_prob
         self.max_timespan = config.max_timespan
         self.channels = config.channels
+        self.timesteps = config.timesteps
         self.mask_regions = config.mask_regions
         self.target_regions = config.target_regions
         self.n_mask_regions = config.n_mask_regions
@@ -50,7 +53,7 @@ class Masker(nn.Module):
     def forward(
         self, 
         spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
-        neuron_regions: np.ndarray = None,                # (bs, n_channels)     
+        neuron_regions: np.ndarray = None,              # (bs, n_channels)     
     ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
 
         if not self.training and not self.force_active:
@@ -74,6 +77,11 @@ class Masker(nn.Module):
             mask_probs = torch.zeros(spikes.shape[2])
             for c in self.channels:
                 mask_probs[c] = 1
+        elif self.mode == "forward-pred":
+            assert self.timesteps is not None, "No time steps to mask"
+            mask_probs = torch.zeros(spikes.shape[1])
+            for t in self.timesteps:
+                mask_probs[t] = 1
         elif self.mode == "inter-region":
             assert neuron_regions is not None, "Can't mask region without brain region information"
             assert self.mask_regions is not None, "No regions to mask"
@@ -108,6 +116,8 @@ class Masker(nn.Module):
             mask = mask.unsqueeze(1).expand_as(spikes).bool()    
         elif self.mode in ["co-smooth"]:
             mask = mask.unsqueeze(0).unsqueeze(1).expand_as(spikes).bool()
+        elif self.mode in ["forward-pred"]:
+            mask = mask.unsqueeze(0).unsqueeze(2).expand_as(spikes).bool()
         else: # random
             mask = mask.bool()          # (bs, seq_len, n_channels)
             

@@ -28,11 +28,11 @@ class Patcher(nn.Module):
 
     def forward(
         self, 
-        spikes: torch.FloatTensor,                       # (bs, seq_len, n_channels)
-        pad_space_len,
-        pad_time_len,
-        time_attn_mask,       
-        space_attn_mask,
+        spikes:          torch.FloatTensor,     # (bs, seq_len, n_channels)
+        pad_space_len:   torch.LongTensor,      # (bs,)
+        pad_time_len:    int,
+        time_attn_mask:  torch.LongTensor,      # (bs, seq_len,)
+        space_attn_mask: torch.LongTensor       # (bs, seq_len,)
     ) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:  
          # (bs, seq_len, n_channels), (bs, seq_len), (bs, seq_len), (bs, seq_len), (bs, seq_len, n_channels)
 
@@ -72,8 +72,6 @@ class Patcher(nn.Module):
         timestamps = timestamps.expand(B, -1, self.n_space_patches+self.n_cls_tokens).to(spikes.device).flatten(1)
         
         # Prepare space and time masks after accounting for [cls] tokens
-        # _time_attn_mask = self._attention_mask(T, pad_time_len)[None,:,None]
-        # _time_attn_mask = _time_attn_mask.expand(B,-1,self.n_space_patches+self.n_cls_tokens)
         _time_attn_mask = time_attn_mask[:,:,None].expand(-1,-1,self.n_space_patches+self.n_cls_tokens) 
         time_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches+self.n_cls_tokens))
         time_attn_mask[:,:,:self.n_cls_tokens] = 1
@@ -82,8 +80,6 @@ class Patcher(nn.Module):
                 if (_time_attn_mask[b,t*self.max_time_F:(t+1)*self.max_time_F]==1).sum() > 0:
                     time_attn_mask[b,t,self.n_cls_tokens:] = 1
 
-        # _space_attn_mask = self._attention_mask(N, pad_space_len)[None,None,:]
-        # _space_attn_mask = _space_attn_mask.expand(B,self.n_time_patches,-1) 
         _space_attn_mask = space_attn_mask[:,None,:].expand(-1,self.n_time_patches,-1) 
         space_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches+self.n_cls_tokens))   
         space_attn_mask[:,:,:self.n_cls_tokens] = 1
@@ -96,11 +92,3 @@ class Patcher(nn.Module):
         space_attn_mask = space_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
 
         return patches, space_attn_mask, time_attn_mask, spacestamps, timestamps
-
-    def _attention_mask(self, seq_length: int, pad_length: int) -> torch.tensor:
-        mask = torch.ones(seq_length)
-        if pad_length:
-            mask[-pad_length:] = 0
-        else:
-            mask[:pad_length] = 0
-        return mask
