@@ -65,6 +65,7 @@ test_dataloader = make_loader(test_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         load_meta=True,
                          shuffle=False)
 
 # Initialize the accelerator
@@ -90,7 +91,7 @@ with torch.no_grad():
             outputs = model(
                 batch['spikes_data'], 
                 batch['attention_mask'], 
-                batch['spikes_timestamps']
+                batch['spikes_timestamps'],
             )
         else:
             outputs = model(
@@ -99,6 +100,7 @@ with torch.no_grad():
             batch['space_attn_mask'],
             batch['spikes_timestamps'], 
             batch['spikes_spacestamps'], 
+            neuron_regions = batch['neuron_regions'],
             targets = batch['target']
         )
             gt.append(outputs.targets.clone())

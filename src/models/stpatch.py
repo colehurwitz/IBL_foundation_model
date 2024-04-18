@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
 from functools import partial
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -305,13 +306,14 @@ class SpaceTimeTransformer(nn.Module):
             space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
             spikes_timestamp:     torch.LongTensor,   # (bs, seq_len)
             spikes_spacestamp:    torch.LongTensor,   # (bs, seq_len)
+            neuron_regions:       None,  # (bs, n_channels)
     ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
         B, T, N = spikes.size() # n_batch, n_token, n_channels
 
         # Mask neural data
         if self.mask:
-            spikes, targets_mask = self.masker(spikes)
+            spikes, targets_mask = self.masker(spikes,neuron_regions)
         else:
             targets_mask = None
 
@@ -437,6 +439,10 @@ class STPatch(nn.Module):
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
+
+        # if neuron_regions type is list 
+        if isinstance(neuron_regions, list):
+            neuron_regions = np.asarray(neuron_regions).T
         
         if self.method == "ssl":
             targets = spikes.clone()
@@ -457,7 +463,7 @@ class STPatch(nn.Module):
 
         # Encode neural data
         x, targets_mask = self.encoder(
-            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps
+            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions
         )
 
         # Transform neural embeddings into rates/logits

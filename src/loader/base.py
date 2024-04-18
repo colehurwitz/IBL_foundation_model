@@ -156,11 +156,14 @@ class BaseDataset(torch.utils.data.Dataset):
         binned_spikes_data = binned_spikes_data[0]
 
         if self.load_meta:
-            neuron_depths = np.array(data['cluster_depths']).astype(np.float32)
-            neuron_regions = np.array(data['cluster_regions']).astype('str')
+            if 'cluster_depths' in data:
+                neuron_depths = np.array(data['cluster_depths']).astype(np.float32)
+            else:
+                neuron_depths = np.array([np.nan])
+            neuron_regions = list(np.array(data['cluster_regions']).astype('str'))
+            
         else:
             neuron_depths = neuron_regions = np.array([np.nan])
-
         if self.load_meta & (self.brain_region != 'all'):
             # only load neurons from a given brain region
             # this is for NDT2 since not enough RAM to load all neurons  
