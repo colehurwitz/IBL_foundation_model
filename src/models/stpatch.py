@@ -1,4 +1,5 @@
 import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 from math import ceil, floor
 from dataclasses import dataclass
