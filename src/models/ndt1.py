@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict
 
@@ -458,8 +459,9 @@ class NeuralEncoder(nn.Module):
             spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
             spikes_mask:      torch.LongTensor,   # (bs, seq_len)
             spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
-            block_idx:          Optional[torch.LongTensor] = None,   # (bs)
-            date_idx:           Optional[torch.LongTensor] = None,   # (bs)
+            block_idx:        Optional[torch.LongTensor] = None,   # (bs)
+            date_idx:         Optional[torch.LongTensor] = None,   # (bs)
+            neuron_regions:   Optional[np.ndarray] = None,  # (bs, n_channels)
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
         B, T, N = spikes.size() # batch size, fea len, n_channels
@@ -472,7 +474,7 @@ class NeuralEncoder(nn.Module):
 
         # Mask neural data
         if self.mask:
-            spikes, targets_mask = self.masker(spikes)
+            spikes, targets_mask = self.masker(spikes, neuron_regions)
             targets_mask = targets_mask & spikes_mask.unsqueeze(-1).expand(B,T,N)
         else:
             targets_mask = None
@@ -589,7 +591,12 @@ class NDT1(nn.Module):
         targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
         block_idx:        Optional[torch.LongTensor] = None,   # (bs)
         date_idx:         Optional[torch.LongTensor] = None,   # (bs)
-    ) -> NDT1Output:      
+        neuron_regions:   Optional[torch.LongTensor] = None,   # (bs, n_channels)
+    ) -> NDT1Output:  
+
+        # if neuron_regions type is list 
+        if isinstance(neuron_regions, list):
+            neuron_regions = np.asarray(neuron_regions).T
 
         if self.method == "ssl":
             targets = spikes.clone()
@@ -597,7 +604,7 @@ class NDT1(nn.Module):
                 targets = targets.to(torch.int64)
 
         # Encode neural data
-        x, targets_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx)
+        x, targets_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions)
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits
