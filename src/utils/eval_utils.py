@@ -66,6 +66,7 @@ def load_model_data_local(**kwargs):
     # TODO: update the loader to adapt other models (e.g., patching for NDT2)
     dataloader = make_loader(
         dataset,
+        target=config.data.target,
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
@@ -73,6 +74,7 @@ def load_model_data_local(**kwargs):
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
         shuffle=False
     )
 
@@ -229,9 +231,7 @@ def co_smoothing_r2(
                     heldout_idxs=np.array(held_out_list),
                     target_regions=target_regions,
                     neuron_regions=region_list
-                )
-                print(mask_result['spikes'].shape)
-                
+                )                
                 outputs = model(
                     mask_result['spikes'],
                     time_attn_mask=batch['time_attn_mask'],
@@ -252,11 +252,9 @@ def co_smoothing_r2(
         elif mode in ['forward_pred']:
             target_neuron_idxs = np.arange(gt_spikes.shape[-1])
             target_time_idxs = held_out_list
-
-        print(target_neuron_idxs)
         
-        ys = gt_spikes[:, target_time_idxs, target_neuron_idxs]
-        y_preds = pred_spikes[:, target_time_idxs, target_neuron_idxs]
+        ys = gt_spikes[:, target_time_idxs]
+        y_preds = pred_spikes[:, target_time_idxs]
 
         # choose the neuron to plot
         idxs = target_neuron_idxs
@@ -264,7 +262,7 @@ def co_smoothing_r2(
         r2_result_list = []
         for i in range(idxs.shape[0]):
             if is_aligned:
-                X = behavior_set[:, held_out_list, :]  # [#trials, #timesteps, #variables]
+                X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
                 _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
                                                       var_name2idx, var_tasklist, var_value2label, var_behlist,
                                                       subtract_psth=kwargs['subtract'],
@@ -293,13 +291,12 @@ def co_smoothing_bps(
         model,
         accelerator,
         test_dataloader,
+        test_dataset,
         mode='per_neuron',     # manual / active / per_neuron / forward_pred / inter_region / intra_region / etc (TODO)
         held_out_list=None,    # list for manual / forward_pred mode
         target_regions=None,            # list for region mode
 ):
-    for batch in test_dataloader:
-        neuron_regions = batch['neuron_regions'][0].numpy()
-        break
+    region_list = np.array(test_dataset['cluster_regions'])[0, :]
 
     if mode == 'per_neuron':
         bps_result_list = []
@@ -360,7 +357,7 @@ def co_smoothing_bps(
                     mode=mode,
                     heldout_idxs=np.array(held_out_list),
                     target_regions=target_regions,
-                    neuron_regions=neuron_regions
+                    neuron_regions=region_list
                 )
                 outputs = model(
                     mask_result['spikes'],
@@ -383,8 +380,8 @@ def co_smoothing_bps(
             target_neuron_idxs = np.arange(gt_spikes.shape[-1])
             target_time_idxs = held_out_list
 
-        gt_held_out = gt_spikes[:, target_time_idxs, target_neuron_idxs]
-        pred_held_out = pred_spikes[:, target_time_idxs, target_neuron_idxs]
+        gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+        pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
 
         bps_result_list = []
         for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
@@ -456,6 +453,8 @@ def heldout_mask(
 ):
     mask = torch.ones(spike_data.shape).to(spike_data.device)
 
+    neuron_regions = neuron_regions[:spike_data.shape[-1]]
+
     if mode == 'manual':
         hd = heldout_idxs
         mask[:, :, hd] = 0
@@ -473,7 +472,7 @@ def heldout_mask(
             region_idxs = np.argwhere(neuron_regions == region).flatten()
             mask[:, :, region_idxs] = 0 
             hd.append(region_idxs)
-        hd = np.stack(hd)
+        hd = np.stack(hd).flatten()
 
     elif mode == 'intra_region':
         mask *= 0
@@ -484,7 +483,7 @@ def heldout_mask(
             target_idxs = region_idxs[heldout_idxs]
             mask[:, :, target_idxs] = 0
             hd.append(target_idxs)
-        hd = np.stack(hd)
+        hd = np.stack(hd).flatten()
             
     elif mode == 'forward_pred':
         hd = heldout_idxs
