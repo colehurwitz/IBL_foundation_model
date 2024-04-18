@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from math import ceil, floor
 from dataclasses import dataclass
 from copy import deepcopy
@@ -306,7 +307,7 @@ class SpaceTimeTransformer(nn.Module):
             space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
             spikes_timestamp:     torch.LongTensor,   # (bs, seq_len)
             spikes_spacestamp:    torch.LongTensor,   # (bs, seq_len)
-            neuron_regions:       None,  # (bs, n_channels)
+            neuron_regions:       Optional[np.ndarray] = None,  # (bs, n_channels)
     ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
         B, T, N = spikes.size() # n_batch, n_token, n_channels
