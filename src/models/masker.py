@@ -15,8 +15,8 @@ from utils.config_utils import DictConfig
 >``neuron``: all timebins of randomly selected neurons are masked
 >``co-smooth``: a fixed set of channels are masked
 >``forward-pred``: a fixed set of time steps are masked
->``intra-area``: all neurons except a specific brain region are masked. Some neurons are masked in the target region. The targets are within the unmasked region
->``inter-area``: neurons in specific brain regions are masked. The targets are the masked regions.
+>``intra-region``: all neurons except a specific brain region are masked. Some neurons are masked in the target region. The targets are within the unmasked region
+>``inter-region``: neurons in specific brain regions are masked. The targets are the masked regions.
 
 CONFIG:
     mode: masking mode

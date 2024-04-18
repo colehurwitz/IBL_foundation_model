@@ -103,6 +103,7 @@ def co_smoothing_r2(
     method_name = kwargs['method_name']
     mode = kwargs['mode']
     is_aligned = kwargs['is_aligned']
+    target_regions = kwargs['target_regions']
     
     uuids_list = np.array(test_dataset['cluster_uuids'][0])
     region_list = np.array(test_dataset['cluster_regions'])[0, :]
@@ -166,10 +167,12 @@ def co_smoothing_r2(
                     )
                     outputs = model(
                         mask_result['spikes'],
-                        batch['time_attn_mask'],
-                        batch['space_attn_mask'],
-                        batch['spikes_timestamps'],
-                        batch['spikes_spacestamps']
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'].T
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -204,9 +207,17 @@ def co_smoothing_r2(
                     r2_result_list.append(r2)
                 plt.show() 
     
-    elif mode == 'forward_pred':
+    elif mode in ['forward_pred', 'inter_region', 'intra_region']:
 
         held_out_list = kwargs['held_out_list']
+
+        if mode == 'inter_region':
+            assert held_out_list is None, 'inter_region outputs all neurons in the target region'
+        elif mode == 'intra_region':
+            assert held_out_list is not None, 'intra_region requires specific target neurons from the target region'
+        elif mode == 'forward_pred':
+            assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
+            target_regions = neuron_regions = None
         
         model.eval()
         with torch.no_grad():
@@ -214,26 +225,41 @@ def co_smoothing_r2(
                 batch = move_batch_to_device(batch, accelerator.device)
                 mask_result = heldout_mask(
                     batch['spikes_data'],
-                    mode='forward-pred',
-                    heldout_idxs=np.array(held_out_list)
+                    mode=mode,
+                    heldout_idxs=np.array(held_out_list),
+                    target_regions=target_regions,
+                    neuron_regions=region_list
                 )
+                print(mask_result['spikes'].shape)
+                
                 outputs = model(
                     mask_result['spikes'],
-                    batch['time_attn_mask'],
-                    batch['space_attn_mask'],
-                    batch['spikes_timestamps'],
-                    batch['spikes_spacestamps']
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    targets = batch['target'],
+                    neuron_regions=batch['neuron_regions'].T
                 )
         outputs.preds = torch.exp(outputs.preds)
     
         gt_spikes = batch['spikes_data'].detach().cpu().numpy()
         pred_spikes = outputs.preds.detach().cpu().numpy()
+
+        if mode in ['inter_region', 'intra_region']:
+            target_neuron_idxs = mask_result['heldout_idxs']
+            target_time_idxs = np.arange(gt_spikes.shape[1])
+        elif mode in ['forward_pred']:
+            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
+            target_time_idxs = held_out_list
+
+        print(target_neuron_idxs)
         
-        ys = gt_spikes[:, held_out_list, :]  # [#trials, #timesteps, #neurons]
-        y_preds = pred_spikes[:, held_out_list, :]  # [#trials, #timesteps, #neurons]
+        ys = gt_spikes[:, target_time_idxs, target_neuron_idxs]
+        y_preds = pred_spikes[:, target_time_idxs, target_neuron_idxs]
 
         # choose the neuron to plot
-        idxs = np.arange(N)
+        idxs = target_neuron_idxs
 
         r2_result_list = []
         for i in range(idxs.shape[0]):
@@ -267,10 +293,12 @@ def co_smoothing_bps(
         model,
         accelerator,
         test_dataloader,
-        mode='per_neuron',              # manual / active / region / per_neuron / forward_pred / etc (TODO)
-        held_out_list=None,             # list for manual mode
+        mode='per_neuron',     # manual / active / per_neuron / forward_pred / inter_region / intra_region / etc (TODO)
+        held_out_list=None,    # list for manual / forward_pred mode
+        target_regions=None,            # list for region mode
 ):
     for batch in test_dataloader:
+        neuron_regions = batch['neuron_regions'][0].numpy()
         break
 
     if mode == 'per_neuron':
@@ -291,12 +319,13 @@ def co_smoothing_bps(
                     )
                     outputs = model(
                         mask_result['spikes'],
-                        batch['time_attn_mask'],
-                        batch['space_attn_mask'],
-                        batch['spikes_timestamps'],
-                        batch['spikes_spacestamps']
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'].T
                     )
-
             # exponential the poisson rates
             outputs.preds = torch.exp(outputs.preds)
 
@@ -308,39 +337,57 @@ def co_smoothing_bps(
             pred_held_out = pred_spikes[:, :, [n_i]]
 
             bps = bits_per_spike(pred_held_out, gt_held_out)
-            # print(bps)
             if np.isinf(bps):
                 continue
             bps_result_list.append(bps)
+    
+    elif mode in ['forward_pred', 'inter_region', 'intra_region']:
 
-    elif mode == 'forward_pred':
-        
+        if mode == 'inter_region':
+            assert held_out_list is None, 'inter_region outputs all neurons in the target region'
+        elif mode == 'intra_region':
+            assert held_out_list is not None, 'intra_region requires specific target neurons from the target region'
+        elif mode == 'forward_pred':
+            assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
+            target_regions = neuron_regions = None
+
         model.eval()
         with torch.no_grad():
             for batch in test_dataloader:
                 batch = move_batch_to_device(batch, accelerator.device)
                 mask_result = heldout_mask(
                     batch['spikes_data'],
-                    mode='forward-pred',
-                    heldout_idxs=np.array(held_out_list)
+                    mode=mode,
+                    heldout_idxs=np.array(held_out_list),
+                    target_regions=target_regions,
+                    neuron_regions=neuron_regions
                 )
                 outputs = model(
                     mask_result['spikes'],
-                    batch['time_attn_mask'],
-                    batch['space_attn_mask'],
-                    batch['spikes_timestamps'],
-                    batch['spikes_spacestamps']
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    targets = batch['target'],
+                    neuron_regions=batch['neuron_regions'].T
                 )
         outputs.preds = torch.exp(outputs.preds)
     
         gt_spikes = batch['spikes_data'].detach().cpu().numpy()
         pred_spikes = outputs.preds.detach().cpu().numpy()
-    
-        gt_held_out = gt_spikes[:, held_out_list, :]
-        pred_held_out = pred_spikes[:, held_out_list, :]
-    
+
+        if mode in ['inter_region', 'intra_region']:
+            target_neuron_idxs = mask_result['heldout_idxs']
+            target_time_idxs = np.arange(gt_spikes.shape[1])
+        elif mode in ['forward_pred']:
+            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
+            target_time_idxs = held_out_list
+
+        gt_held_out = gt_spikes[:, target_time_idxs, target_neuron_idxs]
+        pred_held_out = pred_spikes[:, target_time_idxs, target_neuron_idxs]
+
         bps_result_list = []
-        for n_i in tqdm(range(batch['spikes_data'].shape[-1]), desc='neuron'): 
+        for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
             bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
             if np.isinf(bps):
                 continue
@@ -401,10 +448,11 @@ def compare_R2_scatter(**kwargs):
 
 def heldout_mask(
         spike_data,                     # (K, T, N)
-        mode='manual',                  # manual / active / region / per_neuron / etc (TODO)
+        mode='manual',                  # manual / active / per_neuron / forward_pred / inter_region / etc (TODO)
         heldout_idxs=np.array([]),      # list for manual mode
         n_active=1,                     # n_neurons for most-active mode
-        region=None                     # list for region mode
+        target_regions=None,            # list for region mode
+        neuron_regions=None,            # list for region mode
 ):
     mask = torch.ones(spike_data.shape).to(spike_data.device)
 
@@ -419,12 +467,31 @@ def heldout_mask(
         hd = np.array(act_idx[-n_active:])
         mask[:, :, hd] = 0
 
-    elif mode == 'region':
-        raise NotImplementedError('region mask not implemented')
+    elif mode == 'inter_region':
+        hd = []
+        for region in target_regions:
+            region_idxs = np.argwhere(neuron_regions == region).flatten()
+            mask[:, :, region_idxs] = 0 
+            hd.append(region_idxs)
+        hd = np.stack(hd)
 
-    elif mode == 'forward-pred':
+    elif mode == 'intra_region':
+        mask *= 0
+        hd = []
+        for region in target_regions:
+            region_idxs = np.argwhere(neuron_regions == region).flatten()
+            mask[:, :, region_idxs] = 1 
+            target_idxs = region_idxs[heldout_idxs]
+            mask[:, :, target_idxs] = 0
+            hd.append(target_idxs)
+        hd = np.stack(hd)
+            
+    elif mode == 'forward_pred':
         hd = heldout_idxs
         mask[:, hd, :] = 0
+        
+    else:
+        raise NotImplementedError('mode not implemented')
 
     spike_data_masked = spike_data * mask
 
