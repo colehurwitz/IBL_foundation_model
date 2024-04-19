@@ -7,7 +7,7 @@ def _pad_seq_right_to_n(
     n: int,
     pad_value: float = 0.
     ) -> np.ndarray:
-    if n == seq.shape[0]:
+    if n == len(seq):
         return seq
     return np.concatenate(
         [
@@ -27,7 +27,7 @@ def _pad_seq_left_to_n(
     n: int,
     pad_value: float = 0.
     ) -> np.ndarray:
-    if n == seq.shape[0]:
+    if n == len(seq):
         return seq
     return np.concatenate(
         [

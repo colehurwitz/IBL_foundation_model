@@ -157,7 +157,7 @@ def co_smoothing_r2(
         
         r2_result_list = []
         # loop through all the neurons
-        for n_i in range(batch['spikes_data'].shape[-1]):
+        for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -174,7 +174,7 @@ def co_smoothing_r2(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'].T
+                        neuron_regions=batch['neuron_regions']#.T
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -207,7 +207,6 @@ def co_smoothing_r2(
                         method=method_name, save_path=kwargs['save_path']
                     )
                     r2_result_list.append(r2)
-                plt.show() 
     
     elif mode in ['forward_pred', 'inter_region', 'intra_region']:
 
@@ -239,7 +238,7 @@ def co_smoothing_r2(
                     spikes_timestamps=batch['spikes_timestamps'], 
                     spikes_spacestamps=batch['spikes_spacestamps'], 
                     targets = batch['target'],
-                    neuron_regions=batch['neuron_regions'].T
+                    neuron_regions=batch['neuron_regions']#.T
                 )
         outputs.preds = torch.exp(outputs.preds)
     
@@ -260,7 +259,7 @@ def co_smoothing_r2(
         idxs = target_neuron_idxs
 
         r2_result_list = []
-        for i in range(idxs.shape[0]):
+        for i in tqdm(range(idxs.shape[0])):
             if is_aligned:
                 X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
                 _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
@@ -269,7 +268,7 @@ def co_smoothing_r2(
                                                       aligned_tbins=[],
                                                       neuron_idx=uuids_list[idxs[i]][:4],
                                                       neuron_region=region_list[idxs[i]],
-                                                      method=method_name, save_path=kwargs['save_path'])
+                                                      method=method_name, save_path=kwargs['save_path']);
                 r2_result_list.append(np.array([_r2_psth, _r2_trial]))
             else:
                 r2 = viz_single_cell_unaligned(
@@ -279,7 +278,6 @@ def co_smoothing_r2(
                     method=method_name, save_path=kwargs['save_path']
                 )
                 r2_result_list.append(r2)
-            plt.show() 
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -295,8 +293,12 @@ def co_smoothing_bps(
         mode='per_neuron',     # manual / active / per_neuron / forward_pred / inter_region / intra_region / etc (TODO)
         held_out_list=None,    # list for manual / forward_pred mode
         target_regions=None,            # list for region mode
+        **kwargs
 ):
     region_list = np.array(test_dataset['cluster_regions'])[0, :]
+
+    for batch in test_dataloader:
+        break
 
     if mode == 'per_neuron':
         bps_result_list = []
@@ -321,7 +323,7 @@ def co_smoothing_bps(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'].T
+                        neuron_regions=batch['neuron_regions']#.T
                     )
             # exponential the poisson rates
             outputs.preds = torch.exp(outputs.preds)
@@ -366,7 +368,7 @@ def co_smoothing_bps(
                     spikes_timestamps=batch['spikes_timestamps'], 
                     spikes_spacestamps=batch['spikes_spacestamps'], 
                     targets = batch['target'],
-                    neuron_regions=batch['neuron_regions'].T
+                    neuron_regions=batch['neuron_regions']#.T
                 )
         outputs.preds = torch.exp(outputs.preds)
     
@@ -398,9 +400,11 @@ def co_smoothing_bps(
     plt.hist(bps_all, bins=30, alpha=0.75, color='red', edgecolor='black')
     plt.xlabel('bits per spike')
     plt.ylabel('count')
-    plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)))
-    plt.show()
+    plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)));
+    plt.savefig(os.path.join(kwargs['save_path'], f'bps.png'), dpi=200)
 
+    np.save(os.path.join(kwargs['save_path'], f'bps.npy'), bps_all)
+    
 
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
@@ -452,8 +456,9 @@ def heldout_mask(
         neuron_regions=None,            # list for region mode
 ):
     mask = torch.ones(spike_data.shape).to(spike_data.device)
-
-    neuron_regions = neuron_regions[:spike_data.shape[-1]]
+    
+    if neuron_regions is not None:
+        neuron_regions = neuron_regions[:spike_data.shape[-1]]
 
     if mode == 'manual':
         hd = heldout_idxs

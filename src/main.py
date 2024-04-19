@@ -15,11 +15,11 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
+    "model": "include:src/configs/ndt1.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/trainer.yaml", config)
+config = update_config("src/configs/ssl_session_trainer.yaml", config)
 
 # make log dir
 log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.model.encoder.masker.mode))
@@ -36,25 +36,26 @@ set_seed(config.seed)
 
 # download dataset from huggingface
 if "ibl" in config.data.dataset_name:
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+    #dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
 
-    try:
-        bin_size = dataset["train"]["binsize"][0]
-    except:
-        bin_size = dataset["train"]["bin_size"][0]
+    #try:
+    #    bin_size = dataset["train"]["binsize"][0]
+    #except:
+    #    bin_size = dataset["train"]["bin_size"][0]
     
 
     # split the dataset to train and test
-    dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
+    #dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
     # select the train dataset and the spikes_sparse_data column
-    data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
-    train_dataset = dataset["train"].select_columns(data_columns)
-    test_dataset = dataset["test"].select_columns(data_columns)
+    #data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
+    #train_dataset = dataset["train"].select_columns(data_columns)
+    #test_dataset = dataset["test"].select_columns(data_columns)
 
     if config.data.include_behav:
         dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
-        dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
-        dataset = dataset.train_test_split(test_size=0.1, seed=config.seed)
+        #dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
+        _dataset = dataset.train_test_split(test_size=0.2, seed=config.seed)['train']
+        dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
         try:
             bin_size = dataset["train"]["binsize"][0]
         except:
@@ -135,6 +136,3 @@ trainer_ = make_trainer(
 # train loop
 trainer_.train()
 
-rl(models)
-rl(models.itransformer)
-from models.itransformer import *
