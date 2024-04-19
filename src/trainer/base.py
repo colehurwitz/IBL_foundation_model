@@ -135,7 +135,7 @@ class Trainer():
             spikes_timestamps=batch['spikes_timestamps'], 
             spikes_spacestamps=batch['spikes_spacestamps'], 
             targets = batch['target'],
-            neuron_regions=batch['neuron_regions'].T
+            neuron_regions=batch['neuron_regions']#.T
         ) 
     
     def eval_epoch(self):

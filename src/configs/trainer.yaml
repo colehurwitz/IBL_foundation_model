@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: multi-session
+wandb_project: single-session
 log_to_wandb: false
 
 verbosity: 0
@@ -10,7 +10,7 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: multi-session
+  project: single-session
   run_name: 671c7ea7
 
 # Logging directories
@@ -19,21 +19,21 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
+  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
-  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
 
 
 # Training configuration
 training:
-  num_epochs: 50
+  num_epochs: 300
   train_batch_size: 8
   test_batch_size: 8  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 1  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
@@ -62,8 +62,8 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 50    # max_time_length has to be a multiple of time patch size
-  max_space_length: 384   # max_space_length has to be a multiple of space patch size
+  max_time_length: 100    # max_time_length has to be a multiple of time patch size
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
@@ -71,7 +71,7 @@ data:
   include_behav: true # include behavior data
   target: null
 
-  load_meta: false
+  load_meta: true
 
   num_sessions: 3
   test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
@@ -110,7 +110,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-3
+  lr: 1.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
