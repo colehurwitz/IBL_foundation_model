@@ -1,15 +1,12 @@
-from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
 from utils.config_utils import config_from_kwargs, update_config
-from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
-import numpy as np
 import os
 from trainer.make import make_trainer
 
@@ -64,6 +61,7 @@ train_dataloader = make_loader(train_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         load_meta=config.data.load_meta,
                          shuffle=True)
 
 eval_dataloader = make_loader(val_dataset, 
@@ -74,6 +72,7 @@ eval_dataloader = make_loader(val_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         load_meta=config.data.load_meta,
                          shuffle=False)
 
 # Initialize the accelerator

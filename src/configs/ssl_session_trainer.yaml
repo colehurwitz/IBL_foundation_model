@@ -21,7 +21,7 @@ dirs:
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   pretrained_model_path: checkpoints/train/single/model_NDT2/method_ssl/mask_random_causal/model_best.pt
   dataset_dir: berkott/ibl_ssl_data
-  aligned_data_dir:  checkpoints/datasets_cache/aligned/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  aligned_data_dir:  checkpoints/datasets_cache/aligned/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
 
@@ -77,6 +77,8 @@ data:
   split_method: random_split # random_split/session_based
 
   use_aligned_test: True
+
+  load_meta: true
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
