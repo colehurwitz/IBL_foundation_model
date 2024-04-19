@@ -1,12 +1,12 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
-from src.loader.make_loader import make_loader
-from src.utils.dataset_utils import split_both_dataset
-from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
+from loader.make_loader import make_loader
+from utils.dataset_utils import split_both_dataset
+from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
-from src.utils.config_utils import config_from_kwargs, update_config
-from src.models.ndt1 import NDT1
-from src.models.stpatch import STPatch
+from utils.config_utils import config_from_kwargs, update_config
+from models.ndt1 import NDT1
+from models.stpatch import STPatch
 from models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
@@ -37,6 +37,7 @@ def load_model_data_local(**kwargs):
     dataset_path = kwargs['dataset_path']
     test_size = kwargs['test_size']
     seed = kwargs['seed']
+    mask_name = kwargs['mask_name']
 
     # set seed
     set_seed(seed)
@@ -51,6 +52,12 @@ def load_model_data_local(**kwargs):
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
     model = accelerator.prepare(model)
+    model.encoder.masker.ratio = 0.0
+
+    # if "causal" in mask_name:
+    #     model.encoder.context.forward = 0
+    #     print(model.encoder.context.forward)
+    #     exit()
 
     model.load_state_dict(torch.load(model_path)['model'].state_dict())
 
@@ -284,6 +291,13 @@ def co_smoothing_r2(
     r2_all = np.array(r2_result_list)
     np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
 
+    return {
+        f"{mode}_mean_r2_psth": np.mean(r2_all[:, 0]),
+        f"{mode}_std_r2_psth": np.std(r2_all[:, 0]),
+        f"{mode}_mean_r2_trial": np.mean(r2_all[:, 1]),
+        f"{mode}_std_r2_trial": np.std(r2_all[:, 1])
+    }
+
 
 def co_smoothing_bps(
         model,
@@ -394,6 +408,7 @@ def co_smoothing_bps(
     else:
         raise NotImplementedError('mode not implemented')
 
+    os.makedirs(kwargs['save_path'], exist_ok=True)
     bps_all = np.array(bps_result_list)
     bps_mean = np.mean(bps_all)
     bps_std = np.std(bps_all)
@@ -402,9 +417,12 @@ def co_smoothing_bps(
     plt.ylabel('count')
     plt.title('Co-bps distribution\n mean: {:.2f}, std: {:.2f}\n # non-zero neuron: {}'.format(bps_mean, bps_std, len(bps_all)));
     plt.savefig(os.path.join(kwargs['save_path'], f'bps.png'), dpi=200)
-
     np.save(os.path.join(kwargs['save_path'], f'bps.npy'), bps_all)
     
+    return {
+        f"{mode}_mean_bps": bps_mean,
+        f"{mode}_std_bps": bps_std
+    }
 
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
