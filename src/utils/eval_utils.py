@@ -225,20 +225,22 @@ def co_smoothing_r2(
         held_out_list = kwargs['held_out_list']
 
         if mode == 'inter_region':
-            assert held_out_list is None, 'inter_region outputs all neurons in the target region'
+            assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
             held_out_list = [None]
         elif mode == 'intra_region':
-            assert held_out_list is not None, 'intra_region requires specific target neurons from the target region'
+            assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
             hd = np.stack([np.argwhere(region_list==region).flatten() for region in target_regions]).flatten()
             held_out_list = np.arange(len(hd))
         elif mode == 'forward_pred':
             assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
             target_regions = neuron_regions = None
-            held_out_list = [None]
+            held_out_list = [held_out_list]
 
         r2_result_list = []
         for hd_idx in tqdm(held_out_list, desc='neuron'):
+           
             hd = np.array([hd_idx])
+
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -269,7 +271,7 @@ def co_smoothing_r2(
                 target_time_idxs = np.arange(gt_spikes.shape[1])
             elif mode in ['forward_pred']:
                 target_neuron_idxs = np.arange(gt_spikes.shape[-1])
-                target_time_idxs = held_out_list
+                target_time_idxs = held_out_list[0]
             
             ys = gt_spikes[:, target_time_idxs]
             y_preds = pred_spikes[:, target_time_idxs]
@@ -326,7 +328,7 @@ def co_smoothing_bps(
 
     # hack to accommodate NDT2 - fix later 
     tot_num_neurons = batch['spikes_data'].size()[-1]
-    region_list = np.array(test_dataset['cluster_regions'])[0, :tot_num_neurons]
+    region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
 
     if mode == 'per_neuron':
         bps_result_list = []
@@ -380,12 +382,14 @@ def co_smoothing_bps(
         elif mode == 'forward_pred':
             assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
             target_regions = neuron_regions = None
-            held_out_list = [None]
+            held_out_list = [held_out_list]
 
         bps_result_list = []
         
         for hd_idx in tqdm(held_out_list, desc='neuron'):
+
             hd = np.array([hd_idx])
+
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -416,7 +420,7 @@ def co_smoothing_bps(
                 target_time_idxs = np.arange(gt_spikes.shape[1])
             elif mode in ['forward_pred']:
                 target_neuron_idxs = np.arange(gt_spikes.shape[-1])
-                target_time_idxs = held_out_list
+                target_time_idxs = held_out_list[0]
     
             gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
             pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
