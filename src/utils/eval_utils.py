@@ -109,13 +109,18 @@ def co_smoothing_r2(
 ):
     assert n == 1, 'only support n=1 now'
 
+    for batch in test_dataloader:
+        break
+
     method_name = kwargs['method_name']
     mode = kwargs['mode']
     is_aligned = kwargs['is_aligned']
     target_regions = kwargs['target_regions']
-    
-    uuids_list = np.array(test_dataset['cluster_uuids'][0])
-    region_list = np.array(test_dataset['cluster_regions'])[0, :]
+
+    # hack to accommodate NDT2 - fix later 
+    tot_num_neurons = batch['spikes_data'].size()[-1]
+    uuids_list = np.array(test_dataset['cluster_uuids'][0])[:tot_num_neurons]
+    region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
 
     T = kwargs['n_time_steps']
     N = uuids_list.shape[0]
@@ -181,7 +186,7 @@ def co_smoothing_r2(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']#.T
+                        neuron_regions=batch['neuron_regions']
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -221,70 +226,76 @@ def co_smoothing_r2(
 
         if mode == 'inter_region':
             assert held_out_list is None, 'inter_region outputs all neurons in the target region'
+            held_out_list = [None]
         elif mode == 'intra_region':
             assert held_out_list is not None, 'intra_region requires specific target neurons from the target region'
+            hd = np.stack([np.argwhere(region_list==region).flatten() for region in target_regions]).flatten()
+            held_out_list = np.arange(len(hd))
         elif mode == 'forward_pred':
             assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
             target_regions = neuron_regions = None
-        
-        model.eval()
-        with torch.no_grad():
-            for batch in test_dataloader:
-                batch = move_batch_to_device(batch, accelerator.device)
-                mask_result = heldout_mask(
-                    batch['spikes_data'],
-                    mode=mode,
-                    heldout_idxs=np.array(held_out_list),
-                    target_regions=target_regions,
-                    neuron_regions=region_list
-                )                
-                outputs = model(
-                    mask_result['spikes'],
-                    time_attn_mask=batch['time_attn_mask'],
-                    space_attn_mask=batch['space_attn_mask'],
-                    spikes_timestamps=batch['spikes_timestamps'], 
-                    spikes_spacestamps=batch['spikes_spacestamps'], 
-                    targets = batch['target'],
-                    neuron_regions=batch['neuron_regions']#.T
-                )
-        outputs.preds = torch.exp(outputs.preds)
-    
-        gt_spikes = batch['spikes_data'].detach().cpu().numpy()
-        pred_spikes = outputs.preds.detach().cpu().numpy()
-
-        if mode in ['inter_region', 'intra_region']:
-            target_neuron_idxs = mask_result['heldout_idxs']
-            target_time_idxs = np.arange(gt_spikes.shape[1])
-        elif mode in ['forward_pred']:
-            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
-            target_time_idxs = held_out_list
-        
-        ys = gt_spikes[:, target_time_idxs]
-        y_preds = pred_spikes[:, target_time_idxs]
-
-        # choose the neuron to plot
-        idxs = target_neuron_idxs
+            held_out_list = [None]
 
         r2_result_list = []
-        for i in tqdm(range(idxs.shape[0])):
-            if is_aligned:
-                X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
-                _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
-                                                      var_name2idx, var_tasklist, var_value2label, var_behlist,
-                                                      subtract_psth=kwargs['subtract'],
-                                                      aligned_tbins=[],
-                                                      neuron_idx=uuids_list[idxs[i]][:4],
-                                                      neuron_region=region_list[idxs[i]],
-                                                      method=method_name, save_path=kwargs['save_path']);
-                r2_result_list.append(np.array([_r2_psth, _r2_trial]))
-            else:
-                r2 = viz_single_cell_unaligned(
-                    ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
-                    neuron_idx=uuids_list[idxs[i]][:4],
-                    neuron_region=region_list[idxs[i]],
-                    method=method_name, save_path=kwargs['save_path']
-                )
-                r2_result_list.append(r2)
+        for hd_idx in tqdm(held_out_list, desc='neuron'):
+            hd = np.array([hd_idx])
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    mask_result = heldout_mask(
+                        batch['spikes_data'],
+                        mode=mode,
+                        heldout_idxs=hd,
+                        target_regions=target_regions,
+                        neuron_regions=region_list
+                    )                
+                    outputs = model(
+                        mask_result['spikes'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions']
+                    )
+            outputs.preds = torch.exp(outputs.preds)
+        
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().numpy()
+    
+            if mode in ['inter_region', 'intra_region']:
+                target_neuron_idxs = mask_result['heldout_idxs']
+                target_time_idxs = np.arange(gt_spikes.shape[1])
+            elif mode in ['forward_pred']:
+                target_neuron_idxs = np.arange(gt_spikes.shape[-1])
+                target_time_idxs = held_out_list
+            
+            ys = gt_spikes[:, target_time_idxs]
+            y_preds = pred_spikes[:, target_time_idxs]
+    
+            # choose the neuron to plot
+            idxs = target_neuron_idxs
+    
+            for i in tqdm(range(idxs.shape[0])):
+                if is_aligned:
+                    X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
+                    _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
+                                                          var_name2idx, var_tasklist, var_value2label, var_behlist,
+                                                          subtract_psth=kwargs['subtract'],
+                                                          aligned_tbins=[],
+                                                          neuron_idx=uuids_list[idxs[i]][:4],
+                                                          neuron_region=region_list[idxs[i]],
+                                                          method=method_name, save_path=kwargs['save_path']);
+                    r2_result_list.append(np.array([_r2_psth, _r2_trial]))
+                else:
+                    r2 = viz_single_cell_unaligned(
+                        ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
+                        neuron_idx=uuids_list[idxs[i]][:4],
+                        neuron_region=region_list[idxs[i]],
+                        method=method_name, save_path=kwargs['save_path']
+                    )
+                    r2_result_list.append(r2)
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -309,10 +320,13 @@ def co_smoothing_bps(
         target_regions=None,            # list for region mode
         **kwargs
 ):
-    region_list = np.array(test_dataset['cluster_regions'])[0, :]
 
     for batch in test_dataloader:
         break
+
+    # hack to accommodate NDT2 - fix later 
+    tot_num_neurons = batch['spikes_data'].size()[-1]
+    region_list = np.array(test_dataset['cluster_regions'])[0, :tot_num_neurons]
 
     if mode == 'per_neuron':
         bps_result_list = []
@@ -337,7 +351,7 @@ def co_smoothing_bps(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']#.T
+                        neuron_regions=batch['neuron_regions']
                     )
             # exponential the poisson rates
             outputs.preds = torch.exp(outputs.preds)
@@ -357,54 +371,61 @@ def co_smoothing_bps(
     elif mode in ['forward_pred', 'inter_region', 'intra_region']:
 
         if mode == 'inter_region':
-            assert held_out_list is None, 'inter_region outputs all neurons in the target region'
+            assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
+            held_out_list = [None]
         elif mode == 'intra_region':
-            assert held_out_list is not None, 'intra_region requires specific target neurons from the target region'
+            assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
+            hd = np.stack([np.argwhere(region_list==region).flatten() for region in target_regions]).flatten()
+            held_out_list = np.arange(len(hd))
         elif mode == 'forward_pred':
             assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
             target_regions = neuron_regions = None
-
-        model.eval()
-        with torch.no_grad():
-            for batch in test_dataloader:
-                batch = move_batch_to_device(batch, accelerator.device)
-                mask_result = heldout_mask(
-                    batch['spikes_data'],
-                    mode=mode,
-                    heldout_idxs=np.array(held_out_list),
-                    target_regions=target_regions,
-                    neuron_regions=region_list
-                )
-                outputs = model(
-                    mask_result['spikes'],
-                    time_attn_mask=batch['time_attn_mask'],
-                    space_attn_mask=batch['space_attn_mask'],
-                    spikes_timestamps=batch['spikes_timestamps'], 
-                    spikes_spacestamps=batch['spikes_spacestamps'], 
-                    targets = batch['target'],
-                    neuron_regions=batch['neuron_regions']#.T
-                )
-        outputs.preds = torch.exp(outputs.preds)
-    
-        gt_spikes = batch['spikes_data'].detach().cpu().numpy()
-        pred_spikes = outputs.preds.detach().cpu().numpy()
-
-        if mode in ['inter_region', 'intra_region']:
-            target_neuron_idxs = mask_result['heldout_idxs']
-            target_time_idxs = np.arange(gt_spikes.shape[1])
-        elif mode in ['forward_pred']:
-            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
-            target_time_idxs = held_out_list
-
-        gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-        pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+            held_out_list = [None]
 
         bps_result_list = []
-        for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
-            bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
-            if np.isinf(bps):
-                continue
-            bps_result_list.append(bps)
+        
+        for hd_idx in tqdm(held_out_list, desc='neuron'):
+            hd = np.array([hd_idx])
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    mask_result = heldout_mask(
+                        batch['spikes_data'],
+                        mode=mode,
+                        heldout_idxs=hd, 
+                        target_regions=target_regions,
+                        neuron_regions=region_list
+                    )
+                    outputs = model(
+                        mask_result['spikes'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions']
+                    )
+            outputs.preds = torch.exp(outputs.preds)
+        
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().numpy()
+    
+            if mode in ['inter_region', 'intra_region']:
+                target_neuron_idxs = mask_result['heldout_idxs']
+                target_time_idxs = np.arange(gt_spikes.shape[1])
+            elif mode in ['forward_pred']:
+                target_neuron_idxs = np.arange(gt_spikes.shape[-1])
+                target_time_idxs = held_out_list
+    
+            gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+            pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+    
+            for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
+                bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+                if np.isinf(bps):
+                    continue
+                bps_result_list.append(bps)
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -475,9 +496,6 @@ def heldout_mask(
 ):
     mask = torch.ones(spike_data.shape).to(spike_data.device)
     
-    if neuron_regions is not None:
-        neuron_regions = neuron_regions[:spike_data.shape[-1]]
-
     if mode == 'manual':
         hd = heldout_idxs
         mask[:, :, hd] = 0

@@ -34,7 +34,7 @@ for i, mask in enumerate(mask_methods):
 fig, axes = plt.subplots(1,3, figsize=(12,4))
 
 mat = bps_mat
-im0 = axes[0].imshow(mat)
+im0 = axes[0].imshow(mat, cmap='RdYlGn')
 axes[0].set_title("bps")
 
 for i in range(len(mask_methods)):
@@ -44,7 +44,7 @@ for i in range(len(mask_methods)):
                        ha="center", va="center", color=color, fontsize=12)
 
 mat = r2_psth_mat
-im1 = axes[1].imshow(mat)
+im1 = axes[1].imshow(mat, cmap='RdYlGn')
 axes[1].set_title("r2 psth")
 
 for i in range(len(mask_methods)):
@@ -54,7 +54,7 @@ for i in range(len(mask_methods)):
                        ha="center", va="center", color=color, fontsize=12)
 
 mat = r2_per_trial_mat
-im2 = axes[2].imshow(mat)
+im2 = axes[2].imshow(mat, cmap='RdYlGn')
 axes[2].set_title("r2 per trial")
 
 for i in range(len(mask_methods)):
