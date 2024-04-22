@@ -100,7 +100,7 @@ else:
     def train_func(config):
         dm = SingleSessionDataModule(config)
         dm.setup()
-        if model_class == "reduced_rank":
+        if model_class == "reduced-rank":
             model = ReducedRankDecoder(dm.config)
         elif model_class == "lstm":
             model = LSTMDecoder(dm.config)
@@ -124,8 +124,8 @@ else:
     # -- Hyper parameter tuning 
     # -------------------------
     
-    # search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
-    # search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
+    search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
+    search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
     
     if model_class == "reduced-rank":
         search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10, 15, 20])
