@@ -48,6 +48,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--eid", type=str)
 ap.add_argument("--target", type=str)
 ap.add_argument("--method", type=str)
+ap.add_argument("--n_workers", type=int, default=1)
 args = ap.parse_args()
 
 # wandb
@@ -100,7 +101,7 @@ else:
     def train_func(config):
         dm = SingleSessionDataModule(config)
         dm.setup()
-        if model_class == "reduced_rank":
+        if model_class == "reduced-rank":
             model = ReducedRankDecoder(dm.config)
         elif model_class == "lstm":
             model = LSTMDecoder(dm.config)
@@ -124,8 +125,8 @@ else:
     # -- Hyper parameter tuning 
     # -------------------------
     
-    # search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
-    # search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
+    search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
+    search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
     
     if model_class == "reduced-rank":
         search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10, 15, 20])
@@ -146,7 +147,7 @@ else:
     
     results = tune_decoder(
         train_func, search_space, use_gpu=config.tuner.use_gpu, max_epochs=config.tuner.num_epochs, 
-        num_samples=config.tuner.num_samples, num_workers=config.tuner.num_workers
+        num_samples=config.tuner.num_samples, num_workers=args.n_workers
     )
     
     best_result = results.get_best_result(metric=config.tuner.metric, mode=config.tuner.mode)
