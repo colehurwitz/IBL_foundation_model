@@ -2,10 +2,10 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-mask_methods = ['mask_neuron', 'mask_temporal', 'mask_intra-region', 'mask_inter-region']
+mask_methods = ['mask_neuron', 'mask_causal', 'mask_intra-region', 'mask_inter-region', 'mask_temporal']
 eval_methods = ['co_smooth', 'forward_pred', 'intra_region', 'inter_region']
 
-save_path = Path('/home/yizi/IBL_foundation_model/figs')
+save_path = Path('/home/yizi/IBL_foundation_model/figs/model_NDT1/method_ssl')
 
 metrics_dict = {}
 for mask in mask_methods:
@@ -20,11 +20,13 @@ for mask in mask_methods:
             bps = np.load(save_path/mask/eval/'bps.npy')
         except:
             bps = 0
-        metrics_dict[mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) if np.nanmean(r2.T[0]) > -10 else -1
-        metrics_dict[mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) if np.nanmean(r2.T[1]) > -10 else -1
-        metrics_dict[mask][eval]['bps'] = np.nanmean(bps) if np.nanmean(bps) > -10 else -1
+        metrics_dict[mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) if np.nanmean(r2.T[0]) > -10 else -5
+        metrics_dict[mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) if np.nanmean(r2.T[1]) > -10 else -5
+        metrics_dict[mask][eval]['bps'] = np.nanmean(bps) if np.nanmean(bps) > -10 else -5
 
-r2_psth_mat, r2_per_trial_mat, bps_mat = np.zeros((4, 4)), np.zeros((4, 4)), np.zeros((4, 4))
+N = len(mask_methods)
+K = len(eval_methods)
+r2_psth_mat, r2_per_trial_mat, bps_mat = np.zeros((N, K)), np.zeros((N, K)), np.zeros((N, K))
 for i, mask in enumerate(mask_methods):
     for j, eval in enumerate(eval_methods):
         r2_psth_mat[i,j] = metrics_dict[mask][eval]['r2_psth']
@@ -64,11 +66,11 @@ for i in range(len(mask_methods)):
                        ha="center", va="center", color=color, fontsize=12)
 
 for ax in axes:
-    ax.set_yticks(np.arange(4), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask'])
-    ax.set_xticks(np.arange(4), labels=['co-smooth','forward pred', 'intra-region', 'inter-region'])
+    ax.set_yticks(np.arange(N), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask', 'temporal mask'])
+    ax.set_xticks(np.arange(K), labels=['co-smooth','forward pred', 'intra-region', 'inter-region'])
     
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
              rotation_mode="anchor")
 
 fig.tight_layout()
-plt.savefig('results/table/metrics.png')
+plt.savefig('figs/table/metrics.png')

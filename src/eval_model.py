@@ -4,9 +4,9 @@ mask_name = 'mask_causal'
 model_name = 'NDT1'
 n_time_steps = 100
 
-co_smooth = False
-forward_pred = False
-inter_region = False
+co_smooth = True
+forward_pred = True
+inter_region = True
 intra_region = True
 
 print(mask_name)
