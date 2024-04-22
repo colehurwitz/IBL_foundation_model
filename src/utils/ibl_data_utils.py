@@ -796,8 +796,10 @@ def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
     beh_names = ['choice', 'reward', 'block', 
                  'wheel-speed',
-                'left-whisker-motion-energy', 'right-whisker-motion-energy',
-                'left-pupil-diameter', 'right-pupil-diameter',
+                'left-whisker-motion-energy', 
+                #'right-whisker-motion-energy',
+                'left-pupil-diameter', 
+                #'right-pupil-diameter',
                 #'lightning-pose-left-pupil-diameter', 
                 ]
 
