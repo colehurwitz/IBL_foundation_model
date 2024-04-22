@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-path_root = '/home/yizi/IBL_foundation_model'
+path_root = '/burg/home/yz4123/IBL_foundation_model'
 sys.path.append(str(path_root))
 
 import numpy as np
@@ -27,7 +27,7 @@ np.random.seed(42)
 
 one = ONE(
     base_url='https://openalyx.internationalbrainlab.org', 
-    password='international', silent=True
+    #password='international', silent=True
 )
 
 freeze_file = Path(path_root)/'data/2023_12_bwm_release.csv'
@@ -98,7 +98,7 @@ for eid_idx, eid in enumerate(include_eids):
             'test': test_dataset}
         )
         print(partitioned_dataset)
-        partitioned_dataset.save_to_disk(f'/mnt/3TB/yizi/huggingface/decoding_datasets/{eid}')
+        partitioned_dataset.save_to_disk(f'/burg/stats/users/yz4123/cached_ibl_data/ibl-fm/aligned/{eid}')
     
         print('======================')
         print(f'Cached session {eid}.')
