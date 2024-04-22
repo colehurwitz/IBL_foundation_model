@@ -394,7 +394,8 @@ def load_target_behavior(one, eid, target):
         'left-pupil-diameter' | 'right-pupil-diameter' |
         'left-camera-left-paw-speed' | 'left-camera-right-paw-speed' | 
         'right-camera-left-paw-speed' | 'right-camera-right-paw-speed' |
-        'left-nose-speed' | 'right-nose-speed'
+        'left-nose-speed' | 'right-nose-speed' | 
+        'lightning-pose-left-pupil-diameter' | lightning-pose-right-pupil-diameter
     one : 
     eid : str
 
@@ -464,6 +465,36 @@ def load_target_behavior(one, eid, target):
             beh_dict = {
                 'times': dlc_right.times,
                 'values': dlc_right.features.pupilDiameter_smooth
+            }
+        elif target == 'lightning-pose-left-pupil-diameter':
+            lp_left = one.load_object(eid, f'leftCamera', attribute=['lightningPose', 'times'])
+            dm1 = np.fabs(
+                lp_left['lightningPose']['pupil_right_r_x'] - \
+                lp_left['lightningPose']['pupil_left_r_x']
+            )
+            dm2 = np.fabs(
+                lp_left['lightningPose']['pupil_top_r_y'] - \
+                lp_left['lightningPose']['pupil_bottom_r_y']
+            )
+            assert (np.allclose(dm1, dm2))
+            beh_dict = {
+                'times': lp_left['times'],
+                'values': dm1
+            }
+        elif target == 'lightning-pose-right-pupil-diameter':
+            lp_right = one.load_object(eid, f'rightCamera', attribute=['lightningPose', 'times'])
+            dm1 = np.fabs(
+                lp_right['lightningPose']['pupil_right_r_x'] - \
+                lp_right['lightningPose']['pupil_left_r_x']
+            )
+            dm2 = np.fabs(
+                lp_right['lightningPose']['pupil_top_r_y'] - \
+                lp_right['lightningPose']['pupil_bottom_r_y']
+            )
+            assert (np.allclose(dm1, dm2))
+            beh_dict = {
+                'times': lp_right['times'],
+                'values': dm1
             }
         elif target == 'left-camera-left-paw-speed':
             dlc_left = one.load_object(eid, "leftCamera", attribute=["dlc", "features", "times"], collection="alf")
@@ -653,6 +684,7 @@ def load_anytime_behaviors(one, eid, n_workers=os.cpu_count()):
         'wheel-position', 'wheel-velocity', 'wheel-speed',
         'left-whisker-motion-energy', 'right-whisker-motion-energy',
         'left-pupil-diameter', 'right-pupil-diameter',
+        'lightning-pose-left-pupil-diameter', 
         # These behaviors are of bad quality - skip them for now
         # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
         # 'right-camera-left-paw-speed', 'right-camera-right-paw-speed',
@@ -691,6 +723,7 @@ def bin_behaviors(
         'wheel-position', 'wheel-velocity', 'wheel-speed',
         'left-whisker-motion-energy', 'right-whisker-motion-energy',
         'left-pupil-diameter', 'right-pupil-diameter',
+        'lightning-pose-left-pupil-diameter', 
         # These behaviors are of bad quality - skip them for now
         # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
         # 'right-camera-left-paw-speed', 'right-camera-right-paw-speed',
@@ -778,8 +811,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         'good_clusters': list((clusters['label'] >= 1).astype(int)),
         'cluster_depths': list(clusters['depths']),
         'uuids':  list(clusters['uuids']),
-        # We don't need details about the cluster QC. Only include if good units for now.
-        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
+        'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
         # 'cluster_df': clusters
     }
 
@@ -793,7 +825,12 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
-    beh_names = ['choice', 'wheel-speed', 'left-whisker-motion-energy']
+    beh_names = ['choice', 'reward', 'block', 
+                 'wheel-speed',
+                'left-whisker-motion-energy', 'right-whisker-motion-energy',
+                'left-pupil-diameter', 'right-pupil-diameter',
+                'lightning-pose-left-pupil-diameter', 
+                ]
 
     target_mask = [1] * len(binned_spikes)
     for beh_name in beh_names:
