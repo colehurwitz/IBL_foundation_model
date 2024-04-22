@@ -128,7 +128,7 @@ class Masker(nn.Module):
         random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device)).to(spikes.dtype)
         spikes[random_idx] = random_spikes[random_idx]
 
-        targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool()
+        targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(spikes.device)
         return spikes, targets_mask.to(torch.int64) 
 
     @staticmethod

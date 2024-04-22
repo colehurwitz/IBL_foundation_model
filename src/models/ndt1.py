@@ -22,6 +22,7 @@ class NDT1Output(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     n_examples: Optional[torch.LongTensor] = None
     preds: Optional[torch.FloatTensor] = None
+    targets: Optional[torch.FloatTensor] = None
 
 
 # Create buffer of biggest possible context mask 
@@ -604,7 +605,9 @@ class NDT1(nn.Module):
                 targets = targets.to(torch.int64)
 
         # Encode neural data
-        x, targets_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions)
+        targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions)
+        targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits
@@ -628,6 +631,7 @@ class NDT1(nn.Module):
             loss=loss,
             n_examples=n_examples,
             preds=outputs,
+            targets=targets
         )
 
 

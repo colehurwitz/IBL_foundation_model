@@ -161,6 +161,12 @@ def load_ibl_dataset(cache_dir,
                      seed=42):
     if aligned_data_dir:
         dataset = load_from_disk(aligned_data_dir)
+        # if dataset does not have a 'train' key, it is a single session dataset
+        if "train" not in dataset:
+            _dataset = dataset.train_test_split(test_size=0.2, seed=seed)
+            _dataset_train, _dataset_test = _dataset["train"], _dataset["test"]
+            dataset = _dataset_train.train_test_split(test_size=0.1, seed=seed)
+            return dataset["train"], dataset["test"], _dataset_test
         return dataset["train"], dataset["val"], dataset["test"]
     
     user_datasets = get_user_datasets(user_or_org_name)
