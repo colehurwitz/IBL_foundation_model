@@ -52,7 +52,10 @@ def eval_model(
 
     elif model_class == 'linear':
         train_x, test_x = train_x.numpy(), test_x.numpy()
-        model.fit(train_x.reshape((train_x.shape[0], -1)), train_y.argmax(1))
+        if target == 'clf':
+            model.fit(train_x.reshape((train_x.shape[0], -1)), train_y.argmax(1))
+        else:
+            model.fit(train_x.reshape((train_x.shape[0], -1)), train_y)
         test_pred = model.predict(test_x.reshape((test_x.shape[0], -1)))
         
     elif model_class in ['mlp', 'lstm']:

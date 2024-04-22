@@ -778,8 +778,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         'good_clusters': list((clusters['label'] >= 1).astype(int)),
         'cluster_depths': list(clusters['depths']),
         'uuids':  list(clusters['uuids']),
-        # We don't need details about the cluster QC. Only include if good units for now.
-        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
+        'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
         # 'cluster_df': clusters
     }
 
@@ -793,7 +792,12 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
-    beh_names = ['choice', 'wheel-speed', 'left-whisker-motion-energy']
+    beh_names = ['choice', 'reward', 'block', 
+                 'wheel-speed',
+                'left-whisker-motion-energy', 'right-whisker-motion-energy',
+                'left-pupil-diameter', 'right-pupil-diameter',
+                'lightning-pose-left-pupil-diameter', 
+                ]
 
     target_mask = [1] * len(binned_spikes)
     for beh_name in beh_names:

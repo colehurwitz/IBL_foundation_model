@@ -76,7 +76,8 @@ class SingleSessionDataset(Dataset):
             self.behavior = self.scaler.transform(self.behavior) 
 
         if np.isnan(self.behavior).sum() != 0:
-            raise ValueError(f'Session {eid} contains NaNs in {beh_name} !')
+            self.behavior[np.isnan(self.behavior)] = np.nanmean(self.behavior)
+            print(f'Session {eid} contains NaNs in {beh_name}.')
 
         # map to device
         self.spike_data = to_tensor(self.spike_data, device).double()

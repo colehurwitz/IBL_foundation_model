@@ -47,65 +47,63 @@ params = {
 }
 
 for eid_idx, eid in enumerate(include_eids):
-
-    # try: 
-    print('======================')
-    print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
     
-    neural_dict, behave_dict, meta_data, trials_data = prepare_data(one, eid, bwm_df, params, n_workers=4)
-    regions, beryl_reg = list_brain_regions(neural_dict, **params)
-    region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
-    binned_spikes, clusters_used_in_bins = bin_spiking_data(
-        region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=4, **params
-    )
-    binned_behaviors, behavior_masks = bin_behaviors(
-        one, eid, trials_df=trials_data['trials_df'], allow_nans=True, **params
-    )
-    
-    # IMPORTANT: ensure spiking data and behavior match in each trial
-    aligned_binned_spikes, aligned_binned_behaviors = align_spike_behavior(
-        binned_spikes, binned_behaviors, trials_data['trials_mask']
-    )
-
-    # train: 0.7, val: 0.1, test: 0.2
-    max_num_trials = len(aligned_binned_spikes)
-    trial_idxs = np.random.choice(np.arange(max_num_trials), max_num_trials, replace=False)
-    train_idxs = trial_idxs[:int(0.7*max_num_trials)]
-    val_idxs = trial_idxs[int(0.7*max_num_trials):int(0.8*max_num_trials)]
-    test_idxs = trial_idxs[int(0.8*max_num_trials):]
-
-    train_beh, val_beh, test_beh = {}, {}, {}
-    for beh in aligned_binned_behaviors.keys():
-        train_beh.update({beh: aligned_binned_behaviors[beh][train_idxs]})
-        val_beh.update({beh: aligned_binned_behaviors[beh][val_idxs]})
-        test_beh.update({beh: aligned_binned_behaviors[beh][test_idxs]})
-    
-    train_dataset = create_dataset(
-        aligned_binned_spikes[train_idxs], bwm_df, eid, params, 
-        binned_behaviors=train_beh, meta_data=meta_data
-    )
-    val_dataset = create_dataset(
-        aligned_binned_spikes[val_idxs], bwm_df, eid, params, 
-        binned_behaviors=val_beh, meta_data=meta_data
-    )
-    test_dataset = create_dataset(
-        aligned_binned_spikes[test_idxs], bwm_df, eid, params, 
-        binned_behaviors=test_beh, meta_data=meta_data
-    )
-    partitioned_dataset = DatasetDict({
-        'train': train_dataset,
-        'val': val_dataset,
-        'test': test_dataset}
-    )
-    print(partitioned_dataset)
-    partitioned_dataset.save_to_disk(f'/mnt/3TB/yizi/huggingface/decoding_datasets/{eid}')
-
-    print('======================')
-    print(f'Cached session {eid}.')
-    print(f'Finished {eid_idx+1} / {len(include_eids)} sessions.')
+    try: 
+        print('======================')
+        print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
         
-    # except Exception as e:
-    #     print(f'Skipped session {eid} due to unexpected error: ', e)
+        neural_dict, behave_dict, meta_data, trials_data = prepare_data(one, eid, bwm_df, params, n_workers=4)
+        regions, beryl_reg = list_brain_regions(neural_dict, **params)
+        region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
+        binned_spikes, clusters_used_in_bins = bin_spiking_data(
+            region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=4, **params
+        )
+        binned_behaviors, behavior_masks = bin_behaviors(
+            one, eid, trials_df=trials_data['trials_df'], allow_nans=True, **params
+        )
+        
+        # IMPORTANT: ensure spiking data and behavior match in each trial
+        aligned_binned_spikes, aligned_binned_behaviors = align_spike_behavior(
+            binned_spikes, binned_behaviors, trials_data['trials_mask']
+        )
     
-    break
+        # train: 0.7, val: 0.1, test: 0.2
+        max_num_trials = len(aligned_binned_spikes)
+        trial_idxs = np.random.choice(np.arange(max_num_trials), max_num_trials, replace=False)
+        train_idxs = trial_idxs[:int(0.7*max_num_trials)]
+        val_idxs = trial_idxs[int(0.7*max_num_trials):int(0.8*max_num_trials)]
+        test_idxs = trial_idxs[int(0.8*max_num_trials):]
     
+        train_beh, val_beh, test_beh = {}, {}, {}
+        for beh in aligned_binned_behaviors.keys():
+            train_beh.update({beh: aligned_binned_behaviors[beh][train_idxs]})
+            val_beh.update({beh: aligned_binned_behaviors[beh][val_idxs]})
+            test_beh.update({beh: aligned_binned_behaviors[beh][test_idxs]})
+        
+        train_dataset = create_dataset(
+            aligned_binned_spikes[train_idxs], bwm_df, eid, params, 
+            binned_behaviors=train_beh, meta_data=meta_data
+        )
+        val_dataset = create_dataset(
+            aligned_binned_spikes[val_idxs], bwm_df, eid, params, 
+            binned_behaviors=val_beh, meta_data=meta_data
+        )
+        test_dataset = create_dataset(
+            aligned_binned_spikes[test_idxs], bwm_df, eid, params, 
+            binned_behaviors=test_beh, meta_data=meta_data
+        )
+        partitioned_dataset = DatasetDict({
+            'train': train_dataset,
+            'val': val_dataset,
+            'test': test_dataset}
+        )
+        print(partitioned_dataset)
+        partitioned_dataset.save_to_disk(f'/mnt/3TB/yizi/huggingface/decoding_datasets/{eid}')
+    
+        print('======================')
+        print(f'Cached session {eid}.')
+        print(f'Finished {eid_idx+1} / {len(include_eids)} sessions.')
+            
+    except Exception as e:
+        print(f'Skipped session {eid} due to unexpected error: ', e)
+        
