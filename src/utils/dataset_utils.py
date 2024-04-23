@@ -46,7 +46,7 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
     if binned_behaviors is not None:
         # Store choice behaviors more efficiently (save this option for later)
         # binned_behaviors["choice"] = np.where(binned_behaviors["choice"] > 0, 0, 1).astype(bool)
-        data_dict = data_dict | binned_behaviors
+        data_dict.update(binned_behaviors)
         
     if meta_data is not None:
         meta_dict = {
@@ -64,7 +64,7 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'cluster_uuids': [meta_data['uuids']] * len(sparse_binned_spikes),
             'cluster_qc': [meta_data['cluster_qc']] * len(sparse_binned_spikes),
         }
-        data_dict = data_dict | meta_dict
+        data_dict.update(meta_dict)
 
     return Dataset.from_dict(data_dict)
 
