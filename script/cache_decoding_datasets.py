@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-path_root = '/home/yizi/IBL_foundation_model/'
+path_root = '..'
 sys.path.append(str(path_root))
 
 import numpy as np
@@ -21,7 +21,7 @@ from utils.ibl_data_utils import (
     align_spike_behavior
 )
 from datasets import DatasetDict
-from utils.dataset import create_dataset, upload_dataset
+from utils.dataset_utils import create_dataset, upload_dataset
 
 np.random.seed(42)
 
@@ -50,9 +50,6 @@ params = {
 error_eids = []
 for eid_idx, eid in enumerate(include_eids):
 
-    # if eid_idx < 1:
-    #     continue
-    
     try: 
         print('======================')
         print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
