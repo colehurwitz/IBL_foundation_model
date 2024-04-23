@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-path_root = '/burg/home/yz4123/IBL_foundation_model'
+path_root = '/home/yizi/IBL_foundation_model/'
 sys.path.append(str(path_root))
 
 import numpy as np
@@ -21,7 +21,7 @@ from utils.ibl_data_utils import (
     align_spike_behavior
 )
 from datasets import DatasetDict
-from utils.dataset import create_dataset
+from utils.dataset import create_dataset, upload_dataset
 
 np.random.seed(42)
 
@@ -39,6 +39,7 @@ subjects = np.unique(bwm_df.subject)
 selected_subs = np.random.choice(subjects, n_sub, replace=False)
 by_subject = bwm_df.groupby('subject')
 include_eids = np.array([bwm_df.eid[by_subject.groups[sub][0]] for sub in selected_subs])
+include_eids = np.insert(include_eids, -1, '671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
 
 # setup
 params = {
@@ -46,17 +47,21 @@ params = {
     'align_time': 'stimOn_times', 'time_window': (-.5, 1.5)
 }
 
+error_eids = []
 for eid_idx, eid in enumerate(include_eids):
+
+    # if eid_idx < 1:
+    #     continue
     
     try: 
         print('======================')
         print(f'Process session {eid} from subject {selected_subs[eid_idx]}:')
         
-        neural_dict, behave_dict, meta_data, trials_data = prepare_data(one, eid, bwm_df, params, n_workers=4)
+        neural_dict, behave_dict, meta_data, trials_data = prepare_data(one, eid, bwm_df, params, n_workers=2)
         regions, beryl_reg = list_brain_regions(neural_dict, **params)
         region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
         binned_spikes, clusters_used_in_bins = bin_spiking_data(
-            region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=4, **params
+            region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=2, **params
         )
         binned_behaviors, behavior_masks = bin_behaviors(
             one, eid, trials_df=trials_data['trials_df'], allow_nans=True, **params
@@ -98,12 +103,16 @@ for eid_idx, eid in enumerate(include_eids):
             'test': test_dataset}
         )
         print(partitioned_dataset)
-        partitioned_dataset.save_to_disk(f'/burg/stats/users/yz4123/cached_ibl_data/ibl-fm/aligned/{eid}')
+        # partitioned_dataset.save_to_disk(f'/burg/stats/users/yz4123/cached_ibl_data/ibl-fm/aligned/{eid}')
+        upload_dataset(partitioned_dataset, org='neurofm123', eid=f'{eid}_aligned')
     
         print('======================')
         print(f'Cached session {eid}.')
         print(f'Finished {eid_idx+1} / {len(include_eids)} sessions.')
             
     except Exception as e:
+        error_eids.append(eid)
         print(f'Skipped session {eid} due to unexpected error: ', e)
-        
+
+print(error_eids)
+
