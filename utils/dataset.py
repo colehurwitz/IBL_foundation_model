@@ -51,6 +51,7 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'good_clusters': [meta_data['good_clusters']] * len(sparse_binned_spikes),
             'cluster_depths': [meta_data['cluster_depths']] * len(sparse_binned_spikes),
             'cluster_uuids': [meta_data['uuids']] * len(sparse_binned_spikes),
+            'cluster_qc': [meta_data['cluster_qc']] * len(sparse_binned_spikes),
         }
         data_dict = data_dict | meta_dict
 
