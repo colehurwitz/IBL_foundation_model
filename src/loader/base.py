@@ -14,8 +14,8 @@ def _pad_seq_right_to_n(
             seq,
             np.ones(
                 (
-                    n-seq.shape[0],
-                    *seq.shape[1:]
+                    n-len(seq),
+                    *seq[0].shape
                 )
             ) * pad_value,  
         ],
@@ -33,8 +33,8 @@ def _pad_seq_left_to_n(
         [
             np.ones(
                 (
-                    n-seq.shape[0],
-                    *seq.shape[1:]
+                    n-len(seq),
+                    *seq[0].shape
                 )
             ) * pad_value,
             seq,
@@ -230,7 +230,7 @@ class BaseDataset(torch.utils.data.Dataset):
             "spikes_spacestamps": spikes_spacestamps,
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
-            "neuron_regions": neuron_regions
+            "neuron_regions": list(neuron_regions)
         }
     
     def __len__(self):

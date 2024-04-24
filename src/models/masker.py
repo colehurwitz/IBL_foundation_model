@@ -60,7 +60,7 @@ class Masker(nn.Module):
             return spikes, torch.zeros_like(spikes)
 
         mask_ratio = self.ratio
-        if self.mode == "temporal":
+        if self.mode in ["temporal", "random_token"]:
             # Expand mask
             if torch.bernoulli(torch.tensor(self.expand_prob).float()):
                 timespan = torch.randint(1, self.max_timespan+1, (1, )).item() 
@@ -108,7 +108,7 @@ class Masker(nn.Module):
         mask = torch.bernoulli(mask_probs).to(spikes.device)
 
         # Expand mask
-        if self.mode == "temporal":
+        if self.mode in ["temporal", "random_token"]:
             if timespan > 1:
                 mask = self.expand_timesteps(mask, timespan)
             mask = mask.unsqueeze(2).expand_as(spikes).bool()    
