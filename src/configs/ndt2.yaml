@@ -8,7 +8,7 @@ encoder:
   # Mask spikes
   masker:
     force_active: true         
-    mode: neuron        # masking mode
+    mode: neuron        # masking mode: random_token / ...
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
