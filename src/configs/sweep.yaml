@@ -1,0 +1,14 @@
+project: ndt1-sweep
+
+method: grid
+
+metric:
+  goal: minimize
+  name: eval_loss
+  
+parameters:
+  mask_ratio:
+    values: [0.1, 0.2, 0.3]
+  weight_decay:
+    values: [0.1, 0.01, 0.001]
+    
