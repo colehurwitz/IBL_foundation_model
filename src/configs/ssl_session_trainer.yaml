@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 10
+  num_epochs: 300
   train_batch_size: 8
   test_batch_size: 8  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 704   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all

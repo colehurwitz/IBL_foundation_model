@@ -275,7 +275,6 @@ class SpaceTimeTransformer(nn.Module):
         if config.masker.mode == 'random_token':
             self.mask = False
             self.mask_token = True
-            self.config.masker.mode == 'temporal'
 
         if self.mask | self.mask_token:
             self.masker = Masker(config.masker)
@@ -338,7 +337,7 @@ class SpaceTimeTransformer(nn.Module):
         if self.mask_token:
             spikes, targets_mask = self.masker(spikes)
             targets_mask = targets_mask.reshape(B,T,N) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-            targets_mask = targets_mask.reshape(B,T,N) & space_attn_mask.unsqueeze(-1).expand(B,T,N)
+            targets_mask = targets_mask.reshape(B,T,N) & space_attn_mask.unsqueeze(1).expand(B,T,N)
             
         # Embed neural data
         x = self.embedder(spikes, spacestamps, timestamps)
