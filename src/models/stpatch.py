@@ -271,7 +271,13 @@ class SpaceTimeTransformer(nn.Module):
 
         # Masker
         self.mask = config.masker.force_active
-        if self.mask:
+        self.mask_token = False
+        if config.masker.mode == 'random_token':
+            self.mask = False
+            self.mask_token = True
+            self.config.masker.mode == 'temporal'
+
+        if self.mask | self.mask_token:
             self.masker = Masker(config.masker)
 
         # Patcher
@@ -311,11 +317,11 @@ class SpaceTimeTransformer(nn.Module):
             neuron_regions:       Optional[np.ndarray] = None,  # (bs, n_channels)
     ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
-        B, T, N = spikes.size() # n_batch, n_token, n_channels
-
-        # Mask neural data
+        B, T, N = spikes.size() 
+        
+        # Mask spikes
         if self.mask:
-            spikes, targets_mask = self.masker(spikes,neuron_regions)
+            spikes, targets_mask = self.masker(spikes, neuron_regions)
         else:
             targets_mask = None
 
@@ -325,17 +331,23 @@ class SpaceTimeTransformer(nn.Module):
 
         # Patch neural data
         if self.patch:
-            spikes, space_attn_mask, time_attn_mask, spacestamps, timestamps  =\
+            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps  =\
             self.patcher(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask)
 
+        # Mask tokens
+        if self.mask_token:
+            spikes, targets_mask = self.masker(spikes)
+            targets_mask = targets_mask.reshape(B,T,N) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
+            targets_mask = targets_mask.reshape(B,T,N) & space_attn_mask.unsqueeze(-1).expand(B,T,N)
+            
         # Embed neural data
         x = self.embedder(spikes, spacestamps, timestamps)
 
         _, T, _ = x.size() 
 
         context_mask = self.context_mask[:T,:T].to(x.device).unsqueeze(0).expand(B,T,T)
-        space_attn_mask = space_attn_mask.unsqueeze(1).expand(B,T,T)
-        time_attn_mask = time_attn_mask.unsqueeze(1).expand(B,T,T)
+        space_attn_mask = _space_attn_mask.unsqueeze(1).expand(B,T,T)
+        time_attn_mask = _time_attn_mask.unsqueeze(1).expand(B,T,T)
         
         attn_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) 
         # hack so that even padded spikes attend to themselves and avoid attention issues
