@@ -4,10 +4,12 @@ mask_name = 'mask_causal'
 model_name = 'NDT1'
 n_time_steps = 100
 
-co_smooth = True
-forward_pred = True
-inter_region = True
-intra_region = True
+co_smooth = False
+forward_pred = False
+inter_region = False
+intra_region = False
+choice_decoding = True
+wheel_decoding = True
 
 print(mask_name)
 
@@ -165,3 +167,42 @@ if intra_region:
     wandb.log(results)
 
 
+if choice_decoding:
+    print('Start choice_decoding:')
+    configs = {
+        'model_config': 'src/configs/ndt1.yaml',
+        'model_path': f'/home/exouser/Documents/IBL_foundation_model/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+    'trainer_config': 'src/configs/trainer.yaml',
+    'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
+    'test_size': 0.2,
+    'seed': 42,
+    'mask_name': mask_name,
+        'target': 'choice',
+        'decoder': 'clf',
+        'output_size': 2,
+        'metric': 'acc'
+    }  
+    results = behavior_decoding(**configs)
+    print(results)
+    wandb.log(results)
+
+
+if wheel_decoding:
+    print('Start wheel_decoding:')
+    configs = {
+        'model_config': 'src/configs/ndt1.yaml',
+        'model_path': f'/home/exouser/Documents/IBL_foundation_model/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+    'trainer_config': 'src/configs/trainer.yaml',
+    'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
+    'test_size': 0.2,
+    'seed': 42,
+    'mask_name': mask_name,
+        'target': 'wheel-speed',
+        'decoder': 'reg',
+        'output_size': 100,
+        'metric': 'r2'
+    }  
+    results = behavior_decoding(**configs)
+    print(results)
+    wandb.log(results)
+    
