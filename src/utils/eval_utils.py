@@ -18,6 +18,7 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import matplotlib.colors as colors
 import os
+from trainer.make import make_trainer
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 
@@ -521,22 +522,22 @@ def behavior_decoding(**kwargs):
     config.training.lr = 5e-4
     config.training.wd = 0.1
 
+    log_dir = os.path.join(config.dirs.log_dir, "finetune", "model_{}".format(config.model.model_class), "method_sl", target)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
     accelerator = Accelerator()
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
 
-    if freeze_encoder:
-        pretrained_model = torch.load(model_path)['model']
-        model.encoder = pretrained_model.encoder
-        for param in model.encoder.parameters():
-            param.requires_grad = False
+    pretrained_model = torch.load(model_path)['model']
+    model.encoder = pretrained_model.encoder
+    for param in model.encoder.parameters():
+        param.requires_grad = False
     
     model = accelerator.prepare(model)
     model.encoder.masker.ratio = 0.0
-
-    if not freeze_encoder:
-        model.load_state_dict(torch.load(model_path)['model'].state_dict())
 
     # load the dataset
     r_dataset = load_from_disk(dataset_path)
@@ -544,11 +545,6 @@ def behavior_decoding(**kwargs):
     _dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['train']
     dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
     train_dataset, val_dataset = dataset["train"], dataset["test"]
-    try:
-        bin_size = dataset['binsize'][0]
-    except:
-        bin_size = dataset['bin_size'][0]
-    print(f'bin size: {bin_size}')
 
     train_dataloader = make_loader(
         train_dataset,
@@ -556,7 +552,6 @@ def behavior_decoding(**kwargs):
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
-        bin_size=bin_size,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
@@ -570,7 +565,6 @@ def behavior_decoding(**kwargs):
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
-        bin_size=bin_size,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
@@ -584,7 +578,6 @@ def behavior_decoding(**kwargs):
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
-        bin_size=bin_size,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
