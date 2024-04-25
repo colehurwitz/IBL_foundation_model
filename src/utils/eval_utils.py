@@ -52,7 +52,7 @@ def load_model_data_local(**kwargs):
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
-    
+    model = torch.load(model_path)['model']
     model = accelerator.prepare(model)
     model.encoder.masker.ratio = 0.0
 
@@ -495,10 +495,6 @@ def behavior_decoding(**kwargs):
     test_size = kwargs['test_size']
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
-
-    target = kwargs['target']
-    decoder = kwargs['decoder']
-    output_size = kwargs['output_size']
     metric = kwargs['metric']
 
     # set seed
@@ -509,20 +505,12 @@ def behavior_decoding(**kwargs):
     config = update_config(model_config, config)
     config = update_config(trainer_config, config)
 
-    # change ssl config to sl 
-    config.data.target = target
-    config.method.model_kwargs.output_size = output_size
-    if decoder == "clf":
-        config.method.model_kwargs.clf = True
-        config.method.model_kwargs.loss == "cross_entropy"
-    elif decoder == "reg":
-        config.method.model_kwargs.reg = True
-        config.method.model_kwargs.loss == "mse"
-    config.training.num_epochs = 50
-    config.training.lr = 5e-4
-    config.training.wd = 0.1
-
-    log_dir = os.path.join(config.dirs.log_dir, "finetune", "model_{}".format(config.model.model_class), "method_sl", target)
+    target = config.data.target
+    log_dir = os.path.join(
+            config.dirs.log_dir, "train", 
+            "model_{}".format(config.model.model_class), 
+            "method_sl", mask_name, target
+    )
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
@@ -531,13 +519,14 @@ def behavior_decoding(**kwargs):
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
 
-    pretrained_model = torch.load(model_path)['model']
-    model.encoder = pretrained_model.encoder
-    for param in model.encoder.parameters():
-        param.requires_grad = False
+    if not kwargs['from_scratch']:
+        pretrained_model = torch.load(model_path)['model']
+        model.encoder = pretrained_model.encoder
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+        model.encoder.masker.ratio = 0.0
     
     model = accelerator.prepare(model)
-    model.encoder.masker.ratio = 0.0
 
     # load the dataset
     r_dataset = load_from_disk(dataset_path)
@@ -549,7 +538,7 @@ def behavior_decoding(**kwargs):
     train_dataloader = make_loader(
         train_dataset,
         target=config.data.target,
-        batch_size=10000,
+        batch_size=config.training.train_batch_size,
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
@@ -562,7 +551,7 @@ def behavior_decoding(**kwargs):
     val_dataloader = make_loader(
         val_dataset,
         target=config.data.target,
-        batch_size=10000,
+        batch_size=config.training.test_batch_size,
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
@@ -613,6 +602,8 @@ def behavior_decoding(**kwargs):
     
     trainer_.train()
 
+    model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
+
     gt, preds = [], []
     model.eval()
     with torch.no_grad():
@@ -627,21 +618,31 @@ def behavior_decoding(**kwargs):
                 targets = batch['target'],
                 neuron_regions=batch['neuron_regions']
             )
+            gt.append(outputs.targets.clone())
+            preds.append(outputs.preds.clone())
     gt = torch.cat(gt, dim=0)
     preds = torch.cat(preds, dim=0)
 
     if config.method.model_kwargs.loss == "cross_entropy":
         preds = torch.nn.functional.softmax(preds, dim=1) 
 
-    results = metrics_list(gt = gt.argmax(1),
-                           pred = preds.argmax(1), 
-                           metrics=[metric], 
-                           device=accelerator.device)
+    if config.method.model_kwargs.clf:
+        results = metrics_list(gt = gt.argmax(1),
+                               pred = preds.argmax(1), 
+                               metrics=[metric], 
+                               device=accelerator.device)
+    elif config.method.model_kwargs.reg:
+        results = metrics_list(gt = gt,
+                               pred = preds,
+                               metrics=[metric],
+                               device=accelerator.device)
 
+    if not os.path.exists(kwargs['save_path']):
+        os.makedirs(kwargs['save_path'])
     np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), results)
     
     return {
-        f"{target}_{metric}": results['metrics'],
+        f"{target}_{metric}": results[metric],
     }
     
     
