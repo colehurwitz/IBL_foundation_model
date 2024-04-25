@@ -51,6 +51,7 @@ def load_model_data_local(**kwargs):
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
+    
     model = accelerator.prepare(model)
     model.encoder.masker.ratio = 0.0
 
@@ -58,8 +59,6 @@ def load_model_data_local(**kwargs):
     #     model.encoder.context.forward = 0
     #     print(model.encoder.context.forward)
     #     exit()
-
-    model.load_state_dict(torch.load(model_path)['model'].state_dict())
 
     # load the dataset
     r_dataset = load_from_disk(dataset_path)
@@ -97,6 +96,7 @@ def load_model_data_local(**kwargs):
 # 1. Co-smoothing_r2 (R2 and shuqi's plot) TODO: add more behaviors, add n!=1
 # 2. Co-smoothing_bps (co-bps, adapted from NLB repo) TODO: how to choose the held-out neurons?
 # 3. R2 scatter plot
+# 4. Behavior_decoding (choice, wheel speed)
 # --------------------------------------------------------------------------------------------------
 
 def co_smoothing_r2(
@@ -486,6 +486,172 @@ def compare_R2_scatter(**kwargs):
     axes[1].set_title('R2')
 
 
+def behavior_decoding(**kwargs):
+    model_config = kwargs['model_config']
+    trainer_config = kwargs['trainer_config']
+    model_path = kwargs['model_path']
+    dataset_path = kwargs['dataset_path']
+    test_size = kwargs['test_size']
+    seed = kwargs['seed']
+    mask_name = kwargs['mask_name']
+
+    target = kwargs['target']
+    decoder = kwargs['decoder']
+    output_size = kwargs['output_size']
+    metric = kwargs['metric']
+
+    # set seed
+    set_seed(seed)
+
+    # load the model
+    config = config_from_kwargs({"model": f"include:{model_config}"})
+    config = update_config(model_config, config)
+    config = update_config(trainer_config, config)
+
+    # change ssl config to sl 
+    config.data.target = target
+    config.method.model_kwargs.output_size = output_size
+    if decoder == "clf":
+        config.method.model_kwargs.clf = True
+        config.method.model_kwargs.loss == "cross_entropy"
+    elif decoder == "reg":
+        config.method.model_kwargs.reg = True
+        config.method.model_kwargs.loss == "mse"
+    config.training.num_epochs = 50
+    config.training.lr = 5e-4
+    config.training.wd = 0.1
+
+    accelerator = Accelerator()
+
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs)
+
+    if freeze_encoder:
+        pretrained_model = torch.load(model_path)['model']
+        model.encoder = pretrained_model.encoder
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+    
+    model = accelerator.prepare(model)
+    model.encoder.masker.ratio = 0.0
+
+    if not freeze_encoder:
+        model.load_state_dict(torch.load(model_path)['model'].state_dict())
+
+    # load the dataset
+    r_dataset = load_from_disk(dataset_path)
+    test_dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['test']
+    _dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['train']
+    dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
+    train_dataset, val_dataset = dataset["train"], dataset["test"]
+    try:
+        bin_size = dataset['binsize'][0]
+    except:
+        bin_size = dataset['bin_size'][0]
+    print(f'bin size: {bin_size}')
+
+    train_dataloader = make_loader(
+        train_dataset,
+        target=config.data.target,
+        batch_size=10000,
+        pad_to_right=True,
+        pad_value=-1.,
+        bin_size=bin_size,
+        max_time_length=config.data.max_time_length,
+        max_space_length=config.data.max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        shuffle=False
+    )
+
+    val_dataloader = make_loader(
+        val_dataset,
+        target=config.data.target,
+        batch_size=10000,
+        pad_to_right=True,
+        pad_value=-1.,
+        bin_size=bin_size,
+        max_time_length=config.data.max_time_length,
+        max_space_length=config.data.max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        shuffle=False
+    )
+
+    test_dataloader = make_loader(
+        test_dataset,
+        target=config.data.target,
+        batch_size=10000,
+        pad_to_right=True,
+        pad_value=-1.,
+        bin_size=bin_size,
+        max_time_length=config.data.max_time_length,
+        max_space_length=config.data.max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        shuffle=False
+    )
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
+    )
+    lr_scheduler = OneCycleLR(
+                    optimizer=optimizer,
+                    total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
+                    max_lr=config.optimizer.lr,
+                    pct_start=config.optimizer.warmup_pct,
+                    div_factor=config.optimizer.div_factor,
+                )
+
+    trainer_kwargs = {
+        "log_dir": log_dir,
+        "accelerator": accelerator,
+        "lr_scheduler": lr_scheduler,
+        "config": config,
+    }
+    trainer_ = make_trainer(
+        model=model,
+        train_dataloader=train_dataloader,
+        eval_dataloader=val_dataloader,
+        test_dataloader=test_dataloader,
+        optimizer=optimizer,
+        **trainer_kwargs
+    )
+    
+    trainer_.train()
+
+    gt, preds = [], []
+    model.eval()
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            outputs = model(
+                batch['spikes_data'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions']
+            )
+    gt = torch.cat(gt, dim=0)
+    preds = torch.cat(preds, dim=0)
+
+    if config.method.model_kwargs.loss == "cross_entropy":
+        preds = torch.nn.functional.softmax(preds, dim=1) 
+
+    results = metrics_list(gt = gt.argmax(1),
+                           pred = preds.argmax(1), 
+                           metrics=[metric], 
+                           device=accelerator.device)
+
+    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), results)
+    
+    return {
+        f"{target}_{metric}": results['metrics'],
+    }
+    
+    
 # --------------------------------------------------------------------------------------------------
 # helper functions
 # --------------------------------------------------------------------------------------------------
