@@ -1,6 +1,6 @@
-from utils.eval_utils import load_model_data_local, co_smoothing_r2, compare_R2_scatter, co_smoothing_bps
+from utils.eval_utils import load_model_data_local, co_smoothing_r2, compare_R2_scatter, co_smoothing_bps, behavior_decoding
 
-mask_name = 'mask_causal'
+mask_name = 'mask_neuron'
 model_name = 'NDT1'
 n_time_steps = 100
 
@@ -8,7 +8,7 @@ co_smooth = False
 forward_pred = False
 inter_region = False
 intra_region = False
-choice_decoding = True
+choice_decoding = False
 wheel_decoding = True
 
 print(mask_name)
@@ -172,15 +172,14 @@ if choice_decoding:
     configs = {
         'model_config': 'src/configs/ndt1.yaml',
         'model_path': f'/home/exouser/Documents/IBL_foundation_model/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
-    'trainer_config': 'src/configs/trainer.yaml',
-    'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
-    'test_size': 0.2,
-    'seed': 42,
-    'mask_name': mask_name,
-        'target': 'choice',
-        'decoder': 'clf',
-        'output_size': 2,
-        'metric': 'acc'
+        'trainer_config': 'src/configs/trainer_sl_choice.yaml',
+        'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
+        'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/choice_decoding',
+        'test_size': 0.2,
+        'seed': 42,
+        'mask_name': mask_name,
+        'metric': 'acc',
+        'from_scratch': False
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -192,15 +191,14 @@ if wheel_decoding:
     configs = {
         'model_config': 'src/configs/ndt1.yaml',
         'model_path': f'/home/exouser/Documents/IBL_foundation_model/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
-    'trainer_config': 'src/configs/trainer.yaml',
-    'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
-    'test_size': 0.2,
-    'seed': 42,
-    'mask_name': mask_name,
-        'target': 'wheel-speed',
-        'decoder': 'reg',
-        'output_size': 100,
-        'metric': 'r2'
+        'trainer_config': 'src/configs/trainer_sl_wheel.yaml',
+        'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
+        'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/wheel_decoding',
+        'test_size': 0.2,
+        'seed': 42,
+        'mask_name': mask_name,
+        'metric': 'r2',
+        'from_scratch': True
     }  
     results = behavior_decoding(**configs)
     print(results)

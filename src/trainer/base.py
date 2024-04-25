@@ -178,6 +178,11 @@ class Trainer():
                                        pred = preds.argmax(1), 
                                        metrics=[self.metric], 
                                        device=self.accelerator.device)
+            elif self.config.method.model_kwargs.reg:
+                results = metrics_list(gt = gt,
+                                       pred = preds,
+                                       metrics=[self.metric],
+                                       device=self.accelerator.device)
 
         return {
             "eval_loss": eval_loss/eval_examples,
