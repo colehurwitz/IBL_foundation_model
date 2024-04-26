@@ -156,7 +156,7 @@ class iTransformer(nn.Module):
 
         
         # Build masker
-        self.masker = nn.ModuleDict({k: Masker(DictConfig(m_config)) for k, m_config in config.masker.items()})
+        self.masker = Masker(config.encoder.masker)
         
         # Build encoder
         self.encoder = iTransformerEncoder(config.encoder, config.decoder.use_cls)
@@ -168,7 +168,7 @@ class iTransformer(nn.Module):
 
         # Build decoder
         if self.method == "ssl":
-            assert [m["active"] for m in config.masker.values()], "Can't pretrain with inactive masking"
+            assert config.encoder.masker.active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.max_n_bins
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"] * config.encoder.embedder.max_n_bins
@@ -249,10 +249,8 @@ class iTransformer(nn.Module):
             targets = spikes.clone()
         
         # Encode neural data. x is the masked embedded spikes. targets_mask is True for masked bins
-        targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        for masker in self.masker.values():
-            spikes, new_mask = masker(spikes, neuron_regions)
-            targets_mask = targets_mask | new_mask
+        spikes, targets_mask = self.masker(spikes, neuron_regions)
+        
 
         x = self.encoder(spikes, spikes_timestamps, spikes_spacestamps, neuron_regions=neuron_regions)    # (batch, n_channels, hidden_size)
 
