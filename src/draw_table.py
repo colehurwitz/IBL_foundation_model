@@ -2,27 +2,51 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-mask_methods = ['mask_neuron', 'mask_causal', 'mask_intra-region', 'mask_inter-region', 'mask_temporal']
-eval_methods = ['co_smooth', 'forward_pred', 'intra_region', 'inter_region']
+model = "NDT2"
 
-save_path = Path('/home/yizi/IBL_foundation_model/figs/model_NDT1/method_ssl')
+mask_methods = ['mask_neuron', 'mask_causal', 'mask_intra-region', 'mask_inter-region', 'mask_temporal']
+eval_methods = ['co_smooth', 'forward_pred', 'intra_region', 'inter_region', 'choice_decoding', 'continuous_decoding']
+
+if model == "NDT2":
+    mask_methods += ['mask_random_token']
+
+save_path = Path(f'/home/yizi/IBL_foundation_model/figs/model_{model}/method_ssl')
 
 metrics_dict = {}
 for mask in mask_methods:
     metrics_dict[mask] = {}
     for eval in eval_methods:
         metrics_dict[mask][eval] = {}
-        try:
-            r2 = np.load(save_path/mask/eval/'r2.npy')
-        except:
-            r2 = np.zeros(2)
-        try:
-            bps = np.load(save_path/mask/eval/'bps.npy')
-        except:
-            bps = 0
-        metrics_dict[mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) if np.nanmean(r2.T[0]) > -10 else -5
-        metrics_dict[mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) if np.nanmean(r2.T[1]) > -10 else -5
-        metrics_dict[mask][eval]['bps'] = np.nanmean(bps) if np.nanmean(bps) > -10 else -5
+        if eval == "choice_decoding":
+            try:
+                acc = np.load(save_path/mask/eval/'choice_results.npy', allow_pickle=True).item()['acc']
+            except:
+                acc = np.zeros(1)
+            metrics_dict[mask][eval]['r2_psth'] = acc
+            metrics_dict[mask][eval]['r2_per_trial'] = acc
+            metrics_dict[mask][eval]['bps'] = acc
+        elif eval == "continuous_decoding":
+            try:
+                r2 = np.load(
+                    save_path/mask/eval/'left-whisker-motion-energy_results.npy', allow_pickle=True
+                ).item()['r2']
+            except:
+                r2 = np.zeros(1)
+            metrics_dict[mask][eval]['r2_psth'] = r2
+            metrics_dict[mask][eval]['r2_per_trial'] = r2
+            metrics_dict[mask][eval]['bps'] = r2
+        else:
+            try:
+                r2 = np.load(save_path/mask/eval/'r2.npy')
+            except:
+                r2 = np.zeros(2)
+            try:
+                bps = np.load(save_path/mask/eval/'bps.npy')
+            except:
+                bps = 0
+            metrics_dict[mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) if np.nanmean(r2.T[0]) > -10 else -5
+            metrics_dict[mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) if np.nanmean(r2.T[1]) > -10 else -5
+            metrics_dict[mask][eval]['bps'] = np.nanmean(bps) if np.nanmean(bps) > -10 else -5
 
 N = len(mask_methods)
 K = len(eval_methods)
@@ -66,11 +90,14 @@ for i in range(len(mask_methods)):
                        ha="center", va="center", color=color, fontsize=12)
 
 for ax in axes:
-    ax.set_yticks(np.arange(N), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask', 'temporal mask'])
-    ax.set_xticks(np.arange(K), labels=['co-smooth','forward pred', 'intra-region', 'inter-region'])
+    if model == "NDT2":
+        ax.set_yticks(np.arange(N), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask', 'temporal mask', 'random token mask'])
+    else:
+        ax.set_yticks(np.arange(N), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask', 'temporal mask'])
+    ax.set_xticks(np.arange(K), labels=['co-smooth','forward pred', 'intra-region', 'inter-region', 'choice decoding', 'continuous decoding'])
     
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
              rotation_mode="anchor")
 
 fig.tight_layout()
-plt.savefig('figs/table/metrics.png')
+plt.savefig(f'figs/table/{model}_metrics.png')
