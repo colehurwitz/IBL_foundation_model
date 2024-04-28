@@ -90,7 +90,7 @@ if inter_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['GRN']
+        'target_regions': ['all']
     }
 
     results = co_smoothing_eval(model, 
@@ -114,7 +114,7 @@ if intra_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['GRN']
+        'target_regions': ['all']
     }
 
     results = co_smoothing_eval(model, 

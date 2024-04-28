@@ -59,6 +59,12 @@ class Masker(nn.Module):
         if not self.training and not self.force_active:
             return spikes, torch.zeros_like(spikes)
 
+        if 'all' in self.mask_regions:
+            self.mask_regions = list(np.unique(neuron_regions))
+
+        if 'all' in self.target_regions:
+            self.target_regions = list(np.unique(neuron_regions))
+
         mask_ratio = self.ratio
         if self.mode in ["temporal", "random_token"]:
             # Expand mask
