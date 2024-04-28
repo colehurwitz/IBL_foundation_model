@@ -69,7 +69,7 @@ data:
   brain_region: all
 
   include_behav: true # include behavior data
-  target: wheel-speed
+  target: left-whisker-motion-energy
 
   load_meta: true
 
@@ -110,7 +110,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-2
+  lr: 1.e-3
   wd: 0.1
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
