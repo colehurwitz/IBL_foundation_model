@@ -94,13 +94,12 @@ def load_model_data_local(**kwargs):
 
 # --------------------------------------------------------------------------------------------------
 # Evaluation
-# 1. Co-smoothing_r2 (R2 and shuqi's plot) TODO: add more behaviors, add n!=1
-# 2. Co-smoothing_bps (co-bps, adapted from NLB repo) TODO: how to choose the held-out neurons?
+# 1. Co-smoothing_eval (R2, co-bps, and shuqi's plot) 
+# 2. Behavior_decoding (choice, wheel speed)
 # 3. R2 scatter plot
-# 4. Behavior_decoding (choice, wheel speed)
 # --------------------------------------------------------------------------------------------------
 
-def co_smoothing_r2(
+def co_smoothing_eval(
         model,
         accelerator,
         test_dataloader,
@@ -168,7 +167,7 @@ def co_smoothing_r2(
 
     if mode == 'per_neuron':
         
-        r2_result_list = []
+        bps_result_list, r2_result_list = [], []
         # loop through all the neurons
         for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
             model.eval()
@@ -194,11 +193,19 @@ def co_smoothing_r2(
             gt_spikes = batch['spikes_data'].detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
 
-            # Settings for validation
+            # compute co-bps
+            gt_held_out = gt_spikes[:, :, [n_i]]
+            pred_held_out = pred_spikes[:, :, [n_i]]
+
+            bps = bits_per_spike(pred_held_out, gt_held_out)
+            if np.isinf(bps):
+                continue
+            bps_result_list.append(bps)
+
+            # compute R2
             ys = gt_spikes  # [#trials, #timesteps, #neurons]
             y_preds = pred_spikes  # [#trials, #timesteps, #neurons]
 
-            # choose the neuron to plot (idx_top / held_out_idx / ...)
             idxs = mask_result['heldout_idxs']
         
             for i in range(idxs.shape[0]):
@@ -237,7 +244,7 @@ def co_smoothing_r2(
             target_regions = neuron_regions = None
             held_out_list = [held_out_list]
 
-        r2_result_list = []
+        bps_result_list, r2_result_list = [], []
         for hd_idx in tqdm(held_out_list, desc='neuron'):
            
             hd = np.array([hd_idx])
@@ -273,7 +280,18 @@ def co_smoothing_r2(
             elif mode in ['forward_pred']:
                 target_neuron_idxs = np.arange(gt_spikes.shape[-1])
                 target_time_idxs = held_out_list[0]
-            
+
+            # compute co-bps
+            gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+            pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+    
+            for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
+                bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+                if np.isinf(bps):
+                    continue
+                bps_result_list.append(bps)
+
+            # compute R2
             ys = gt_spikes[:, target_time_idxs]
             y_preds = pred_spikes[:, target_time_idxs]
     
@@ -302,138 +320,7 @@ def co_smoothing_r2(
     else:
         raise NotImplementedError('mode not implemented')
 
-    r2_all = np.array(r2_result_list)
-    np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
-
-    return {
-        f"{mode}_mean_r2_psth": np.mean(r2_all[:, 0]),
-        f"{mode}_std_r2_psth": np.std(r2_all[:, 0]),
-        f"{mode}_mean_r2_trial": np.mean(r2_all[:, 1]),
-        f"{mode}_std_r2_trial": np.std(r2_all[:, 1])
-    }
-
-
-def co_smoothing_bps(
-        model,
-        accelerator,
-        test_dataloader,
-        test_dataset,
-        mode='per_neuron',     # manual / active / per_neuron / forward_pred / inter_region / intra_region / etc (TODO)
-        held_out_list=None,    # list for manual / forward_pred mode
-        target_regions=None,            # list for region mode
-        **kwargs
-):
-
-    for batch in test_dataloader:
-        break
-
-    # hack to accommodate NDT2 - fix later 
-    tot_num_neurons = batch['spikes_data'].size()[-1]
-    region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
-
-    if mode == 'per_neuron':
-        bps_result_list = []
-
-        # loop through all the neurons
-        for n_i in tqdm(range(batch['spikes_data'].shape[-1]), desc='neuron'):
-
-            # validate the model on test set
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    mask_result = heldout_mask(
-                        batch['spikes_data'],
-                        mode='manual',
-                        heldout_idxs=np.array([n_i])
-                    )
-                    outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']
-                    )
-            # exponential the poisson rates
-            outputs.preds = torch.exp(outputs.preds)
-
-            # got the numpy array for gt and pred
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
-
-            gt_held_out = gt_spikes[:, :, [n_i]]
-            pred_held_out = pred_spikes[:, :, [n_i]]
-
-            bps = bits_per_spike(pred_held_out, gt_held_out)
-            if np.isinf(bps):
-                continue
-            bps_result_list.append(bps)
-    
-    elif mode in ['forward_pred', 'inter_region', 'intra_region']:
-
-        if mode == 'inter_region':
-            assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
-            held_out_list = [None]
-        elif mode == 'intra_region':
-            assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
-            hd = np.stack([np.argwhere(region_list==region).flatten() for region in target_regions]).flatten()
-            held_out_list = np.arange(len(hd))
-        elif mode == 'forward_pred':
-            assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
-            target_regions = neuron_regions = None
-            held_out_list = [held_out_list]
-
-        bps_result_list = []
-        
-        for hd_idx in tqdm(held_out_list, desc='neuron'):
-
-            hd = np.array([hd_idx])
-
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    mask_result = heldout_mask(
-                        batch['spikes_data'],
-                        mode=mode,
-                        heldout_idxs=hd, 
-                        target_regions=target_regions,
-                        neuron_regions=region_list
-                    )
-                    outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']
-                    )
-            outputs.preds = torch.exp(outputs.preds)
-        
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
-    
-            if mode in ['inter_region', 'intra_region']:
-                target_neuron_idxs = mask_result['heldout_idxs']
-                target_time_idxs = np.arange(gt_spikes.shape[1])
-            elif mode in ['forward_pred']:
-                target_neuron_idxs = np.arange(gt_spikes.shape[-1])
-                target_time_idxs = held_out_list[0]
-    
-            gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-            pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-    
-            for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
-                bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
-                if np.isinf(bps):
-                    continue
-                bps_result_list.append(bps)
-    else:
-        raise NotImplementedError('mode not implemented')
-
+    # save co-bps
     os.makedirs(kwargs['save_path'], exist_ok=True)
     bps_all = np.array(bps_result_list)
     bps_mean = np.mean(bps_all)
@@ -445,46 +332,18 @@ def co_smoothing_bps(
     plt.savefig(os.path.join(kwargs['save_path'], f'bps.png'), dpi=200)
     np.save(os.path.join(kwargs['save_path'], f'bps.npy'), bps_all)
     
+    # save R2
+    r2_all = np.array(r2_result_list)
+    np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
+
     return {
         f"{mode}_mean_bps": bps_mean,
-        f"{mode}_std_bps": bps_std
+        f"{mode}_std_bps": bps_std,
+        f"{mode}_mean_r2_psth": np.mean(r2_all[:, 0]),
+        f"{mode}_std_r2_psth": np.std(r2_all[:, 0]),
+        f"{mode}_mean_r2_trial": np.mean(r2_all[:, 1]),
+        f"{mode}_std_r2_trial": np.std(r2_all[:, 1])
     }
-
-def compare_R2_scatter(**kwargs):
-    A_path = kwargs['A_path'],
-    B_path = kwargs['B_path'],
-    A_name = kwargs['A_name'],
-    B_name = kwargs['B_name'],
-
-    A_r2 = np.load(os.path.join(A_path, 'r2.npy'))
-    B_r2 = np.load(os.path.join(B_path, 'r2.npy'))
-
-    A_psth = A_r2[:, 0]
-    B_psth = B_r2[:, 0]
-    A_psth[A_psth < 0] = 0
-    B_psth[B_psth < 0] = 0
-
-    A_r2 = A_r2[:, 1]
-    B_r2 = B_r2[:, 1]
-    A_r2[A_r2 < 0] = 0
-    B_r2[B_r2 < 0] = 0
-
-    line_x = np.linspace(0, 1, 100)
-    line_y = line_x
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
-    axes[0].scatter(A_psth, B_psth, alpha=0.9, s=1)
-    axes[0].plot(line_x, line_y, color='black', lw=1)
-    axes[0].set_xlabel(A_name)
-    axes[0].set_ylabel(B_name)
-    axes[0].set_title('R2_PSTH')
-
-    axes[1].scatter(A_r2, B_r2, alpha=0.9, s=1)
-    axes[1].plot(line_x, line_y, color='black', lw=1)
-    axes[1].set_xlabel(A_name)
-    axes[1].set_ylabel(B_name)
-    axes[1].set_title('R2')
 
 
 def behavior_decoding(**kwargs):
@@ -522,9 +381,10 @@ def behavior_decoding(**kwargs):
     if not kwargs['from_scratch']:
         pretrained_model = torch.load(model_path)['model']
         model.encoder = pretrained_model.encoder
-        for param in model.encoder.parameters():
-            param.requires_grad = False
-        model.encoder.masker.ratio = 0.0
+        if kwargs['freeze_encoder']:
+            for param in model.encoder.parameters():
+                param.requires_grad = False
+            model.encoder.masker.ratio = 0.0
     
     model = accelerator.prepare(model)
 
@@ -645,6 +505,44 @@ def behavior_decoding(**kwargs):
         f"{target}_{metric}": results[metric],
     }
     
+
+
+def compare_R2_scatter(**kwargs):
+    A_path = kwargs['A_path'],
+    B_path = kwargs['B_path'],
+    A_name = kwargs['A_name'],
+    B_name = kwargs['B_name'],
+
+    A_r2 = np.load(os.path.join(A_path, 'r2.npy'))
+    B_r2 = np.load(os.path.join(B_path, 'r2.npy'))
+
+    A_psth = A_r2[:, 0]
+    B_psth = B_r2[:, 0]
+    A_psth[A_psth < 0] = 0
+    B_psth[B_psth < 0] = 0
+
+    A_r2 = A_r2[:, 1]
+    B_r2 = B_r2[:, 1]
+    A_r2[A_r2 < 0] = 0
+    B_r2[B_r2 < 0] = 0
+
+    line_x = np.linspace(0, 1, 100)
+    line_y = line_x
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    axes[0].scatter(A_psth, B_psth, alpha=0.9, s=1)
+    axes[0].plot(line_x, line_y, color='black', lw=1)
+    axes[0].set_xlabel(A_name)
+    axes[0].set_ylabel(B_name)
+    axes[0].set_title('R2_PSTH')
+
+    axes[1].scatter(A_r2, B_r2, alpha=0.9, s=1)
+    axes[1].plot(line_x, line_y, color='black', lw=1)
+    axes[1].set_xlabel(A_name)
+    axes[1].set_ylabel(B_name)
+    axes[1].set_title('R2')
+
     
 # --------------------------------------------------------------------------------------------------
 # helper functions

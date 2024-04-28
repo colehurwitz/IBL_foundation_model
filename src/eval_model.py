@@ -1,4 +1,4 @@
-from utils.eval_utils import load_model_data_local, co_smoothing_r2, compare_R2_scatter, co_smoothing_bps, behavior_decoding
+from utils.eval_utils import load_model_data_local, co_smoothing_eval, behavior_decoding
 
 mask_name = 'mask_neuron'
 model_name = 'NDT1'
@@ -9,7 +9,7 @@ forward_pred = False
 inter_region = False
 intra_region = False
 choice_decoding = False
-wheel_decoding = True
+continuous_decoding = True
 
 print(mask_name)
 
@@ -45,7 +45,7 @@ if co_smooth:
         'target_regions': None
     }
 
-    results = co_smoothing_r2(model, 
+    results = co_smoothing_eval(model, 
                     accelerator, 
                     dataloader, 
                     dataset, 
@@ -53,15 +53,6 @@ if co_smooth:
     print(results)
     wandb.log(results)
 
-
-    results = co_smoothing_bps(model, 
-                     accelerator, 
-                     dataloader, 
-                     dataset, 
-                     mode='per_neuron', 
-                     save_path=f'figs/model_{model_name}/method_ssl/{mask_name}/co_smooth')
-    print(results)
-    wandb.log(results)
 
 # forward prediction
 if forward_pred:
@@ -78,23 +69,14 @@ if forward_pred:
         'target_regions': None
     }
 
-    results = co_smoothing_r2(model, 
+    results = co_smoothing_eval(model, 
                     accelerator, 
                     dataloader, 
                     dataset, 
                     **co_smoothing_configs)
     print(results)
     wandb.log(results)
-
-    results = co_smoothing_bps(model, 
-                     accelerator, 
-                     dataloader, 
-                     dataset, 
-                     mode = 'forward_pred', 
-                     held_out_list = list(range(80, 100)),
-                     save_path=f'figs/model_{model_name}/method_ssl/{mask_name}/forward_pred')
-    print(results)
-    wandb.log(results)
+    
 
 # inter-region
 if inter_region:
@@ -111,7 +93,7 @@ if inter_region:
         'target_regions': ['GRN']
     }
 
-    results = co_smoothing_r2(model, 
+    results = co_smoothing_eval(model, 
                     accelerator, 
                     dataloader, 
                     dataset, 
@@ -119,17 +101,6 @@ if inter_region:
     print(results)
     wandb.log(results)
 
-    results = co_smoothing_bps(model, 
-                     accelerator, 
-                     dataloader, 
-                     dataset, 
-                     mode = 'inter_region', 
-                     held_out_list = None, 
-                     target_regions = ['GRN'],
-                     save_path=f'figs/model_{model_name}/method_ssl/{mask_name}/inter_region'
-    )
-    print(results)
-    wandb.log(results)
 
 # intra-region
 if intra_region:
@@ -146,23 +117,11 @@ if intra_region:
         'target_regions': ['GRN']
     }
 
-    results = co_smoothing_r2(model, 
+    results = co_smoothing_eval(model, 
                     accelerator, 
                     dataloader, 
                     dataset, 
                     **co_smoothing_configs)
-    print(results)
-    wandb.log(results)
-
-    results = co_smoothing_bps(model, 
-                     accelerator, 
-                     dataloader, 
-                     dataset, 
-                     mode = 'intra_region', 
-                     held_out_list = None,
-                     target_regions = ['GRN'], 
-                     save_path = f'figs/model_{model_name}/method_ssl/{mask_name}/intra_region'
-    )
     print(results)
     wandb.log(results)
 
@@ -179,26 +138,28 @@ if choice_decoding:
         'seed': 42,
         'mask_name': mask_name,
         'metric': 'acc',
-        'from_scratch': False
+        'from_scratch': False,
+        'freeze_encoder': False
     }  
     results = behavior_decoding(**configs)
     print(results)
     wandb.log(results)
 
 
-if wheel_decoding:
-    print('Start wheel_decoding:')
+if continuous_decoding:
+    print('Start continuous_decoding:')
     configs = {
         'model_config': 'src/configs/ndt1.yaml',
         'model_path': f'/home/exouser/Documents/IBL_foundation_model/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
-        'trainer_config': 'src/configs/trainer_sl_wheel.yaml',
+        'trainer_config': 'src/configs/trainer_sl_continuous.yaml',
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned', 
-        'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/wheel_decoding',
+        'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/continuous_decoding',
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
         'metric': 'r2',
-        'from_scratch': True
+        'from_scratch': True,
+        'freeze_encoder': False
     }  
     results = behavior_decoding(**configs)
     print(results)
