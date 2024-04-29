@@ -37,7 +37,7 @@ if co_smooth:
     co_smoothing_configs = {
         'subtract': 'task',
         'onset_alignment': [40],
-        'method_name': mask_name, # used for file name of figures
+        'method_name': mask_name, 
         'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/co_smooth',
         'mode': 'per_neuron',
         'n_time_steps': n_time_steps,    
@@ -60,11 +60,11 @@ if forward_pred:
     results = co_smoothing_configs = {
         'subtract': 'task',
         'onset_alignment': [],
-        'method_name': mask_name, # used for file name of figures
+        'method_name': mask_name, 
         'save_path': f'figs/model_{model_name}/method_ssl/{mask_name}/forward_pred',
         'mode': 'forward_pred',
         'n_time_steps': n_time_steps,    
-        'held_out_list': list(range(80, 100)),
+        'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
         'is_aligned': True,
         'target_regions': None
     }

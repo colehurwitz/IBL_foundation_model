@@ -66,6 +66,7 @@ data:
   max_space_length: 668   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
+  sort_by_region: false
   brain_region: all
 
   include_behav: true # include behavior data

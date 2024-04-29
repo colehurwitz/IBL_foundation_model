@@ -5,6 +5,8 @@ encoder:
 
   from_pt: null
 
+  embed_region: false
+
   # Mask spikes
   masker:
     force_active: true         

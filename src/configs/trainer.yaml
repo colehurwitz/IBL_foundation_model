@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 50
+  num_epochs: 100
   train_batch_size: 8
   test_batch_size: 8  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -66,6 +66,7 @@ data:
   max_space_length: 704   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
+  sort_by_region: false
   brain_region: all
 
   include_behav: false # include behavior data

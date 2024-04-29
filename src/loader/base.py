@@ -126,6 +126,7 @@ class BaseDataset(torch.utils.data.Dataset):
         mask_ratio = 0.1,
         pad_to_right = True,
         sort_by_depth = False,
+        sort_by_region = False,
         load_meta = False,
         brain_region = 'all',
         dataset_name = "ibl",
@@ -134,6 +135,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.target = target
         self.pad_value = pad_value
         self.sort_by_depth = sort_by_depth
+        self.sort_by_region = sort_by_region
         self.max_time_length = max_time_length
         self.max_space_length = max_space_length
         self.bin_size = bin_size
@@ -188,10 +190,10 @@ class BaseDataset(torch.utils.data.Dataset):
                 neuron_depths = np.array(data['cluster_depths']).astype(np.float32)
             else:
                 neuron_depths = np.array([np.nan])
-            neuron_regions = list(np.array(data['cluster_regions']).astype('str'))
-            
+            neuron_regions = np.array(data['cluster_regions']).astype('str')
         else:
             neuron_depths = neuron_regions = np.array([np.nan])
+            
         if self.load_meta & (self.brain_region != 'all'):
             # only load neurons from a given brain region
             # this is for NDT2 since not enough RAM to load all neurons  
@@ -205,13 +207,20 @@ class BaseDataset(torch.utils.data.Dataset):
 
         num_time_steps, num_neurons = binned_spikes_data.shape
 
-        if self.load_meta & self.sort_by_depth:
-            # sort neurons by depth on the probe
+        if self.load_meta:
             neuron_idxs = np.arange(num_neurons)
-            sorted_neuron_idxs = [x for _, x in sorted(zip(neuron_depths, neuron_idxs))]
+            assert (self.sort_by_depth and self.sort_by_region) == False, "Can only sort either by depth or neuron."
+            if self.sort_by_depth:
+                sorted_neuron_idxs = [x for _, x in sorted(zip(neuron_depths, neuron_idxs))]
+            elif self.sort_by_region:
+                sorted_neuron_idxs = [x for _, x in sorted(zip(neuron_regions, neuron_idxs))]
+            else:
+                sorted_neuron_idxs = neuron_idxs.copy()
             binned_spikes_data = binned_spikes_data[:,sorted_neuron_idxs]
             neuron_depths = neuron_depths[sorted_neuron_idxs]
             neuron_regions = neuron_regions[sorted_neuron_idxs]
+
+        neuron_regions = list(neuron_regions)
         
         # pad along time dimension
         if num_time_steps > self.max_time_length:
