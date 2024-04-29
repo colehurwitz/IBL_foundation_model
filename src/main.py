@@ -15,7 +15,7 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
+    "model": "include:src/configs/ndt2.yaml"
 }
 
 config = config_from_kwargs(kwargs)
@@ -36,20 +36,15 @@ set_seed(config.seed)
 
 # download dataset from huggingface
 if "ibl" in config.data.dataset_name:
-    #dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-
-    #try:
-    #    bin_size = dataset["train"]["binsize"][0]
-    #except:
-    #    bin_size = dataset["train"]["bin_size"][0]
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["val"]
+    test_dataset = dataset["test"]
     
-
-    # split the dataset to train and test
-    #dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
-    # select the train dataset and the spikes_sparse_data column
-    #data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
-    #train_dataset = dataset["train"].select_columns(data_columns)
-    #test_dataset = dataset["test"].select_columns(data_columns)
+    try:
+       bin_size = train_dataset["binsize"][0]
+    except:
+       bin_size = train_dataset["bin_size"][0]
 
     if config.data.include_behav:
         dataset = load_from_disk(os.path.join(config.dirs.behav_dir))
@@ -62,7 +57,8 @@ if "ibl" in config.data.dataset_name:
             bin_size = dataset["train"]["bin_size"][0]
 
         train_dataset = dataset["train"]
-        test_dataset = dataset["test"]
+        val_dataset = dataset["test"]
+        test_dataset = _dataset["test"]
 
     if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
         config["model"]["encoder"]["neuron_regions"] = list(set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
@@ -87,6 +83,18 @@ train_dataloader = make_loader(train_dataset,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
                          shuffle=True)
+
+val_dataloader = make_loader(val_dataset, 
+                         target=config.data.target,
+                         load_meta=config.data.load_meta,
+                         batch_size=config.training.test_batch_size, 
+                         pad_to_right=True, 
+                         pad_value=-1.,
+                         bin_size=bin_size,
+                         max_time_length=config.data.max_time_length,
+                         max_space_length=config.data.max_space_length,
+                         dataset_name=config.data.dataset_name,
+                         shuffle=False)
 
 test_dataloader = make_loader(test_dataset, 
                          target=config.data.target,
@@ -127,7 +135,7 @@ trainer_kwargs = {
 trainer_ = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
-    eval_dataloader=test_dataloader,
+    eval_dataloader=val_dataloader,
     test_dataloader=test_dataloader,
     optimizer=optimizer,
     **trainer_kwargs

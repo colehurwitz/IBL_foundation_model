@@ -15,12 +15,12 @@ wandb:
 
 # Logging directories
 dirs:
-  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: results  # save tensorboard logs
-  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
+  checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: /mnt/home/yzhang1/ceph/results  # save tensorboard logs
+  dataset_cache_dir: /mnt/home/yzhang1/ceph/checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
@@ -63,18 +63,18 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 704   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
 
-  include_behav: true # include behavior data
+  include_behav: false # include behavior data
   target: null
 
   load_meta: true
 
   num_sessions: 3
-  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
 
   split_method: session_based # random_split/session_based
 
@@ -110,7 +110,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
+  lr: 5.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

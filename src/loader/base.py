@@ -245,7 +245,7 @@ class BaseDataset(torch.utils.data.Dataset):
                 
         spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)
         spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
-
+        
         # add attention mask
         time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
         space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
@@ -259,7 +259,7 @@ class BaseDataset(torch.utils.data.Dataset):
             "spikes_spacestamps": spikes_spacestamps,
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
-            "neuron_regions": list(neuron_regions)
+            "neuron_regions": list(neuron_regions),
         }
     
     def __len__(self):
