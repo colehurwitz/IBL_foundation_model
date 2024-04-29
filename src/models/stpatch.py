@@ -16,6 +16,7 @@ ACT2FN["softsign"] = nn.Softsign
 
 from models.masker import Masker
 from models.patcher import Patcher
+from models.region_lookup import RegionLookup 
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
@@ -53,7 +54,7 @@ def create_context_mask(
 
 class NeuralEmbeddingLayer(nn.Module):
 
-    def __init__(self, hidden_size, config: DictConfig):
+    def __init__(self, hidden_size, embed_region, max_region_indx, config: DictConfig):
         super().__init__()
 
         self.bias = config.bias
@@ -91,8 +92,27 @@ class NeuralEmbeddingLayer(nn.Module):
         self.scale = hidden_size ** 0.5 if config.scale == None else config.scale
 
         # embed patch postion
-        self.embed_space_pos = nn.Embedding(self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size)
-        self.embed_time_pos = nn.Embedding(self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size)
+        self.embed_region = embed_region
+        if self.embed_region:
+            self.region_embeddings = nn.Sequential(
+                nn.Embedding(
+                    self.n_time_patches * (max_region_indx+self.n_cls_tokens), hidden_size),
+                nn.LayerNorm(hidden_size),
+            )
+
+        self.embed_space_pos = nn.Sequential(
+            nn.Embedding(
+                self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size
+            ),
+            nn.LayerNorm(hidden_size),
+        )
+            
+        self.embed_time_pos = nn.Sequential(
+            nn.Embedding(
+                self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size
+            ),
+            nn.LayerNorm(hidden_size),
+        )
 
         self.dropout = nn.Dropout(config.dropout)
 
@@ -101,6 +121,7 @@ class NeuralEmbeddingLayer(nn.Module):
         spikes:               torch.FloatTensor,                   # (n_batch, n_token, n_channels)
         spacestamps:          torch.LongTensor,
         timestamps:           torch.LongTensor,
+        regionstamps:         Optional[torch.LongTensor] = None
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -123,6 +144,10 @@ class NeuralEmbeddingLayer(nn.Module):
         # Embed patch position
         x += self.embed_space_pos(spacestamps)
         x += self.embed_time_pos(timestamps)
+
+        if self.embed_region:
+            region_embeds = self.region_embeddings(regionstamps)  
+            x += region_embeds
 
         return self.dropout(x)
 
@@ -279,11 +304,15 @@ class SpaceTimeTransformer(nn.Module):
         if self.mask | self.mask_token:
             self.masker = Masker(config.masker)
 
+        self.embed_region = config.embed_region
+        self.regionlookup = RegionLookup(config)
+
         # Patcher
         self.patch = config.patcher.active
         if self.patch:
             self.patcher = Patcher(
-                self.max_space_F, self.max_time_F, self.n_cls_tokens, config.patcher
+                self.max_space_F, self.max_time_F, self.n_cls_tokens, 
+                self.embed_region, config.patcher
             )
 
         # Context span mask
@@ -294,7 +323,9 @@ class SpaceTimeTransformer(nn.Module):
         self.register_buffer("context_mask", context_mask, persistent=False)
 
         # Embedding layer
-        self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
+        self.embedder = NeuralEmbeddingLayer(
+            self.hidden_size, self.embed_region, self.regionlookup.max_region_indx, config.embedder
+        )
 
         # Transformer
         self.layers = nn.ModuleList(
@@ -328,10 +359,15 @@ class SpaceTimeTransformer(nn.Module):
             targets_mask = targets_mask & time_attn_mask.unsqueeze(-1).expand(B,T,N)
             targets_mask = targets_mask & space_attn_mask.unsqueeze(1).expand(B,T,N)
 
+        if self.embed_region:
+            region_indx = self.regionlookup(neuron_regions).to(spikes.device)
+        else:
+            region_indx = None
+
         # Patch neural data
         if self.patch:
-            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps  =\
-            self.patcher(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask)
+            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps  =\
+            self.patcher(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, region_indx)
 
         # Mask tokens
         if self.mask_token:
@@ -340,7 +376,7 @@ class SpaceTimeTransformer(nn.Module):
             targets_mask = targets_mask.reshape(B,T,N) & space_attn_mask.unsqueeze(1).expand(B,T,N)
             
         # Embed neural data
-        x = self.embedder(spikes, spacestamps, timestamps)
+        x = self.embedder(spikes, spacestamps, timestamps, regionstamps)
 
         _, T, _ = x.size() 
 

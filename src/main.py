@@ -82,6 +82,8 @@ train_dataloader = make_loader(train_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         sort_by_depth=config.data.sort_by_depth,
+                         sort_by_region=config.data.sort_by_region,
                          shuffle=True)
 
 val_dataloader = make_loader(val_dataset, 
@@ -94,6 +96,8 @@ val_dataloader = make_loader(val_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         sort_by_depth=config.data.sort_by_depth,
+                         sort_by_region=config.data.sort_by_region,
                          shuffle=False)
 
 test_dataloader = make_loader(test_dataset, 
@@ -106,6 +110,8 @@ test_dataloader = make_loader(test_dataset,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         sort_by_depth=config.data.sort_by_depth,
+                         sort_by_region=config.data.sort_by_region,
                          shuffle=False)
 
 # Initialize the accelerator

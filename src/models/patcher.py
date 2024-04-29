@@ -17,13 +17,14 @@ CONFIG:
 # TO DO: ADD TIME STRIDE
 
 class Patcher(nn.Module):
-    def __init__(self, max_space_F, max_time_F, n_cls_tokens, config: DictConfig):
+    def __init__(self, max_space_F, max_time_F, n_cls_tokens, embed_region, config: DictConfig):
         super().__init__()
         self.max_space_F = max_space_F
         self.max_time_F = max_time_F
         self.n_cls_tokens = n_cls_tokens
         self.pad_value = -1.
         self.time_stride = config.time_stride
+        self.embed_region = embed_region
 
     def forward(
         self, 
@@ -31,7 +32,8 @@ class Patcher(nn.Module):
         pad_space_len:   int,      
         pad_time_len:    int,
         time_attn_mask:  torch.LongTensor,      # (bs, seq_len,)
-        space_attn_mask: torch.LongTensor       # (bs, seq_len,)
+        space_attn_mask: torch.LongTensor,       # (bs, seq_len,)
+        region_indx:     Optional[torch.LongTensor] = None,
     ) -> Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:  
          # (bs, seq_len, n_channels), (bs, seq_len), (bs, seq_len), (bs, seq_len), (bs, seq_len, n_channels)
 
@@ -60,8 +62,22 @@ class Patcher(nn.Module):
         patches = patches.flatten(1,2).to(spikes.device)
 
         # Prepare space and time stamps after accounting for [cls] tokens
+        # Majority vote the brain region for each patch
+        if self.embed_region:
+            regionstamps = torch.zeros((self.n_cls_tokens+self.n_space_patches))
+            for s in range(self.n_space_patches):
+                if len(region_indx[0, s*self.max_space_F:(s+1)*self.max_space_F]) != 0:
+                    regionstamps[self.n_cls_tokens+s] = torch.mode(
+                        region_indx[0, s*self.max_space_F:(s+1)*self.max_space_F]
+                    ).values
+            regionstamps = regionstamps.to(torch.int64)[None,None,:]
+            regionstamps = regionstamps.expand(B, self.n_time_patches,-1).to(spikes.device).flatten(1)
+        else:
+            regionstamps = None
+        
         spacestamps = torch.arange(self.n_space_patches+self.n_cls_tokens).to(torch.int64)[None,None,:]
         spacestamps = spacestamps.expand(B, self.n_time_patches,-1).to(spikes.device).flatten(1)
+        
         timestamps = torch.arange(self.n_time_patches).to(torch.int64)[None,:,None]
         timestamps = timestamps.expand(B, -1, self.n_space_patches+self.n_cls_tokens).to(spikes.device).flatten(1)
         
@@ -83,7 +99,7 @@ class Patcher(nn.Module):
         time_attn_mask = time_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
         space_attn_mask = space_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
 
-        return patches, space_attn_mask, time_attn_mask, spacestamps, timestamps
+        return patches, space_attn_mask, time_attn_mask, spacestamps, timestamps, regionstamps
 
 
 
