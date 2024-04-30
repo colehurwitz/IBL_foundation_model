@@ -68,12 +68,12 @@ data:
   sort_by_depth: false
   brain_region: all
 
-  include_behav: true # include behavior data
+  include_behav: false # include behavior data
   target: null
 
   load_meta: true
 
-  num_sessions: 30
+  num_sessions: 10
   test_session_eid: [] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
   split_method: predefined # random_split/session_based/predefined
