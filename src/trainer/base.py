@@ -4,6 +4,7 @@ import wandb
 import os
 from utils.utils import move_batch_to_device, metrics_list, plot_gt_pred, plot_neurons_r2
 from tqdm import tqdm
+import random
 
 class Trainer():
     def __init__(
@@ -32,6 +33,11 @@ class Trainer():
             self.metric = 'r2'
                 
         self.active_neurons = None
+
+        self.masking_mode = self.config.model.encoder.masker.mode
+        self.masking_schemes = ['neuron', 'temporal', 'causal', 'intra-region', 'inter-region']
+        if self.config.model.model_class == 'STPatch':
+            self.masking_schemes += ['random_token']
 
     def train(self):
         best_eval_loss = torch.tensor(float('inf'))
@@ -114,7 +120,11 @@ class Trainer():
         train_examples = 0
         self.model.train()
         for batch in tqdm(self.train_dataloader):
-            outputs = self._forward_model_outputs(batch)
+            if self.masking_mode == 'combined':
+                masking_mode = random.sample(self.masking_schemes, 1)[0]
+            else:
+                masking_mode = None
+            outputs = self._forward_model_outputs(batch, masking_mode)
             loss = outputs.loss
             loss.backward()
             self.optimizer.step()
@@ -126,7 +136,7 @@ class Trainer():
             "train_loss": train_loss/train_examples
         }
     
-    def _forward_model_outputs(self, batch):
+    def _forward_model_outputs(self, batch, masking_mode):
         batch = move_batch_to_device(batch, self.accelerator.device)
         return self.model(
             batch['spikes_data'], 
@@ -135,7 +145,8 @@ class Trainer():
             spikes_timestamps=batch['spikes_timestamps'], 
             spikes_spacestamps=batch['spikes_spacestamps'], 
             targets = batch['target'],
-            neuron_regions=batch['neuron_regions']#.T
+            neuron_regions=batch['neuron_regions'],
+            masking_mode=masking_mode
         ) 
     
     def eval_epoch(self):
@@ -143,11 +154,14 @@ class Trainer():
         eval_loss = 0.
         eval_examples = 0
         if self.eval_dataloader:
-            gt = []
-            preds = []
+            gt, preds = [], []
             with torch.no_grad():  
                 for batch in self.eval_dataloader:
-                    outputs = self._forward_model_outputs(batch)
+                    if self.masking_mode == 'combined':
+                        masking_mode = random.sample(self.masking_schemes, 1)[0]
+                    else:
+                        masking_mode = None
+                    outputs = self._forward_model_outputs(batch, masking_mode)
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples

@@ -242,6 +242,7 @@ class iTransformer(nn.Module):
         targets:            Optional[torch.FloatTensor] = None, # (bs, tar_len) 
         targets_lengths:    Optional[torch.LongTensor]  = None, # (bs)
         neuron_regions:     Optional[np.ndarray]        = None, # (bs, n_channels)
+        masking_mode:     Optional[str] = None,
     ) -> iTransformerOutput:
 
         if self.method == "ssl":
