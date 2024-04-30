@@ -486,9 +486,22 @@ class STPatch(nn.Module):
         targets_lengths:      Optional[torch.LongTensor] = None,   # (bs,)
         neuron_regions:       Optional[torch.LongTensor] = None,   # (bs, n_channels)
         masking_mode:     Optional[str] = None,
+        spike_augmentation: Optional[bool] = False,
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
+
+         # Augmentation
+        if spike_augmentation:
+            if self.training:
+                # 50% of the time, we reverse the spikes
+                if torch.rand(1) > 0.5:
+                    # calculate unmask timestamps
+                    unmask_temporal = time_attn_mask.sum(dim=1)
+                    for i in range(len(unmask_temporal)):
+                        # reverse idx from unmask_temporal to 0
+                        reverse_idx = torch.arange(unmask_temporal[i]-1, -1, -1)
+                        spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
 
         # if neuron_regions type is list 
         if isinstance(neuron_regions, list):
