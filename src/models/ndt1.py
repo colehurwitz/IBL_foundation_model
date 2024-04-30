@@ -608,9 +608,10 @@ class NDT1(nn.Module):
 
         # if neuron_regions type is list 
         if isinstance(neuron_regions, list):
+            print(neuron_regions)
             neuron_regions = np.asarray(neuron_regions).T
 
-        if self.method == "ssl":
+        if self.method == "ssl  ":
             targets = spikes.clone()
             if self.encoder.int_spikes:
                 targets = targets.to(torch.int64)
