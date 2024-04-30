@@ -84,6 +84,8 @@ data:
   sort_by_region: false
   brain_region: all
 
+  spike_augmentation: false
+
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
 

@@ -146,7 +146,8 @@ class Trainer():
             spikes_spacestamps=batch['spikes_spacestamps'], 
             targets = batch['target'],
             neuron_regions=batch['neuron_regions'],
-            masking_mode=masking_mode
+            masking_mode=masking_mode, 
+            spike_augmentation=self.config.data.spike_augmentation
         ) 
     
     def eval_epoch(self):
