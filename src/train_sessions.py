@@ -15,16 +15,16 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
+    "model": "include:src/configs/ndt1.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
-config = update_config("src/configs/trainer.yaml", config)
+config = update_config("src/configs/ndt1.yaml", config)
+config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
+log_dir = os.path.join(config.dirs.log_dir, "train", "multi_sessions", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
@@ -38,7 +38,7 @@ set_seed(config.seed)
 
 # download dataset from huggingface
 eid = None
-train_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+train_dataset, val_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                            config.dirs.huggingface_org,
                            eid=eid,
                            num_sessions=config.data.num_sessions,
@@ -63,22 +63,28 @@ if config.data.use_aligned_test:
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
                          target=config.data.target,
+                         load_meta=config.data.load_meta,
                          batch_size=config.training.train_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         sort_by_depth=config.data.sort_by_depth,
+                         sort_by_region=config.data.sort_by_region,
                          shuffle=True)
 
-test_dataloader = make_loader(test_dataset, 
+val_dataloader = make_loader(val_dataset, 
                          target=config.data.target,
+                         load_meta=config.data.load_meta,
                          batch_size=config.training.test_batch_size, 
                          pad_to_right=True, 
                          pad_value=-1.,
                          max_time_length=config.data.max_time_length,
                          max_space_length=config.data.max_space_length,
                          dataset_name=config.data.dataset_name,
+                         sort_by_depth=config.data.sort_by_depth,
+                         sort_by_region=config.data.sort_by_region,
                          shuffle=False)
 
 # Initialize the accelerator
@@ -108,7 +114,7 @@ trainer_kwargs = {
 trainer = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
-    eval_dataloader=test_dataloader,
+    eval_dataloader=val_dataloader,
     optimizer=optimizer,
     **trainer_kwargs
 )
