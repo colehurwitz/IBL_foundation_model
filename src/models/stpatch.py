@@ -485,6 +485,7 @@ class STPatch(nn.Module):
         spikes_lengths:       Optional[torch.LongTensor] = None,   # (bs,)
         targets_lengths:      Optional[torch.LongTensor] = None,   # (bs,)
         neuron_regions:       Optional[torch.LongTensor] = None,   # (bs, n_channels)
+        masking_mode:     Optional[str] = None,
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
