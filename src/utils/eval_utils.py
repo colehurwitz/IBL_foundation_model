@@ -1,13 +1,13 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
-from loader.make_loader import make_loader
-from utils.dataset_utils import split_both_dataset
-from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
+from src.loader.make_loader import make_loader
+from src.utils.dataset_utils import split_both_dataset
+from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
-from utils.config_utils import config_from_kwargs, update_config
-from models.ndt1 import NDT1
-from models.stpatch import STPatch
-from models.itransformer import iTransformer
+from src.utils.config_utils import config_from_kwargs, update_config
+from src.models.ndt1 import NDT1
+from src.models.stpatch import STPatch
+from src.models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -18,7 +18,8 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import matplotlib.colors as colors
 import os
-from trainer.make import make_trainer
+from src.trainer.make import make_trainer
+from pathlib import Path
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 
@@ -167,7 +168,7 @@ def co_smoothing_eval(
 
     if mode == 'per_neuron':
         
-        bps_result_list, r2_result_list = [], []
+        bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
         for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
             model.eval()
@@ -199,8 +200,8 @@ def co_smoothing_eval(
 
             bps = bits_per_spike(pred_held_out, gt_held_out)
             if np.isinf(bps):
-                continue
-            bps_result_list.append(bps)
+                bps = np.nan
+            bps_result_list[n_i] = bps
 
             # compute R2
             ys = gt_spikes  # [#trials, #timesteps, #neurons]
@@ -218,7 +219,7 @@ def co_smoothing_eval(
                                                           neuron_idx=uuids_list[idxs[i]][:4],
                                                           neuron_region=region_list[idxs[i]],
                                                           method=method_name, save_path=kwargs['save_path'])
-                    r2_result_list.append(np.array([_r2_psth, _r2_trial]))
+                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                 else:
                     r2 = viz_single_cell_unaligned(
                         ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
@@ -226,17 +227,17 @@ def co_smoothing_eval(
                         neuron_region=region_list[idxs[i]],
                         method=method_name, save_path=kwargs['save_path']
                     )
-                    r2_result_list.append(r2)
+                    r2_result_list[idxs[i]] = r2
 
     elif mode == 'forward_pred':
 
         held_out_list = kwargs['held_out_list']
 
         assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
-            target_regions = neuron_regions = None
-            held_out_list = [held_out_list]
+        target_regions = neuron_regions = None
+        held_out_list = [held_out_list]
 
-        bps_result_list, r2_result_list = [], []
+        bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for hd_idx in tqdm(held_out_list, desc='neuron'):
            
             hd = np.array([hd_idx])
@@ -276,8 +277,8 @@ def co_smoothing_eval(
             for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
                 bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                 if np.isinf(bps):
-                    continue
-                bps_result_list.append(bps)
+                    bps = np.nan
+                bps_result_list[target_neuron_idxs[n_i]] = bps
 
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
@@ -296,7 +297,7 @@ def co_smoothing_eval(
                                                           neuron_idx=uuids_list[idxs[i]][:4],
                                                           neuron_region=region_list[idxs[i]],
                                                           method=method_name, save_path=kwargs['save_path']);
-                    r2_result_list.append(np.array([_r2_psth, _r2_trial]))
+                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                 else:
                     r2 = viz_single_cell_unaligned(
                         ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
@@ -304,8 +305,8 @@ def co_smoothing_eval(
                         neuron_region=region_list[idxs[i]],
                         method=method_name, save_path=kwargs['save_path']
                     )
-                    r2_result_list.append(r2)
-    
+                    r2_result_list[idxs[i]] = r2
+
     elif mode in ['inter_region', 'intra_region']:
 
         if 'all' in target_regions:
@@ -318,7 +319,7 @@ def co_smoothing_eval(
         elif mode == 'intra_region':
             assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
 
-        bps_result_list, r2_result_list = [], []
+        bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for region in target_regions:
             hd = np.argwhere(region_list==region).flatten() 
             held_out_list = np.arange(len(hd))
@@ -362,8 +363,8 @@ def co_smoothing_eval(
                 for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
                     bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                     if np.isinf(bps):
-                        continue
-                    bps_result_list.append(bps)
+                        bps = np.nan
+                    bps_result_list[target_neuron_idxs[n_i]] = bps
     
                 # compute R2
                 ys = gt_spikes[:, target_time_idxs]
@@ -382,7 +383,7 @@ def co_smoothing_eval(
                                                               neuron_idx=uuids_list[idxs[i]][:4],
                                                               neuron_region=region_list[idxs[i]],
                                                               method=method_name, save_path=kwargs['save_path']);
-                        r2_result_list.append(np.array([_r2_psth, _r2_trial]))
+                        r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
                             ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
@@ -390,7 +391,7 @@ def co_smoothing_eval(
                             neuron_region=region_list[idxs[i]],
                             method=method_name, save_path=kwargs['save_path']
                         )
-                        r2_result_list.append(r2)
+                        r2_result_list[idxs[i]] = r2
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -418,6 +419,102 @@ def co_smoothing_eval(
         f"{mode}_mean_r2_trial": np.mean(r2_all[:, 1]),
         f"{mode}_std_r2_trial": np.std(r2_all[:, 1])
     }
+
+
+def draw_threshold_table(
+        mask_methods: list,
+        eval_methods: list,
+        load_path: str,
+        firing_rate_ts: list,  # firing rate threshold
+        quality_ts: list,  # quality threshold
+):
+    # clear_output(wait=True)
+
+    save_path = Path(load_path)
+
+    # there should be a mean_rates file.
+    fr = np.load(save_path / 'mean_rates.npy')
+    ts_idx = (firing_rate_ts[0] <= fr) & (fr <= firing_rate_ts[1])
+
+    print(sum(ts_idx))
+
+    metrics_dict = {}
+    for mask in mask_methods:
+        metrics_dict[mask] = {}
+        for eval in eval_methods:
+            metrics_dict[mask][eval] = {}
+            try:
+                r_r2 = np.load(save_path / mask / eval / 'r2.npy')
+            except:
+                r_r2 = np.zeros((1, 2))
+            try:
+                r_bps = np.load(save_path / mask / eval / 'bps.npy')
+            except:
+                r_bps = 0
+
+            r2 = r_r2[ts_idx, :]
+            bps = r_bps[ts_idx]
+            # print(r2.shape, bps.shape)
+
+            metrics_dict[mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) if np.nanmean(r2.T[0]) > -10 else -5
+            metrics_dict[mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) if np.nanmean(r2.T[1]) > -10 else -5
+            metrics_dict[mask][eval]['bps'] = np.nanmean(bps) if np.nanmean(bps) > -10 else -5
+            # print(metrics_dict[mask][eval]['r2_psth'], metrics_dict[mask][eval]['r2_per_trial'], metrics_dict[mask][eval]['bps'])
+
+
+    N = len(mask_methods)
+    K = len(eval_methods)
+    r2_psth_mat, r2_per_trial_mat, bps_mat = np.zeros((N, K)), np.zeros((N, K)), np.zeros((N, K))
+    for i, mask in enumerate(mask_methods):
+        for j, eval in enumerate(eval_methods):
+            r2_psth_mat[i, j] = metrics_dict[mask][eval]['r2_psth']
+            r2_per_trial_mat[i, j] = metrics_dict[mask][eval]['r2_per_trial']
+            bps_mat[i, j] = metrics_dict[mask][eval]['bps']
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+    mat = bps_mat
+    im0 = axes[0].imshow(mat, cmap='RdYlGn')
+    axes[0].set_title("bps")
+
+    for i in range(len(mask_methods)):
+        for j in range(len(eval_methods)):
+            color = 'w' if mat[i, j] < 0.5 else 'k'
+            text = axes[0].text(j, i, f'{mat[i, j]:.2f}',
+                                ha="center", va="center", color=color, fontsize=12)
+
+    mat = r2_psth_mat
+    im1 = axes[1].imshow(mat, cmap='RdYlGn')
+    axes[1].set_title("r2 psth")
+
+    for i in range(len(mask_methods)):
+        for j in range(len(eval_methods)):
+            color = 'w' if mat[i, j] < 0.5 else 'k'
+            text = axes[1].text(j, i, f'{mat[i, j]:.2f}',
+                                ha="center", va="center", color=color, fontsize=12)
+
+    mat = r2_per_trial_mat
+    # print(mat)
+    im2 = axes[2].imshow(mat, cmap='RdYlGn')
+    axes[2].set_title("r2 per trial")
+
+    for i in range(len(mask_methods)):
+        for j in range(len(eval_methods)):
+            color = 'w' if mat[i, j] < 0.5 else 'k'
+            text = axes[2].text(j, i, f'{mat[i, j]:.2f}',
+                                ha="center", va="center", color=color, fontsize=12)
+
+    for ax in axes:
+        ax.set_yticks(np.arange(N),
+                      labels=mask_methods)  # local
+        ax.set_xticks(np.arange(K), labels=eval_methods)
+
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+                 rotation_mode="anchor")
+
+    fig.tight_layout()
+    # display(fig)
+    plt.savefig('figs/table/metrics.png')
 
 
 def behavior_decoding(**kwargs):
