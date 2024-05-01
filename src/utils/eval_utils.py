@@ -1,13 +1,13 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
-from src.loader.make_loader import make_loader
-from src.utils.dataset_utils import split_both_dataset
-from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
+from loader.make_loader import make_loader
+from utils.dataset_utils import split_both_dataset
+from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
-from src.utils.config_utils import config_from_kwargs, update_config
-from src.models.ndt1 import NDT1
-from src.models.stpatch import STPatch
-from src.models.itransformer import iTransformer
+from utils.config_utils import config_from_kwargs, update_config
+from models.ndt1 import NDT1
+from models.stpatch import STPatch
+from models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -320,13 +320,16 @@ def co_smoothing_eval(
             assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
-        for region in target_regions:
+        for region in tqdm(target_regions, desc='region'):
             hd = np.argwhere(region_list==region).flatten() 
             held_out_list = np.arange(len(hd))
+
+            if mode == 'inter_region':
+                held_out_list = [held_out_list]
     
-            for hd_idx in tqdm(held_out_list, desc='neuron'):
+            for hd_idx in held_out_list:
                
-                hd = np.array([hd_idx])
+                hd = np.array([hd_idx]).flatten()
     
                 model.eval()
                 with torch.no_grad():
