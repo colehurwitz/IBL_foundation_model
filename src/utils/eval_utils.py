@@ -63,8 +63,10 @@ def load_model_data_local(**kwargs):
     #     exit()
 
     # load the dataset
-    r_dataset = load_from_disk(dataset_path)
-    dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['test']
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["val"]
+    test_dataset = dataset["test"]
     try:
         bin_size = dataset['binsize'][0]
     except:
@@ -563,11 +565,10 @@ def behavior_decoding(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    r_dataset = load_from_disk(dataset_path)
-    test_dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['test']
-    _dataset = r_dataset.train_test_split(test_size=test_size, seed=seed)['train']
-    dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
-    train_dataset, val_dataset = dataset["train"], dataset["test"]
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["val"]
+    test_dataset = dataset["test"]
 
     train_dataloader = make_loader(
         train_dataset,
