@@ -177,7 +177,7 @@ def load_ibl_dataset(cache_dir,
     test_session_eid_dir = []
     train_session_eid_dir = []
     if eid is not None:
-        eid_dir = os.path.join(user_or_org_name, eid)
+        eid_dir = os.path.join(user_or_org_name, eid+"_aligned")
         if eid_dir not in user_datasets:
             raise ValueError(f"Dataset with eid: {eid} not found in the user's datasets")
         else:

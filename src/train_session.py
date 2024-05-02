@@ -12,18 +12,18 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
+    "model": "include:src/configs/ndt1.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
+config = update_config("src/configs/ndt1.yaml", config)
 config = update_config("src/configs/ssl_session_trainer.yaml", config)
 
 # make log dir
 log_dir = os.path.join(config.dirs.log_dir, 
                        "train", 
-                       "single",
+                       "single_session",
                        "model_{}".format(config.model.model_class), 
                        "method_{}".format(config.method.model_kwargs.method_name), 
                        "mask_{}".format(config.encoder.masker.mode))
@@ -36,7 +36,7 @@ if config.wandb.use:
     wandb.init(project=config.wandb.project, 
                entity=config.wandb.entity, 
                config=config, 
-               name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode))
+               name="train_model_{}_method_{}_mask_{}_finetune_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.training.finetune))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -82,6 +82,9 @@ accelerator = Accelerator()
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
+if config.training.finetune:
+    print('Loading pretrained model')
+    model = torch.load(config.dirs.pretrained_model_path)['model']
 model = accelerator.prepare(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), 
