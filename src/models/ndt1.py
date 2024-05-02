@@ -438,8 +438,10 @@ class NeuralEncoder(nn.Module):
             self.masker = Masker(config.masker)
         
         # Context span mask
+        self.context_forward = config.context.forward
+        self.context_backward = config.context.backward
         self.max_F = config.embedder.max_F
-        context_mask = create_context_mask(config.context.forward, config.context.backward, config.embedder.max_F)
+        context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
         self.register_buffer("context_mask", context_mask, persistent=False)
 
         # Normalization and noising layer
