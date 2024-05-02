@@ -138,7 +138,13 @@ accelerator = Accelerator()
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
-model.encoder.masker.mode = args.mask_mode
+
+if args.mask_mode == "causal":
+    model.encoder.masker.mode = "temporal"
+    model.encoder.context_forward = 0
+    print("(eval) context forward: ", model.encoder.context_forward)
+else:
+    model.encoder.masker.mode = args.mask_mode
 model.encoder.masker.ratio = args.mask_ratio
 model = accelerator.prepare(model)
 

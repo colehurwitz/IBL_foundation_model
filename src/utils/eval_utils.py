@@ -56,18 +56,19 @@ def load_model_data_local(**kwargs):
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
     model = torch.load(model_path)['model']
-    model = accelerator.prepare(model)
-    model.encoder.masker.mode = mask_mode
+
+    if "causal" in mask_name:
+        model.encoder.masker.mode = "temporal"
+        model.encoder.context_forward = 0
+        print("(eval) context forward: ", model.encoder.context_forward)
+    else:
+        model.encoder.masker.mode = mask_mode
     model.encoder.masker.force_active = False
+    model = accelerator.prepare(model)
 
     print("(eval) masking mode: ", model.encoder.masker.mode)
     print("(eval) masking ratio: ", model.encoder.masker.ratio)
     print("(eval) masking active: ", model.encoder.masker.force_active)
-    
-    # if "causal" in mask_name:
-    #     model.encoder.context.forward = 0
-    #     print(model.encoder.context.forward)
-    #     exit()
 
     # load the dataset
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
@@ -238,7 +239,7 @@ def co_smoothing_eval(
         held_out_list = [held_out_list]
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
-        for hd_idx in tqdm(held_out_list, desc='neuron'):
+        for hd_idx in held_out_list:
            
             hd = np.array([hd_idx])
 
@@ -274,7 +275,7 @@ def co_smoothing_eval(
             gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
             pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
     
-            for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
+            for n_i in tqdm(range(len(target_neuron_idxs)), desc='co-bps'): 
                 bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                 if np.isinf(bps):
                     bps = np.nan
@@ -287,7 +288,7 @@ def co_smoothing_eval(
             # choose the neuron to plot
             idxs = target_neuron_idxs
     
-            for i in tqdm(range(idxs.shape[0])):
+            for i in tqdm(range(idxs.shape[0]), desc='R2'):
                 if is_aligned:
                     X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
                     _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
@@ -556,12 +557,6 @@ def behavior_decoding(**kwargs):
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
-    model.encoder.masker.mode = mask_mode
-    model.encoder.masker.ratio = mask_ratio
-
-    print("(behave decoding) masking mode: ", model.encoder.masker.mode)
-    print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
-    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
     if not kwargs['from_scratch']:
         pretrained_model = torch.load(model_path)['model']
@@ -569,8 +564,19 @@ def behavior_decoding(**kwargs):
         if kwargs['freeze_encoder']:
             for param in model.encoder.parameters():
                 param.requires_grad = False
-    
+
+    if "causal" in mask_name:
+        model.encoder.masker.mode = "temporal"
+        model.encoder.context_forward = 0
+        print("(eval) context forward: ", model.encoder.context_forward)
+    else:
+        model.encoder.masker.mode = mask_mode
+    model.encoder.masker.ratio = mask_ratio
     model = accelerator.prepare(model)
+
+    print("(behave decoding) masking mode: ", model.encoder.masker.mode)
+    print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
+    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
     # load the dataset
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
