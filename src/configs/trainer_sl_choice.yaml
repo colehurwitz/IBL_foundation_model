@@ -20,7 +20,7 @@ dirs:
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 25
+  num_epochs: 50
   train_batch_size: 8
   test_batch_size: 8  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -68,6 +68,7 @@ data:
   sort_by_depth: false
   sort_by_region: false
   brain_region: all
+  spike_augmentation: false
 
   include_behav: true # include behavior data
   target: choice
@@ -111,7 +112,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-5
+  lr: 5.e-4
   wd: 1
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

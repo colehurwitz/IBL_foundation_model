@@ -18,7 +18,7 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import matplotlib.colors as colors
 import os
-from src.trainer.make import make_trainer
+from trainer.make import make_trainer
 from pathlib import Path
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
@@ -63,15 +63,7 @@ def load_model_data_local(**kwargs):
     #     exit()
 
     # load the dataset
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    train_dataset = dataset["train"]
-    val_dataset = dataset["val"]
-    test_dataset = dataset["test"]
-    try:
-        bin_size = dataset['binsize'][0]
-    except:
-        bin_size = dataset['bin_size'][0]
-    print(f'bin size: {bin_size}')
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
 
     # TODO: update the loader to adapt other models (e.g., patching for NDT2)
     dataloader = make_loader(
@@ -80,7 +72,6 @@ def load_model_data_local(**kwargs):
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
-        bin_size=bin_size,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
@@ -365,7 +356,7 @@ def co_smoothing_eval(
                 gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
                 pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
         
-                for n_i in tqdm(range(len(target_neuron_idxs)), desc='neuron'): 
+                for n_i in range(len(target_neuron_idxs)): 
                     bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                     if np.isinf(bps):
                         bps = np.nan
@@ -378,7 +369,7 @@ def co_smoothing_eval(
                 # choose the neuron to plot
                 idxs = target_neuron_idxs
         
-                for i in tqdm(range(idxs.shape[0])):
+                for i in range(idxs.shape[0]):
                     if is_aligned:
                         X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
                         _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
@@ -403,8 +394,8 @@ def co_smoothing_eval(
     # save co-bps
     os.makedirs(kwargs['save_path'], exist_ok=True)
     bps_all = np.array(bps_result_list)
-    bps_mean = np.mean(bps_all)
-    bps_std = np.std(bps_all)
+    bps_mean = np.nanmean(bps_all)
+    bps_std = np.nanstd(bps_all)
     plt.hist(bps_all, bins=30, alpha=0.75, color='red', edgecolor='black')
     plt.xlabel('bits per spike')
     plt.ylabel('count')
@@ -419,10 +410,10 @@ def co_smoothing_eval(
     return {
         f"{mode}_mean_bps": bps_mean,
         f"{mode}_std_bps": bps_std,
-        f"{mode}_mean_r2_psth": np.mean(r2_all[:, 0]),
-        f"{mode}_std_r2_psth": np.std(r2_all[:, 0]),
-        f"{mode}_mean_r2_trial": np.mean(r2_all[:, 1]),
-        f"{mode}_std_r2_trial": np.std(r2_all[:, 1])
+        f"{mode}_mean_r2_psth": np.nanmean(r2_all[:, 0]),
+        f"{mode}_std_r2_psth": np.nanstd(r2_all[:, 0]),
+        f"{mode}_mean_r2_trial": np.nanmean(r2_all[:, 1]),
+        f"{mode}_std_r2_trial": np.nanstd(r2_all[:, 1])
     }
 
 

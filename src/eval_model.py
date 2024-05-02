@@ -1,14 +1,16 @@
 from utils.eval_utils import load_model_data_local, co_smoothing_eval, behavior_decoding
+import warnings
+warnings.simplefilter("ignore")
 
-mask_name = 'mask_causal'
+mask_name = 'mask_intra-region'
 model_name = 'NDT1'
 n_time_steps = 100
 
-co_smooth = False
-forward_pred = False
-inter_region = False
-intra_region = False
-choice_decoding = False
+co_smooth = True
+forward_pred = True
+inter_region = True
+intra_region = True
+choice_decoding = True
 continuous_decoding = True
 
 print(mask_name)
@@ -152,7 +154,7 @@ if continuous_decoding:
     print('Start continuous_decoding:')
     configs = {
         'model_config': 'src/configs/ndt1.yaml',
-        'model_path': f'{base_path}/results/eval/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
         'trainer_config': 'src/configs/trainer_sl_continuous.yaml',
         'dataset_path': None, 
         'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/continuous_decoding',
