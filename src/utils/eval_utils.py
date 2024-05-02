@@ -40,6 +40,7 @@ def load_model_data_local(**kwargs):
     test_size = kwargs['test_size']
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
+    mask_mode = mask_name.split("_")[1]
 
     # set seed
     set_seed(seed)
@@ -48,6 +49,7 @@ def load_model_data_local(**kwargs):
     config = config_from_kwargs({"model": f"include:{model_config}"})
     config = update_config(model_config, config)
     config = update_config(trainer_config, config)
+    config.model.encoder.masker.mode = mask_mode
 
     accelerator = Accelerator()
 
@@ -55,8 +57,13 @@ def load_model_data_local(**kwargs):
     model = model_class(config.model, **config.method.model_kwargs)
     model = torch.load(model_path)['model']
     model = accelerator.prepare(model)
-    model.encoder.masker.ratio = 0.0
+    model.encoder.masker.mode = mask_mode
+    model.encoder.masker.force_active = False
 
+    print("(eval) masking mode: ", model.encoder.masker.mode)
+    print("(eval) masking ratio: ", model.encoder.masker.ratio)
+    print("(eval) masking active: ", model.encoder.masker.force_active)
+    
     # if "causal" in mask_name:
     #     model.encoder.context.forward = 0
     #     print(model.encoder.context.forward)
@@ -314,6 +321,7 @@ def co_smoothing_eval(
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for region in tqdm(target_regions, desc='region'):
+            print(region)
             hd = np.argwhere(region_list==region).flatten() 
             held_out_list = np.arange(len(hd))
 
@@ -522,6 +530,8 @@ def behavior_decoding(**kwargs):
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
     metric = kwargs['metric']
+    mask_ratio = kwargs['mask_ratio']
+    mask_mode = mask_name.split("_")[1]
 
     # set seed
     set_seed(seed)
@@ -531,11 +541,13 @@ def behavior_decoding(**kwargs):
     config = update_config(model_config, config)
     config = update_config(trainer_config, config)
 
+    config.model.encoder.masker.mode = mask_mode
+
     target = config.data.target
     log_dir = os.path.join(
             config.dirs.log_dir, "train", 
             "model_{}".format(config.model.model_class), 
-            "method_sl", mask_name, target
+            "method_sl", mask_name, f"ratio_{mask_ratio}", target
     )
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -544,6 +556,12 @@ def behavior_decoding(**kwargs):
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs)
+    model.encoder.masker.mode = mask_mode
+    model.encoder.masker.ratio = mask_ratio
+
+    print("(behave decoding) masking mode: ", model.encoder.masker.mode)
+    print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
+    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
     if not kwargs['from_scratch']:
         pretrained_model = torch.load(model_path)['model']
@@ -551,7 +569,6 @@ def behavior_decoding(**kwargs):
         if kwargs['freeze_encoder']:
             for param in model.encoder.parameters():
                 param.requires_grad = False
-            model.encoder.masker.ratio = 0.0
     
     model = accelerator.prepare(model)
 
@@ -629,6 +646,9 @@ def behavior_decoding(**kwargs):
     trainer_.train()
 
     model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
+
+    model.encoder.masker.force_active = False
+    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
     gt, preds = [], []
     model.eval()

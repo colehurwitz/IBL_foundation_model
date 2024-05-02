@@ -486,7 +486,7 @@ class NeuralEncoder(nn.Module):
         # Mask neural data
         if self.mask:
             spikes, targets_mask = self.masker(spikes, neuron_regions)
-            targets_mask = targets_mask & spikes_mask.unsqueeze(-1).expand(B,T,N)
+            targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
         else:
             targets_mask = None
 
