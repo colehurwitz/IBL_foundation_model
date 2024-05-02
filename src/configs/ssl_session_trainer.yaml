@@ -19,9 +19,9 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/train/single/model_NDT2/method_ssl/mask_random_causal/model_best.pt
+  pretrained_model_path: checkpoints/train/multi_sessions/model_NDT1/method_ssl/mask_combined/model_best.pt
   dataset_dir: berkott/ibl_ssl_data
-  aligned_data_dir:  data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  aligned_data_dir:  null
   huggingface_org: neurofm123
   
 
@@ -37,7 +37,7 @@ training:
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
-
+  finetune: true
 
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 704   # max_space_length has to be a multiple of space patch size
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   sort_by_region: false
@@ -75,11 +75,13 @@ data:
   num_sessions: 1
   test_session_eid: [] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
-  split_method: random_split # random_split/session_based
+  split_method: predefined # random_split/session_based/predefined
 
   use_aligned_test: True
 
   load_meta: true
+
+  spike_augmentation: false
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
