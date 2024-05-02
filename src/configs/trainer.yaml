@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: single-session
+wandb_project: ibl-ssl-eval
 log_to_wandb: false
 
 verbosity: 0
@@ -10,7 +10,7 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: single-session
+  project: ibl-ssl-eval
   run_name: 671c7ea7
 
 # Logging directories
@@ -28,13 +28,13 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 300
-  train_batch_size: 8
-  test_batch_size: 8  
+  num_epochs: 500
+  train_batch_size: 16
+  test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 5  # Plot the model output every n epochs
-  save_every: 50  # Save checkpoint
+  save_every: 100  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -112,7 +112,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 5.e-4
+  lr: 1.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

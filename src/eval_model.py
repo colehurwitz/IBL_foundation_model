@@ -2,7 +2,7 @@ from utils.eval_utils import load_model_data_local, co_smoothing_eval, behavior_
 import warnings
 warnings.simplefilter("ignore")
 
-mask_name = 'mask_intra-region'
+mask_name = 'mask_all'
 model_name = 'NDT1'
 n_time_steps = 100
 
@@ -143,7 +143,8 @@ if choice_decoding:
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
-        'freeze_encoder': False
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -163,7 +164,8 @@ if continuous_decoding:
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
-        'freeze_encoder': False
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)
     print(results)
