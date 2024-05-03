@@ -34,6 +34,7 @@ class Trainer():
                 
         self.active_neurons = None
 
+        self.masking_ratio = model.encoder.masker.ratio
         self.masking_mode = model.encoder.masker.mode
         self.masking_schemes = ['neuron', 'temporal', 'causal']
         if self.masking_mode == "all":
@@ -127,6 +128,10 @@ class Trainer():
         for batch in tqdm(self.train_dataloader):
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
+                if masking_mode == 'temporal':
+                    model.encoder.masker.ratio = 0.3
+                else:
+                    model.encoder.masker.ratio = self.masking_ratio
             else:
                 masking_mode = self.masking_mode
             outputs = self._forward_model_outputs(batch, masking_mode)
@@ -165,6 +170,10 @@ class Trainer():
                 for batch in self.eval_dataloader:
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
+                        if masking_mode == 'temporal':
+                            model.encoder.masker.ratio = 0.3
+                        else:
+                            model.encoder.masker.ratio = self.masking_ratio
                     else:
                         masking_mode = self.masking_mode
                     outputs = self._forward_model_outputs(batch, masking_mode)
