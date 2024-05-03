@@ -215,9 +215,6 @@ configs = {
     'mask_name': mask_name,
 }  
 
-# import wandb
-# wandb.init(project='ibl-ssl-eval', config=configs, 
-#            name=f'model_{model_name}_method_ssl_{mask_name}_ratio_{args.mask_ratio}')
 
 # load your model and dataloader
 model, accelerator, dataset, dataloader = load_model_data_local(**configs)
