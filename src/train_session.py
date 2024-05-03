@@ -82,9 +82,11 @@ accelerator = Accelerator()
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
+lr_multiplier = 1.
 if config.training.finetune:
     print('Loading pretrained model')
     model = torch.load(config.dirs.pretrained_model_path)['model']
+    lr_multiplier = lr_multiplier / 10.
 model = accelerator.prepare(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), 
@@ -94,7 +96,7 @@ optimizer = torch.optim.AdamW(model.parameters(),
 lr_scheduler = OneCycleLR(
                 optimizer=optimizer,
                 total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                max_lr=config.optimizer.lr,
+                max_lr=config.optimizer.lr * lr_multiplier,
                 pct_start=config.optimizer.warmup_pct,
                 div_factor=config.optimizer.div_factor,
             )
