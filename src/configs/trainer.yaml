@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 500
+  num_epochs: 1000
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs

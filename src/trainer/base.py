@@ -34,10 +34,15 @@ class Trainer():
                 
         self.active_neurons = None
 
-        self.masking_mode = self.config.model.encoder.masker.mode
-        self.masking_schemes = ['neuron', 'temporal', 'causal', 'intra-region', 'inter-region']
+        self.masking_mode = model.encoder.masker.mode
+        self.masking_schemes = ['neuron', 'temporal', 'causal']
+        if self.masking_mode == "all":
+            self.masking_schemes += ['intra-region', 'inter-region']
         if self.config.model.model_class == 'STPatch':
             self.masking_schemes += ['random_token']
+
+        if self.masking_mode in ["combined", "all"]:
+            print("(train) switch between masking modes: ", self.masking_schemes)
 
     def train(self):
         best_eval_loss = torch.tensor(float('inf'))
@@ -120,8 +125,10 @@ class Trainer():
         train_examples = 0
         self.model.train()
         for batch in tqdm(self.train_dataloader):
-            if self.masking_mode == 'combined':
+            if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
+            elif self.masking_mode == 'causal':
+                masking_mode = self.masking_mode
             else:
                 masking_mode = None
             outputs = self._forward_model_outputs(batch, masking_mode)
@@ -158,8 +165,10 @@ class Trainer():
             gt, preds = [], []
             with torch.no_grad():  
                 for batch in self.eval_dataloader:
-                    if self.masking_mode == 'combined':
+                    if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
+                    elif self.masking_mode == 'causal':
+                        masking_mode = self.masking_mode
                     else:
                         masking_mode = None
                     outputs = self._forward_model_outputs(batch, masking_mode)
