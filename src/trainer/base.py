@@ -171,7 +171,7 @@ class Trainer():
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
-                    gt.append(batch['spikes_data'].clone())
+                    gt.append(outputs.targets.clone())
                     preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
