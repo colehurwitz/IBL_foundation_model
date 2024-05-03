@@ -23,18 +23,20 @@ ap.add_argument("--mask_mode", type=str, default="temporal")
 ap.add_argument("--model_name", type=str, default="NDT1")
 args = ap.parse_args()
 
+model_acroynm = args.model_name.lower()
+
 # load config
 if args.mask_mode == 'causal':
     kwargs = {
-        "model": "include:src/configs/ndt1_causal.yaml"
+        "model": f"include:src/configs/{model_acroynm}_causal.yaml"
     }
 else:
     kwargs = {
-        "model": "include:src/configs/ndt1.yaml"
+        "model": f"include:src/configs/{model_acroynm}.yaml"
     }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/trainer.yaml", config)
+config = update_config(f"src/configs/trainer_{model_acroynm}.yaml", config)
 
 config.model.encoder.masker.mode = args.mask_mode
 
@@ -185,7 +187,10 @@ trainer_.train()
 #########################
 
 mask_name = f"mask_{args.mask_mode}"
-model_name = args.model_name
+if args.model_name == "NDT2":
+    model_name = "STPatch"
+else:
+    model_name = args.model_name
 n_time_steps = 100
 
 co_smooth = True
@@ -200,15 +205,15 @@ print(mask_name)
 base_path = '/mnt/home/yzhang1/ceph'
 
 if args.mask_mode == 'causal':
-    model_config = 'src/configs/ndt1_causal.yaml'
+    model_config = f'src/configs/{model_acroynm}_causal.yaml'
 else:
-    model_config = 'src/configs/ndt1.yaml'
+    model_config = f'src/configs/{model_acroynm}.yaml'
 
 # Configuration
 configs = {
     'model_config': model_config,
     'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
-    'trainer_config': 'src/configs/trainer.yaml',
+    'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
     'dataset_path': None, 
     'test_size': 0.2,
     'seed': 42,
@@ -319,7 +324,7 @@ if choice_decoding:
     configs = {
         'model_config': model_config,
         'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
-        'trainer_config': 'src/configs/trainer_sl_choice.yaml',
+        'trainer_config': f'src/configs/trainer_sl_choice_{model_acroynm}.yaml',
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
         'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/choice_decoding',
         'test_size': 0.2,
@@ -327,7 +332,7 @@ if choice_decoding:
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
-        'freeze_encoder': False,
+        'freeze_encoder': True,
         'mask_ratio': args.mask_ratio
     }  
     results = behavior_decoding(**configs)
@@ -340,7 +345,7 @@ if continuous_decoding:
     configs = {
         'model_config': model_config,
         'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
-        'trainer_config': 'src/configs/trainer_sl_continuous.yaml',
+        'trainer_config': f'src/configs/trainer_sl_continuous_{model_acroynm}.yaml',
         'dataset_path': None, 
         'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/continuous_decoding',
         'test_size': 0.2,
@@ -348,7 +353,7 @@ if continuous_decoding:
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
-        'freeze_encoder': False,
+        'freeze_encoder': True,
         'mask_ratio': args.mask_ratio
     }  
     results = behavior_decoding(**configs)

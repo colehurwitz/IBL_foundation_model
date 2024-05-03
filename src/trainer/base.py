@@ -129,9 +129,11 @@ class Trainer():
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
                 if masking_mode == 'temporal':
-                    model.encoder.masker.ratio = 0.3
+                    self.model.encoder.masker.ratio = 0.3
+                elif masking_mode == 'causal':
+                    self.model.encoder.masker.ratio = 1.0
                 else:
-                    model.encoder.masker.ratio = self.masking_ratio
+                    self.model.encoder.masker.ratio = self.masking_ratio
             else:
                 masking_mode = self.masking_mode
             outputs = self._forward_model_outputs(batch, masking_mode)
@@ -171,9 +173,11 @@ class Trainer():
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
                         if masking_mode == 'temporal':
-                            model.encoder.masker.ratio = 0.3
+                            self.model.encoder.masker.ratio = 0.3
+                        elif masking_mode == 'causal':
+                            self.model.encoder.masker.ratio = 1.0
                         else:
-                            model.encoder.masker.ratio = self.masking_ratio
+                            self.model.encoder.masker.ratio = self.masking_ratio
                     else:
                         masking_mode = self.masking_mode
                     outputs = self._forward_model_outputs(batch, masking_mode)

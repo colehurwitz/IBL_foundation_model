@@ -369,7 +369,7 @@ class SpaceTimeTransformer(nn.Module):
         
         # Mask spikes
         if self.mask:
-            spikes, targets_mask = self.masker(spikes, neuron_regions)
+            spikes, targets_mask = self.masker(spikes, neuron_regions, masking_mode)
         else:
             targets_mask = None
 
@@ -390,8 +390,8 @@ class SpaceTimeTransformer(nn.Module):
         # Mask tokens
         if self.mask_token:
             spikes, targets_mask = self.masker(spikes)
-            targets_mask = targets_mask.reshape(B,T,N) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-            targets_mask = targets_mask.reshape(B,T,N) & space_attn_mask.unsqueeze(1).expand(B,T,N)
+            targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
+            targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N)
             
         # Embed neural data
         x = self.embedder(spikes, spacestamps, timestamps, regionstamps)
@@ -453,7 +453,8 @@ class STPatch(nn.Module):
         if self.method == "sl":
             decoder_layers.append(
                 nn.Linear(
-                    (self.encoder.n_time_patches * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
+                    # (self.encoder.n_time_patches * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
+                    (self.encoder.n_time_patches * self.encoder.n_space_patches) * self.encoder.hidden_size, n_outputs
                 )
             )
         else:
@@ -541,7 +542,7 @@ class STPatch(nn.Module):
 
         # Encode neural data
         x, targets_mask = self.encoder(
-            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions
+            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode
         )
 
         # Transform neural embeddings into rates/logits
@@ -554,8 +555,9 @@ class STPatch(nn.Module):
             
         elif self.method == "sl":
             # Grab the prepended [cls] embeddings
-            x = x[:,:self.encoder.n_time_patches*self.encoder.n_cls_tokens]
+            # x = x[:,:self.encoder.n_time_patches*self.encoder.n_cls_tokens]
             x = x.flatten(start_dim=1)  
+            outputs = self.decoder(x)
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
