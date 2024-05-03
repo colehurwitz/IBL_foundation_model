@@ -57,18 +57,16 @@ def load_model_data_local(**kwargs):
     model = model_class(config.model, **config.method.model_kwargs)
     model = torch.load(model_path)['model']
 
-    if "causal" in mask_name:
-        model.encoder.masker.mode = "temporal"
-        model.encoder.context_forward = 0
-        print("(eval) context forward: ", model.encoder.context_forward)
-    else:
-        model.encoder.masker.mode = mask_mode
+    model.encoder.masker.mode = mask_mode
     model.encoder.masker.force_active = False
-    model = accelerator.prepare(model)
 
     print("(eval) masking mode: ", model.encoder.masker.mode)
     print("(eval) masking ratio: ", model.encoder.masker.ratio)
     print("(eval) masking active: ", model.encoder.masker.force_active)
+    if 'causal' in mask_name:
+        model.encoder.context_forward = 0
+        print("(behave decoding) context forward: ", model.encoder.context_forward)
+    model = accelerator.prepare(model)
 
     # load the dataset
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
@@ -565,18 +563,17 @@ def behavior_decoding(**kwargs):
             for param in model.encoder.parameters():
                 param.requires_grad = False
 
-    if "causal" in mask_name:
-        model.encoder.masker.mode = "temporal"
-        model.encoder.context_forward = 0
-        print("(eval) context forward: ", model.encoder.context_forward)
-    else:
-        model.encoder.masker.mode = mask_mode
+    model.encoder.masker.mode = mask_mode
     model.encoder.masker.ratio = mask_ratio
-    model = accelerator.prepare(model)
 
     print("(behave decoding) masking mode: ", model.encoder.masker.mode)
     print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
     print("(behave decoding) masking active: ", model.encoder.masker.force_active)
+    if 'causal' in mask_name:
+        model.encoder.context_forward = 0
+        print("(behave decoding) context forward: ", model.encoder.context_forward)
+
+    model = accelerator.prepare(model)
 
     # load the dataset
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)

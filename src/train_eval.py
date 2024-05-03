@@ -139,18 +139,16 @@ NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 
-if args.mask_mode == "causal":
-    model.encoder.masker.mode = "temporal"
-    model.encoder.context_forward = 0
-    print("(eval) context forward: ", model.encoder.context_forward)
-else:
-    model.encoder.masker.mode = args.mask_mode
+model.encoder.masker.mode = args.mask_mode
 model.encoder.masker.ratio = args.mask_ratio
 model = accelerator.prepare(model)
 
 print("(train) masking mode: ", model.encoder.masker.mode)
 print("(train) masking ratio: ", model.encoder.masker.ratio)
 print("(train) masking active: ", model.encoder.masker.force_active)
+if args.mask_mode == 'causal':
+    model.encoder.context_forward = 0
+    print("(train) context forward: ", model.encoder.context_forward)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
 lr_scheduler = OneCycleLR(

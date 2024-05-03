@@ -480,10 +480,11 @@ class NeuralEncoder(nn.Module):
         if masking_mode is not None:
             if masking_mode == 'causal':
                 self.masker.mode = 'temporal'
-                self.context_mask = create_context_mask(0, -1, self.max_F)
+                self.context_forward = 0 
+                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
             else:
                 self.masker.mode = masking_mode
-                self.context_mask = create_context_mask(-1, -1, self.max_F)
+                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
 
         # Mask neural data
         if self.mask:

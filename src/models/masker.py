@@ -66,7 +66,7 @@ class Masker(nn.Module):
             self.target_regions = list(np.unique(neuron_regions))
 
         mask_ratio = self.ratio
-        if self.mode in ["temporal", "random_token"]:
+        if self.mode in ["temporal", "random_token", "causal"]:
             # Expand mask
             if torch.bernoulli(torch.tensor(self.expand_prob).float()):
                 timespan = torch.randint(1, self.max_timespan+1, (1, )).item() 
@@ -114,7 +114,7 @@ class Masker(nn.Module):
         mask = torch.bernoulli(mask_probs).to(spikes.device)
 
         # Expand mask
-        if self.mode in ["temporal", "random_token"]:
+        if self.mode in ["temporal", "random_token", "causal"]:
             if timespan > 1:
                 mask = self.expand_timesteps(mask, timespan)
             mask = mask.unsqueeze(2).expand_as(spikes).bool()    
