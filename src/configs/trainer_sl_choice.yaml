@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 30
+  num_epochs: 50
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -113,7 +113,7 @@ method:
 optimizer:
   gradient_accumulation_steps: 1
   lr: 5.e-4
-  wd: 0.1
+  wd: 1
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
   gamma: 0.95     # step
