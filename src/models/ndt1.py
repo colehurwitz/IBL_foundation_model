@@ -441,9 +441,9 @@ class NeuralEncoder(nn.Module):
         self.context_forward = config.context.forward
         self.context_backward = config.context.backward
         self.max_F = config.embedder.max_F
-        context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
-        self.register_buffer("context_mask", context_mask, persistent=False)
-
+        # context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
+        # self.register_buffer("context_mask", context_mask, persistent=False)
+       
         # Normalization and noising layer
         self.norm_and_noise = NormAndNoise(config.embedder.n_channels, config.norm_and_noise)
 
@@ -477,14 +477,14 @@ class NeuralEncoder(nn.Module):
         # Normalize across channels and add noise
         spikes = self.norm_and_noise(spikes)
 
-        if masking_mode is not None:
-            if masking_mode == 'causal':
-                self.masker.mode = 'temporal'
-                self.context_forward = 0 
-                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
-            else:
-                self.masker.mode = masking_mode
-                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
+        if masking_mode == 'causal':
+            self.masker.mode = 'temporal'
+            self.context_forward = 0 
+            self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
+        else:
+            self.masker.mode = masking_mode
+            self.context_forward = -1
+            self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
 
         # Mask neural data
         if self.mask:

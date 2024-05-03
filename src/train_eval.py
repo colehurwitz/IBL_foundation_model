@@ -24,9 +24,14 @@ ap.add_argument("--model_name", type=str, default="NDT1")
 args = ap.parse_args()
 
 # load config
-kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
-}
+if args.mask_mode == 'causal':
+    kwargs = {
+        "model": "include:src/configs/ndt1_causal.yaml"
+    }
+else:
+    kwargs = {
+        "model": "include:src/configs/ndt1.yaml"
+    }
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/trainer.yaml", config)
@@ -194,9 +199,14 @@ print(mask_name)
 
 base_path = '/mnt/home/yzhang1/ceph'
 
+if args.mask_mode == 'causal':
+    model_config = 'src/configs/ndt1_causal.yaml'
+else:
+    model_config = 'src/configs/ndt1.yaml'
+
 # Configuration
 configs = {
-    'model_config': 'src/configs/ndt1.yaml',
+    'model_config': model_config,
     'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
     'trainer_config': 'src/configs/trainer.yaml',
     'dataset_path': None, 
@@ -310,7 +320,7 @@ if intra_region:
 if choice_decoding:
     print('Start choice_decoding:')
     configs = {
-        'model_config': 'src/configs/ndt1.yaml',
+        'model_config': model_config,
         'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
         'trainer_config': 'src/configs/trainer_sl_choice.yaml',
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
@@ -331,7 +341,7 @@ if choice_decoding:
 if continuous_decoding:
     print('Start continuous_decoding:')
     configs = {
-        'model_config': 'src/configs/ndt1.yaml',
+        'model_config': model_config,
         'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
         'trainer_config': 'src/configs/trainer_sl_continuous.yaml',
         'dataset_path': None, 

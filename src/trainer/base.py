@@ -127,10 +127,8 @@ class Trainer():
         for batch in tqdm(self.train_dataloader):
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
-            elif self.masking_mode == 'causal':
-                masking_mode = self.masking_mode
             else:
-                masking_mode = None
+                masking_mode = self.masking_mode
             outputs = self._forward_model_outputs(batch, masking_mode)
             loss = outputs.loss
             loss.backward()
@@ -167,10 +165,8 @@ class Trainer():
                 for batch in self.eval_dataloader:
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
-                    elif self.masking_mode == 'causal':
-                        masking_mode = self.masking_mode
                     else:
-                        masking_mode = None
+                        masking_mode = self.masking_mode
                     outputs = self._forward_model_outputs(batch, masking_mode)
                     loss = outputs.loss
                     eval_loss += loss.item()

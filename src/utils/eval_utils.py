@@ -565,6 +565,7 @@ def behavior_decoding(**kwargs):
 
     model.encoder.masker.mode = mask_mode
     model.encoder.masker.ratio = mask_ratio
+    model.encoder.masker.force_active = False
 
     print("(behave decoding) masking mode: ", model.encoder.masker.mode)
     print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
