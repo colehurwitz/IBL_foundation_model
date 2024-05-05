@@ -55,9 +55,12 @@ class Trainer():
             print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
 
             if eval_epoch_results:
-                if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
-                    best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
-                    print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
+                # if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                #     best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
+                #     print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
+                if eval_epoch_results[f'eval_loss'] < best_eval_loss:
+                    best_eval_loss = eval_epoch_results[f'eval_loss']
+                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
                     if self.config.method.model_kwargs.method_name == 'ssl':
@@ -131,7 +134,7 @@ class Trainer():
                 if masking_mode == 'temporal':
                     self.model.encoder.masker.ratio = 0.3
                 elif masking_mode == 'causal':
-                    self.model.encoder.masker.ratio = 1.0
+                    self.model.encoder.masker.ratio = 0.6
                 else:
                     self.model.encoder.masker.ratio = self.masking_ratio
             else:
@@ -175,7 +178,7 @@ class Trainer():
                         if masking_mode == 'temporal':
                             self.model.encoder.masker.ratio = 0.3
                         elif masking_mode == 'causal':
-                            self.model.encoder.masker.ratio = 1.0
+                            self.model.encoder.masker.ratio = 0.6
                         else:
                             self.model.encoder.masker.ratio = self.masking_ratio
                     else:
