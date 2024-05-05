@@ -21,6 +21,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--mask_ratio", type=float, default=0.1)
 ap.add_argument("--mask_mode", type=str, default="temporal")
 ap.add_argument("--model_name", type=str, default="NDT1")
+ap.add_argument("--tokenize_binary_mask", action='store_true')
 args = ap.parse_args()
 
 model_acroynm = args.model_name.lower()
@@ -29,6 +30,10 @@ model_acroynm = args.model_name.lower()
 if args.mask_mode == 'causal':
     kwargs = {
         "model": f"include:src/configs/{model_acroynm}_causal.yaml"
+    }
+elif args.tokenize_binary_mask:
+    kwargs = {
+        "model": f"include:src/configs/{model_acroynm}_mask_token.yaml"
     }
 else:
     kwargs = {
@@ -40,12 +45,14 @@ config = update_config(f"src/configs/trainer_{model_acroynm}.yaml", config)
 
 config.model.encoder.masker.mode = args.mask_mode
 
-# make log dir
+# make log dir    
+
 log_dir = os.path.join(
     config.dirs.log_dir, "train", "model_{}".format(config.model.model_class),
     "method_{}".format(config.method.model_kwargs.method_name), 
     "mask_{}".format(args.mask_mode),
-    "ratio_{}".format(args.mask_ratio)
+    "ratio_{}".format(args.mask_ratio),
+    "mask_token_{}".format(args.tokenize_binary_mask)
 )
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -53,7 +60,7 @@ if not os.path.exists(log_dir):
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}_ratio_{}".format(config.model.model_class, config.method.model_kwargs.method_name, args.mask_mode, args.mask_ratio))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}_ratio_{}_mask_token_{}".format(config.model.model_class, config.method.model_kwargs.method_name, args.mask_mode, args.mask_ratio, args.tokenize_binary_mask))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -212,7 +219,7 @@ else:
 # Configuration
 configs = {
     'model_config': model_config,
-    'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
+    'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/model_best.pt',
     'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
     'dataset_path': None, 
     'test_size': 0.2,
@@ -231,11 +238,11 @@ if co_smooth:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/co_smooth',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/co_smooth',
         'mode': 'per_neuron',
         'n_time_steps': n_time_steps,    
         'is_aligned': True,
-        'target_regions': None
+        'target_regions': None,
     }
 
     results = co_smoothing_eval(model, 
@@ -254,12 +261,12 @@ if forward_pred:
         'subtract': 'task',
         'onset_alignment': [],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/forward_pred',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/forward_pred',
         'mode': 'forward_pred',
         'n_time_steps': n_time_steps,    
         'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
         'is_aligned': True,
-        'target_regions': None
+        'target_regions': None,
     }
 
     results = co_smoothing_eval(model, 
@@ -278,7 +285,7 @@ if inter_region:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name,
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/inter_region',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/inter_region',
         'mode': 'inter_region',
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
@@ -302,12 +309,12 @@ if intra_region:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/intra_region',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/intra_region',
         'mode': 'intra_region',
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all']
+        'target_regions': ['all'],
     }
 
     results = co_smoothing_eval(model, 
@@ -323,17 +330,17 @@ if choice_decoding:
     print('Start choice_decoding:')
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
+        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/model_best.pt',
         'trainer_config': f'src/configs/trainer_sl_choice_{model_acroynm}.yaml',
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/choice_decoding',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/choice_decoding',
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
         'freeze_encoder': True,
-        'mask_ratio': args.mask_ratio
+        'mask_ratio': args.mask_ratio,
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -344,17 +351,17 @@ if continuous_decoding:
     print('Start continuous_decoding:')
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/model_best.pt',
+        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/model_best.pt',
         'trainer_config': f'src/configs/trainer_sl_continuous_{model_acroynm}.yaml',
         'dataset_path': None, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/continuous_decoding',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/continuous_decoding',
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
         'freeze_encoder': True,
-        'mask_ratio': args.mask_ratio
+        'mask_ratio': args.mask_ratio,
     }  
     results = behavior_decoding(**configs)
     print(results)

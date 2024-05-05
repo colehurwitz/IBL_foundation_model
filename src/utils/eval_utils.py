@@ -118,7 +118,10 @@ def co_smoothing_eval(
     target_regions = kwargs['target_regions']
 
     # hack to accommodate NDT2 - fix later 
-    tot_num_neurons = batch['spikes_data'].size()[-1]
+    if sum(batch['space_attn_mask'][0] == 0) == 0:
+        tot_num_neurons = batch['space_attn_mask'].size()[-1]
+    else:
+        tot_num_neurons = (batch['space_attn_mask'][0] == 0).nonzero().min().item() 
     uuids_list = np.array(test_dataset['cluster_uuids'][0])[:tot_num_neurons]
     region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
 
@@ -169,7 +172,7 @@ def co_smoothing_eval(
         
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
-        for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
+        for n_i in tqdm(range(tot_num_neurons)):
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -190,7 +193,7 @@ def co_smoothing_eval(
                     )
             outputs.preds = torch.exp(outputs.preds)
     
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = outputs.targets.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
 
             # compute co-bps
@@ -263,7 +266,7 @@ def co_smoothing_eval(
                     )
             outputs.preds = torch.exp(outputs.preds)
         
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = outputs.targets.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
     
             target_neuron_idxs = np.arange(gt_spikes.shape[-1])
@@ -353,7 +356,7 @@ def co_smoothing_eval(
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
-                gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+                gt_spikes = outputs.targets.detach().cpu().numpy()
                 pred_spikes = outputs.preds.detach().cpu().numpy()
         
                 target_neuron_idxs = mask_result['heldout_idxs']
