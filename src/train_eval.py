@@ -22,6 +22,7 @@ ap.add_argument("--mask_ratio", type=float, default=0.1)
 ap.add_argument("--mask_mode", type=str, default="temporal")
 ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--tokenize_binary_mask", action='store_true')
+ap.add_argument("--train", action='store_true')
 args = ap.parse_args()
 
 model_acroynm = args.model_name.lower()
@@ -43,20 +44,6 @@ else:
 config = config_from_kwargs(kwargs)
 config = update_config(f"src/configs/trainer_{model_acroynm}.yaml", config)
 
-config.model.encoder.masker.mode = args.mask_mode
-
-# make log dir    
-
-log_dir = os.path.join(
-    config.dirs.log_dir, "train", "model_{}".format(config.model.model_class),
-    "method_{}".format(config.method.model_kwargs.method_name), 
-    "mask_{}".format(args.mask_mode),
-    "ratio_{}".format(args.mask_ratio),
-    "mask_token_{}".format(args.tokenize_binary_mask)
-)
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
 # wandb
 if config.wandb.use:
     import wandb
@@ -65,133 +52,148 @@ if config.wandb.use:
 # set seed for reproducibility
 set_seed(config.seed)
 
-# download dataset from huggingface
-if "ibl" in config.data.dataset_name:
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    train_dataset = dataset["train"]
-    val_dataset = dataset["val"]
-    test_dataset = dataset["test"]
+if args.train:
+    print('Start model training.')
+    print('=====================')
     
-    try:
-       bin_size = train_dataset["binsize"][0]
-    except:
-       bin_size = train_dataset["bin_size"][0]
-
-    if config.data.include_behav:
-        dataset = load_from_disk(os.path.join(config.dirs.behav_dir))
-        #dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
-        _dataset = dataset.train_test_split(test_size=0.2, seed=config.seed)['train']
-        dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
-        try:
-            bin_size = dataset["train"]["binsize"][0]
-        except:
-            bin_size = dataset["train"]["bin_size"][0]
-
+    log_dir = os.path.join(
+        config.dirs.log_dir, "train", "model_{}".format(config.model.model_class),
+        "method_{}".format(config.method.model_kwargs.method_name), 
+        "mask_{}".format(args.mask_mode),
+        "ratio_{}".format(args.mask_ratio),
+        "mask_token_{}".format(args.tokenize_binary_mask)
+    )
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    if "ibl" in config.data.dataset_name:
+        dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
         train_dataset = dataset["train"]
-        val_dataset = dataset["test"]
-        test_dataset = _dataset["test"]
-
-    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
-        config["model"]["encoder"]["neuron_regions"] = list(set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
-
-    print(dataset.column_names)
-    print(f"bin_size: {bin_size}")
-
-else:
-    train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
-    test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
-    bin_size = None
-
-# make the dataloader
-train_dataloader = make_loader(train_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.train_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=True)
-
-val_dataloader = make_loader(val_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.test_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=False)
-
-test_dataloader = make_loader(test_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.test_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=False)
-
-# Initialize the accelerator
-accelerator = Accelerator()
-
-# load model
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
-model_class = NAME2MODEL[config.model.model_class]
-model = model_class(config.model, **config.method.model_kwargs)
-
-model.encoder.masker.mode = args.mask_mode
-model.encoder.masker.ratio = args.mask_ratio
-model = accelerator.prepare(model)
-
-print("(train) masking mode: ", model.encoder.masker.mode)
-print("(train) masking ratio: ", model.encoder.masker.ratio)
-print("(train) masking active: ", model.encoder.masker.force_active)
-if args.mask_mode == 'causal':
-    model.encoder.context_forward = 0
-    print("(train) context forward: ", model.encoder.context_forward)
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
-lr_scheduler = OneCycleLR(
-                optimizer=optimizer,
-                total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                max_lr=config.optimizer.lr,
-                pct_start=config.optimizer.warmup_pct,
-                div_factor=config.optimizer.div_factor,
-            )
-
-trainer_kwargs = {
-    "log_dir": log_dir,
-    "accelerator": accelerator,
-    "lr_scheduler": lr_scheduler,
-    "config": config,
-}
-trainer_ = make_trainer(
-    model=model,
-    train_dataloader=train_dataloader,
-    eval_dataloader=val_dataloader,
-    test_dataloader=test_dataloader,
-    optimizer=optimizer,
-    **trainer_kwargs
-)
-
-# train loop
-trainer_.train()
+        val_dataset = dataset["val"]
+        test_dataset = dataset["test"]
+        
+        try:
+           bin_size = train_dataset["binsize"][0]
+        except:
+           bin_size = train_dataset["bin_size"][0]
+    
+        if config.data.include_behav:
+            dataset = load_from_disk(os.path.join(config.dirs.behav_dir))
+            _dataset = dataset.train_test_split(test_size=0.2, seed=config.seed)['train']
+            dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
+            try:
+                bin_size = dataset["train"]["binsize"][0]
+            except:
+                bin_size = dataset["train"]["bin_size"][0]
+    
+            train_dataset = dataset["train"]
+            val_dataset = dataset["test"]
+            test_dataset = _dataset["test"]
+    
+        if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
+            config["model"]["encoder"]["neuron_regions"] = list(set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
+    
+        print(dataset.column_names)
+        print(f"bin_size: {bin_size}")
+    
+    else:
+        train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
+        test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
+        bin_size = None
+    
+    # make the dataloader
+    train_dataloader = make_loader(train_dataset, 
+                             target=config.data.target,
+                             load_meta=config.data.load_meta,
+                             batch_size=config.training.train_batch_size, 
+                             pad_to_right=True, 
+                             pad_value=-1.,
+                             bin_size=bin_size,
+                             max_time_length=config.data.max_time_length,
+                             max_space_length=config.data.max_space_length,
+                             dataset_name=config.data.dataset_name,
+                             sort_by_depth=config.data.sort_by_depth,
+                             sort_by_region=config.data.sort_by_region,
+                             shuffle=True)
+    
+    val_dataloader = make_loader(val_dataset, 
+                             target=config.data.target,
+                             load_meta=config.data.load_meta,
+                             batch_size=config.training.test_batch_size, 
+                             pad_to_right=True, 
+                             pad_value=-1.,
+                             bin_size=bin_size,
+                             max_time_length=config.data.max_time_length,
+                             max_space_length=config.data.max_space_length,
+                             dataset_name=config.data.dataset_name,
+                             sort_by_depth=config.data.sort_by_depth,
+                             sort_by_region=config.data.sort_by_region,
+                             shuffle=False)
+    
+    test_dataloader = make_loader(test_dataset, 
+                             target=config.data.target,
+                             load_meta=config.data.load_meta,
+                             batch_size=config.training.test_batch_size, 
+                             pad_to_right=True, 
+                             pad_value=-1.,
+                             bin_size=bin_size,
+                             max_time_length=config.data.max_time_length,
+                             max_space_length=config.data.max_space_length,
+                             dataset_name=config.data.dataset_name,
+                             sort_by_depth=config.data.sort_by_depth,
+                             sort_by_region=config.data.sort_by_region,
+                             shuffle=False)
+    
+    # Initialize the accelerator
+    accelerator = Accelerator()
+    
+    # load model
+    NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs)
+    
+    model.encoder.masker.mode = args.mask_mode
+    model.encoder.masker.ratio = args.mask_ratio
+    model = accelerator.prepare(model)
+    
+    print("(train) masking mode: ", model.encoder.masker.mode)
+    print("(train) masking ratio: ", model.encoder.masker.ratio)
+    print("(train) masking active: ", model.encoder.masker.force_active)
+    if args.mask_mode == 'causal':
+        model.encoder.context_forward = 0
+        print("(train) context forward: ", model.encoder.context_forward)
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
+    lr_scheduler = OneCycleLR(
+                    optimizer=optimizer,
+                    total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
+                    max_lr=config.optimizer.lr,
+                    pct_start=config.optimizer.warmup_pct,
+                    div_factor=config.optimizer.div_factor,
+                )
+    
+    trainer_kwargs = {
+        "log_dir": log_dir,
+        "accelerator": accelerator,
+        "lr_scheduler": lr_scheduler,
+        "config": config,
+    }
+    trainer_ = make_trainer(
+        model=model,
+        train_dataloader=train_dataloader,
+        eval_dataloader=val_dataloader,
+        test_dataloader=test_dataloader,
+        optimizer=optimizer,
+        **trainer_kwargs
+    )
+    
+    # train loop
+    trainer_.train()
 
 #########################
+
+print('Start model evaluation.')
+print('=======================')
 
 mask_name = f"mask_{args.mask_mode}"
 if args.model_name == "NDT2":

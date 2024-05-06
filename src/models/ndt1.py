@@ -420,6 +420,7 @@ class NeuralEncoder(nn.Module):
             date_idx:         Optional[torch.LongTensor] = None,   # (bs)
             neuron_regions:   Optional[np.ndarray] = None,  # (bs, n_channels)
             masking_mode:     Optional[str] = None,
+            eval_mask:        Optional[torch.LongTensor] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
         B, T, N = spikes.size() # batch size, fea len, n_channels
@@ -442,6 +443,9 @@ class NeuralEncoder(nn.Module):
             targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
         else:
             targets_mask = torch.zeros_like(spikes).to(torch.int64).to(spikes.device)
+
+        if eval_mask is not None:
+            targets_mask = eval_mask.clone()
 
         # Embed neural data
         x, spikes_mask, spikes_timestamp = self.embedder(
@@ -559,6 +563,7 @@ class NDT1(nn.Module):
         neuron_regions:   Optional[torch.LongTensor] = None,   # (bs, n_channels)
         masking_mode:     Optional[str] = None,
         spike_augmentation: Optional[bool] = False,
+        eval_mask:        Optional[torch.LongTensor] = None,
     ) -> NDT1Output:  
 
         # if neuron_regions type is list 
@@ -584,7 +589,7 @@ class NDT1(nn.Module):
 
         # Encode neural data
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask)
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 

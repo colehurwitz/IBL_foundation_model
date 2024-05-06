@@ -189,11 +189,12 @@ def co_smoothing_eval(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']
+                        neuron_regions=batch['neuron_regions'],
+                        eval_mask=mask_result['eval_mask']
                     )
             outputs.preds = torch.exp(outputs.preds)
     
-            gt_spikes = outputs.targets.detach().cpu().numpy()
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
 
             # compute co-bps
@@ -262,14 +263,15 @@ def co_smoothing_eval(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions']
+                        neuron_regions=batch['neuron_regions'],
+                        eval_mask=mask_result['eval_mask']
                     )
             outputs.preds = torch.exp(outputs.preds)
         
-            gt_spikes = outputs.targets.detach().cpu().numpy()
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
     
-            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
+            target_neuron_idxs = np.arange(tot_num_neurons)
             target_time_idxs = held_out_list[0]
 
             # compute co-bps
@@ -352,11 +354,12 @@ def co_smoothing_eval(
                             spikes_timestamps=batch['spikes_timestamps'], 
                             spikes_spacestamps=batch['spikes_spacestamps'], 
                             targets = batch['target'],
-                            neuron_regions=batch['neuron_regions']
+                            neuron_regions=batch['neuron_regions'],
+                            eval_mask=mask_result['eval_mask']
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
-                gt_spikes = outputs.targets.detach().cpu().numpy()
+                gt_spikes = batch['spikes_data'].detach().cpu().numpy()
                 pred_spikes = outputs.preds.detach().cpu().numpy()
         
                 target_neuron_idxs = mask_result['heldout_idxs']
@@ -749,7 +752,7 @@ def heldout_mask(
         target_regions=None,            # list for region mode
         neuron_regions=None,            # list for region mode
 ):
-    mask = torch.ones(spike_data.shape).to(spike_data.device)
+    mask = torch.ones(spike_data.shape).to(torch.int64).to(spike_data.device)
     
     if mode == 'manual':
         hd = heldout_idxs
@@ -791,7 +794,7 @@ def heldout_mask(
 
     spike_data_masked = spike_data * mask
 
-    return {"spikes": spike_data_masked, "heldout_idxs": hd}
+    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": 1-mask}
 
 
 # --------------------------------------------------------------------------------------------------
