@@ -160,6 +160,7 @@ def load_ibl_dataset(cache_dir,
                      test_session_eid=[], # specify session eids for testing, session_based will be used
                      split_size = 0.1,
                      mode = "train",
+                     batch_size=16,
                      seed=42):
     if aligned_data_dir:
         dataset = load_from_disk(aligned_data_dir)
@@ -229,17 +230,39 @@ def load_ibl_dataset(cache_dir,
         session_train_datasets = []
         session_val_datasets = []
         session_test_datasets = []
+
+        num_neuron_set = set()
         for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
             session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
-            session_train_datasets.append(session_dataset["train"])
-            session_val_datasets.append(session_dataset["val"])
+            train_trials = len(session_dataset["train"]["spikes_sparse_data"])
+            train_trials = train_trials - train_trials % batch_size
+            session_train_datasets.append(session_dataset["train"].select(list(range(train_trials))))
+
+            val_trials = len(session_dataset["val"]["spikes_sparse_data"])
+            val_trials = val_trials - val_trials % batch_size
+            session_val_datasets.append(session_dataset["val"].select(list(range(val_trials))))
+
+            test_trials = len(session_dataset["test"]["spikes_sparse_data"])
+            test_trials = test_trials - test_trials % batch_size
+            session_test_datasets.append(session_dataset["test"].select(list(range(test_trials))))
             session_test_datasets.append(session_dataset["test"])
+            binned_spikes_data = get_binned_spikes_from_sparse([session_dataset["train"]["spikes_sparse_data"][0]], 
+                                                                [session_dataset["train"]["spikes_sparse_indices"][0]],
+                                                                [session_dataset["train"]["spikes_sparse_indptr"][0]],
+                                                                [session_dataset["train"]["spikes_sparse_shape"][0]])
+
+            num_neuron_set.add(binned_spikes_data.shape[2])
         train_dataset = concatenate_datasets(session_train_datasets)
         val_dataset = concatenate_datasets(session_val_datasets)
         test_dataset = concatenate_datasets(session_test_datasets)
         print("Train dataset size: ", len(train_dataset))
         print("Val dataset size: ", len(val_dataset))
         print("Test dataset size: ", len(test_dataset))
+        num_neuron_set = list(num_neuron_set)
+        meta_data = {
+            "num_neurons": num_neuron_set,
+            "num_sessions": num_sessions,
+        }
     elif split_method == 'session_based':
         print("Loading train dataset sessions...")
         for dataset_eid in tqdm(train_session_eid_dir):
@@ -259,7 +282,7 @@ def load_ibl_dataset(cache_dir,
     else:
         raise ValueError("Invalid split method. Please choose either 'random_split' or 'session_based'")
     
-    return train_dataset, val_dataset, test_dataset
+    return train_dataset, val_dataset, test_dataset, meta_data
 
 def _time_extract(data):
     data['time'] = data['intervals'][0]

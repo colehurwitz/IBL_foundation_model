@@ -5,7 +5,7 @@ encoder:
 
   from_pt: null
 
-  stitching: false
+  stitching: true
 
   # Mask spikes
   masker:

@@ -232,34 +232,38 @@ class BaseDataset(torch.utils.data.Dataset):
             else:
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
-
-        # pad along space dimension
-        if num_neurons > self.max_space_length:
-            binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
-            neuron_depths = neuron_depths[:self.max_space_length]
-            neuron_regions = neuron_regions[:self.max_space_length]
-        else: 
-            if self.pad_to_right:
-                pad_space_length = self.max_space_length - num_neurons
-                binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
-                # binned_spikes_data = _wrap_pad_neuron_up_to_n(binned_spikes_data, self.max_space_length).T
-                neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
-                neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
-            else:
-                pad_space_length = num_neurons - self.max_space_length
-                binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
-                neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
-                neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
-            binned_spikes_data = binned_spikes_data.T
+        stitching = True
+        if not stitching:
+            # pad along space dimension
+            if num_neurons > self.max_space_length:
+                binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
+                neuron_depths = neuron_depths[:self.max_space_length]
+                neuron_regions = neuron_regions[:self.max_space_length]
+            else: 
+                if self.pad_to_right:
+                    pad_space_length = self.max_space_length - num_neurons
+                    binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                    # binned_spikes_data = _wrap_pad_neuron_up_to_n(binned_spikes_data, self.max_space_length).T
+                    neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
+                    neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
+                else:
+                    pad_space_length = num_neurons - self.max_space_length
+                    binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                    neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
+                    neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
+                binned_spikes_data = binned_spikes_data.T
+            spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
+            space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
+        else:
+            spikes_spacestamps = np.arange(num_neurons).astype(np.int64)
+            space_attn_mask = _attention_mask(num_neurons, 0).astype(np.int64)
                 
         spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)
-        spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
         
         # add attention mask
         time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
-        space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
-
+        print(binned_spikes_data.shape, sum(space_attn_mask))
         return {
             "spikes_data": binned_spikes_data,
             "time_attn_mask": time_attn_mask,
