@@ -55,8 +55,11 @@ class Trainer():
             print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
 
             if eval_epoch_results:
-                if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                # if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                if eval_epoch_results[f'eval_loss'] < best_eval_loss:
+                    best_eval_loss = eval_epoch_results[f'eval_loss']
                     best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
+                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
                     print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
@@ -76,9 +79,6 @@ class Trainer():
                             gt_pred_fig['plot_r2'].savefig(
                                 os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png")
                             )
-                if eval_epoch_results['eval_loss'] < best_eval_loss:
-                    best_eval_loss = eval_epoch_results['eval_loss']
-                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
                 print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']} {self.metric}: {eval_epoch_results[f'eval_trial_avg_{self.metric}']}")
 
             # save model by epoch
