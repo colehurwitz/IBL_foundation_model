@@ -46,7 +46,8 @@ if co_smooth:
         'mode': 'per_neuron',
         'n_time_steps': n_time_steps,    
         'is_aligned': True,
-        'target_regions': None
+        'target_regions': None,
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -70,7 +71,8 @@ if forward_pred:
         'n_time_steps': n_time_steps,    
         'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
         'is_aligned': True,
-        'target_regions': None
+        'target_regions': None,
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -94,7 +96,8 @@ if inter_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all']
+        'target_regions': ['all'],
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -118,7 +121,8 @@ if intra_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all']
+        'target_regions': ['all'],
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -143,7 +147,7 @@ if choice_decoding:
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
-        'freeze_encoder': False,
+        'freeze_encoder': True,
         'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)
@@ -164,7 +168,7 @@ if continuous_decoding:
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
-        'freeze_encoder': False,
+        'freeze_encoder': True,
         'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)

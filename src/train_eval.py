@@ -25,6 +25,7 @@ ap.add_argument("--tokenize_binary_mask", action='store_true')
 ap.add_argument("--train", action='store_true')
 args = ap.parse_args()
 
+
 model_acroynm = args.model_name.lower()
 
 # load config
@@ -245,6 +246,7 @@ if co_smooth:
         'n_time_steps': n_time_steps,    
         'is_aligned': True,
         'target_regions': None,
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -269,6 +271,7 @@ if forward_pred:
         'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
         'is_aligned': True,
         'target_regions': None,
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -292,7 +295,8 @@ if inter_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all']
+        'target_regions': ['all'],
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
@@ -317,6 +321,7 @@ if intra_region:
         'held_out_list': None,
         'is_aligned': True,
         'target_regions': ['all'],
+        'n_jobs': 8
     }
 
     results = co_smoothing_eval(model, 
