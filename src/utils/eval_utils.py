@@ -75,7 +75,7 @@ def load_model_data_local(**kwargs):
     dataloader = make_loader(
         dataset,
         target=config.data.target,
-        batch_size=10000,
+        batch_size=len(dataset),
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
@@ -116,6 +116,7 @@ def co_smoothing_eval(
     mode = kwargs['mode']
     is_aligned = kwargs['is_aligned']
     target_regions = kwargs['target_regions']
+    n_jobs = kwargs['n_jobs']
 
     # hack to accommodate NDT2 - fix later 
     if sum(batch['space_attn_mask'][0] == 0) == 0:
@@ -172,65 +173,84 @@ def co_smoothing_eval(
         
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
-        for n_i in tqdm(range(tot_num_neurons)):
+        counter = 0
+        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):
+            if counter > tot_num_neurons:
+                break
+            gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
+            time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    mask_result = heldout_mask(
-                        batch['spikes_data'],
-                        mode='manual',
-                        heldout_idxs=np.array([n_i])
-                    )
+                    for i in range(n_jobs):
+                        counter += 1
+                        if counter <= tot_num_neurons:
+                            batch = move_batch_to_device(batch, accelerator.device)
+                            mask_result = heldout_mask(
+                                batch['spikes_data'],
+                                mode='manual',
+                                heldout_idxs=np.array([n_i+i])
+                            )
+                            mask_spikes_lst.append(mask_result['spikes'])
+                            eval_mask_lst.append(mask_result['eval_mask'])
+                            gt_spikes_lst.append(batch['spikes_data'])
+                            time_attn_mask_lst.append(batch['time_attn_mask'])
+                            space_attn_mask_lst.append(batch['space_attn_mask'])
+                            spikes_timestamps_lst.append(batch['spikes_timestamps'])
+                            spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
+                            targets_lst.append(batch['target'])
+                            neuron_regions_lst.append(batch['neuron_regions'])
+                        else:
+                            break
+                    
                     outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask']
+                        torch.cat(mask_spikes_lst, 0),
+                        time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                        space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                        spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                        spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                        targets = torch.cat(targets_lst, 0),
+                        neuron_regions=np.stack(neuron_regions_lst),
+                        eval_mask=torch.cat(eval_mask_lst, 0)
                     )
             outputs.preds = torch.exp(outputs.preds)
     
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
+            tot_num_trials = len(batch['spikes_data'])
 
             # compute co-bps
-            gt_held_out = gt_spikes[:, :, [n_i]]
-            pred_held_out = pred_spikes[:, :, [n_i]]
-
-            bps = bits_per_spike(pred_held_out, gt_held_out)
-            if np.isinf(bps):
-                bps = np.nan
-            bps_result_list[n_i] = bps
-
-            # compute R2
-            ys = gt_spikes  # [#trials, #timesteps, #neurons]
-            y_preds = pred_spikes  # [#trials, #timesteps, #neurons]
-
-            idxs = mask_result['heldout_idxs']
+            for i in range(n_jobs):
+                if n_i+i < tot_num_neurons:
+                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
+                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
         
-            for i in range(idxs.shape[0]):
-                if is_aligned:
-                    X = behavior_set  # [#trials, #timesteps, #variables]
-                    _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
-                                                          var_name2idx, var_tasklist, var_value2label, var_behlist,
-                                                          subtract_psth=kwargs['subtract'],
-                                                          aligned_tbins=kwargs['onset_alignment'],
-                                                          neuron_idx=uuids_list[idxs[i]][:4],
-                                                          neuron_region=region_list[idxs[i]],
-                                                          method=method_name, save_path=kwargs['save_path'])
-                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
+                    bps = bits_per_spike(pred_held_out, gt_held_out)
+                    if np.isinf(bps):
+                        bps = np.nan
+                    bps_result_list[n_i+i] = bps
+        
+                    # compute R2
+                    if is_aligned:
+                        X = behavior_set  # [#trials, #timesteps, #variables]
+                        _r2_psth, _r2_trial = viz_single_cell(X, gt_held_out.squeeze(), pred_held_out.squeeze(),
+                                                              var_name2idx, var_tasklist, var_value2label, var_behlist,
+                                                              subtract_psth=kwargs['subtract'],
+                                                              aligned_tbins=kwargs['onset_alignment'],
+                                                              neuron_idx=uuids_list[n_i+i][:4],
+                                                              neuron_region=region_list[n_i+i],
+                                                              method=method_name, save_path=kwargs['save_path'])
+                        r2_result_list[n_i+i] = np.array([_r2_psth, _r2_trial])
+                    else:
+                        r2 = viz_single_cell_unaligned(
+                            gt_held_out.squeeze(), pred_held_out.squeeze(), 
+                            neuron_idx=uuids_list[n_i+i][:4],
+                            neuron_region=region_list[n_i+i],
+                            method=method_name, save_path=kwargs['save_path']
+                        )
+                        r2_result_list[n_i+i] = r2
                 else:
-                    r2 = viz_single_cell_unaligned(
-                        ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
-                        neuron_idx=uuids_list[idxs[i]][:4],
-                        neuron_region=region_list[idxs[i]],
-                        method=method_name, save_path=kwargs['save_path']
-                    )
-                    r2_result_list[idxs[i]] = r2
+                    break
 
     elif mode == 'forward_pred':
 
@@ -311,96 +331,181 @@ def co_smoothing_eval(
                     )
                     r2_result_list[idxs[i]] = r2
 
-    elif mode in ['inter_region', 'intra_region']:
+    elif mode == 'inter_region':
 
         if 'all' in target_regions:
             target_regions = list(np.unique(region_list))
             
         held_out_list = kwargs['held_out_list']
 
-        if mode == 'inter_region':
-            assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
-        elif mode == 'intra_region':
-            assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
+        assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for region in tqdm(target_regions, desc='region'):
             print(region)
             hd = np.argwhere(region_list==region).flatten() 
             held_out_list = np.arange(len(hd))
+            held_out_list = [held_out_list]   
+            hd = np.array([held_out_list]).flatten()
 
-            if mode == 'inter_region':
-                held_out_list = [held_out_list]
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    mask_result = heldout_mask(
+                        batch['spikes_data'],
+                        mode=mode,
+                        heldout_idxs=hd,
+                        target_regions=[region],
+                        neuron_regions=region_list
+                    )                
+                    outputs = model(
+                        mask_result['spikes'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'],
+                        eval_mask=mask_result['eval_mask']
+                    )
+            outputs.preds = torch.exp(outputs.preds)
+        
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().numpy()
     
+            target_neuron_idxs = mask_result['heldout_idxs']
+            target_time_idxs = np.arange(gt_spikes.shape[1])
+
+            # compute co-bps
+            gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+            pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+    
+            for n_i in range(len(target_neuron_idxs)): 
+                bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+                if np.isinf(bps):
+                    bps = np.nan
+                bps_result_list[target_neuron_idxs[n_i]] = bps
+
+            # compute R2
+            ys = gt_spikes[:, target_time_idxs]
+            y_preds = pred_spikes[:, target_time_idxs]
+    
+            # choose the neuron to plot
+            idxs = target_neuron_idxs
+            for i in range(idxs.shape[0]):
+                if is_aligned:
+                    X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
+                    _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
+                                                          var_name2idx, var_tasklist, var_value2label, var_behlist,
+                                                          subtract_psth=kwargs['subtract'],
+                                                          aligned_tbins=[],
+                                                          neuron_idx=uuids_list[idxs[i]][:4],
+                                                          neuron_region=region_list[idxs[i]],
+                                                          method=method_name, save_path=kwargs['save_path']);
+                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
+                else:
+                    r2 = viz_single_cell_unaligned(
+                        ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
+                        neuron_idx=uuids_list[idxs[i]][:4],
+                        neuron_region=region_list[idxs[i]],
+                        method=method_name, save_path=kwargs['save_path']
+                    )
+                    r2_result_list[idxs[i]] = r2
+                        
+    elif mode == 'intra_region':
+
+        if 'all' in target_regions:
+            target_regions = list(np.unique(region_list))
+            
+        held_out_list = kwargs['held_out_list']
+        assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
+
+        bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        for region in tqdm(target_regions, desc='region'):
+            print(region)
+            target_neuron_idxs = np.argwhere(region_list==region).flatten() 
+            held_out_list = list(range(0, len(target_neuron_idxs)+n_jobs, n_jobs))
+
             for hd_idx in held_out_list:
-               
-                hd = np.array([hd_idx]).flatten()
+                
+                if hd_idx >= len(target_neuron_idxs):
+                    break
+
+                gt_spikes_lst, mask_spikes_lst, eval_mask_lst, heldout_idxs_lst = [], [], [], []
+                time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
     
                 model.eval()
                 with torch.no_grad():
                     for batch in test_dataloader:
-                        batch = move_batch_to_device(batch, accelerator.device)
-                        mask_result = heldout_mask(
-                            batch['spikes_data'],
-                            mode=mode,
-                            heldout_idxs=hd,
-                            target_regions=[region],
-                            neuron_regions=region_list
-                        )                
+                        for i in range(n_jobs):
+                            if hd_idx+i < len(target_neuron_idxs):
+                                batch = move_batch_to_device(batch, accelerator.device)
+                                mask_result = heldout_mask(
+                                    batch['spikes_data'],
+                                    mode=mode,
+                                    heldout_idxs=np.array([hd_idx+i]).flatten(),
+                                    target_regions=[region],
+                                    neuron_regions=region_list
+                                )   
+                                mask_spikes_lst.append(mask_result['spikes'])
+                                eval_mask_lst.append(mask_result['eval_mask'])
+                                heldout_idxs_lst.append(mask_result['heldout_idxs'])
+                                gt_spikes_lst.append(batch['spikes_data'])
+                                time_attn_mask_lst.append(batch['time_attn_mask'])
+                                space_attn_mask_lst.append(batch['space_attn_mask'])
+                                spikes_timestamps_lst.append(batch['spikes_timestamps'])
+                                spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
+                                targets_lst.append(batch['target'])
+                                neuron_regions_lst.append(batch['neuron_regions'])
+                            else:
+                                break
+                            
                         outputs = model(
-                            mask_result['spikes'],
-                            time_attn_mask=batch['time_attn_mask'],
-                            space_attn_mask=batch['space_attn_mask'],
-                            spikes_timestamps=batch['spikes_timestamps'], 
-                            spikes_spacestamps=batch['spikes_spacestamps'], 
-                            targets = batch['target'],
-                            neuron_regions=batch['neuron_regions'],
-                            eval_mask=mask_result['eval_mask']
+                            torch.cat(mask_spikes_lst, 0),
+                            time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                            space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                            spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                            spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                            targets = torch.cat(targets_lst, 0),
+                            neuron_regions=np.stack(neuron_regions_lst),
+                            eval_mask=torch.cat(eval_mask_lst, 0)
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
-                gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+                gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
                 pred_spikes = outputs.preds.detach().cpu().numpy()
-        
-                target_neuron_idxs = mask_result['heldout_idxs']
-                target_time_idxs = np.arange(gt_spikes.shape[1])
+                tot_num_trials = len(batch['spikes_data'])
+
+                heldout_idxs = np.stack(heldout_idxs_lst).flatten()
+                
+                for i in range(len(heldout_idxs)):
+                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
+                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
     
-                # compute co-bps
-                gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-                pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-        
-                for n_i in range(len(target_neuron_idxs)): 
-                    bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+                    bps = bits_per_spike(pred_held_out, gt_held_out)
                     if np.isinf(bps):
                         bps = np.nan
-                    bps_result_list[target_neuron_idxs[n_i]] = bps
-    
-                # compute R2
-                ys = gt_spikes[:, target_time_idxs]
-                y_preds = pred_spikes[:, target_time_idxs]
-        
-                # choose the neuron to plot
-                idxs = target_neuron_idxs
-        
-                for i in range(idxs.shape[0]):
+                    bps_result_list[heldout_idxs[i]] = bps
+
                     if is_aligned:
-                        X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
-                        _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
+                        X = behavior_set  # [#trials, #timesteps, #variables]
+                        _r2_psth, _r2_trial = viz_single_cell(X, gt_held_out.squeeze(), pred_held_out.squeeze(),
                                                               var_name2idx, var_tasklist, var_value2label, var_behlist,
                                                               subtract_psth=kwargs['subtract'],
                                                               aligned_tbins=[],
-                                                              neuron_idx=uuids_list[idxs[i]][:4],
-                                                              neuron_region=region_list[idxs[i]],
+                                                              neuron_idx=uuids_list[heldout_idxs[i]][:4],
+                                                              neuron_region=region_list[heldout_idxs[i]],
                                                               method=method_name, save_path=kwargs['save_path']);
-                        r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
+                        r2_result_list[heldout_idxs[i]] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
-                            ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
-                            neuron_idx=uuids_list[idxs[i]][:4],
-                            neuron_region=region_list[idxs[i]],
+                            gt_held_out.squeeze(), pred_held_out.squeeze(),
+                            neuron_idx=uuids_list[heldout_idxs[i]][:4],
+                            neuron_region=region_list[heldout_idxs[i]],
                             method=method_name, save_path=kwargs['save_path']
                         )
-                        r2_result_list[idxs[i]] = r2
+                        r2_result_list[heldout_idxs[i]] = r2
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -794,7 +899,7 @@ def heldout_mask(
 
     spike_data_masked = spike_data * mask
 
-    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": 1-mask}
+    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": mask}
 
 
 # --------------------------------------------------------------------------------------------------
