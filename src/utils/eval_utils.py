@@ -899,7 +899,7 @@ def heldout_mask(
 
     spike_data_masked = spike_data * mask
 
-    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": mask}
+    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": 1-mask}
 
 
 # --------------------------------------------------------------------------------------------------
