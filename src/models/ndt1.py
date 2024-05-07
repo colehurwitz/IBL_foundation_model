@@ -399,6 +399,11 @@ class NeuralEncoder(nn.Module):
         self.context_backward = config.context.backward
         # context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
         # self.register_buffer("context_mask", context_mask, persistent=False)
+
+        # Build stitcher
+        if config.stitching:
+            self.stitcher = NeuralStitcher(kwargs['num_neurons'],
+                                           config.embedder.n_channels)
        
         # Embedding layer
         self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
@@ -421,6 +426,7 @@ class NeuralEncoder(nn.Module):
             neuron_regions:   Optional[np.ndarray] = None,  # (bs, n_channels)
             masking_mode:     Optional[str] = None,
             eval_mask:        Optional[torch.LongTensor] = None,
+            num_neuron:       Optional[torch.LongTensor] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
         B, T, N = spikes.size() # batch size, fea len, n_channels
@@ -446,7 +452,10 @@ class NeuralEncoder(nn.Module):
 
         if eval_mask is not None:
             targets_mask = eval_mask.clone()
-
+        
+        # stitcher
+        if hasattr(self, 'stitcher'):
+            spikes = self.stitcher(spikes, str(num_neuron))
         # Embed neural data
         x, spikes_mask, spikes_timestamp = self.embedder(
             spikes, spikes_mask, spikes_timestamp, block_idx, date_idx, targets_mask
@@ -459,7 +468,7 @@ class NeuralEncoder(nn.Module):
         spikes_mask = spikes_mask.unsqueeze(1).expand(B,T,T)
         self_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) # hack so that even padded spikes attend to themselves and avoid attention issues
         attn_mask = self_mask | (context_mask & spikes_mask)
-        
+
         # Forward transformer
         for idx, layer in enumerate(self.layers):
             x = layer(x, attn_mask=attn_mask, timestamp=spikes_timestamp)
@@ -467,7 +476,20 @@ class NeuralEncoder(nn.Module):
 
         return self.out_proj(x), targets_mask
 
+class NeuralStitcher(nn.Module):
 
+    def __init__(self, 
+                 num_neurons:list,
+                 n_channels:int,):
+        super().__init__()
+
+        stitcher_dict = {}
+        for num_neuron in num_neurons:
+            stitcher_dict[str(num_neuron)] = nn.Linear(num_neuron, n_channels)
+        self.stitcher_dict = nn.ModuleDict(stitcher_dict)
+
+    def forward(self, x, block_idx):
+        return self.stitcher_dict[block_idx](x)
 
 # Encoder for time binned neural data
 class NDT1(nn.Module):
@@ -487,11 +509,16 @@ class NDT1(nn.Module):
         if encoder_pt_path is not None:
             encoder_config = os.path.join(encoder_pt_path, "encoder_config.yaml")
             config["encoder"] = update_config(config.encoder, encoder_config)
-        self.encoder = NeuralEncoder(config.encoder)
+        self.encoder = NeuralEncoder(config.encoder, **kwargs)
 
         # Load encoder weights
         if encoder_pt_path is not None:
             self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
+
+        # stitching
+        if config.encoder.stitching:
+            self.stitching=True
+            self.n_channels = config.encoder.embedder.n_channels
 
         # Build decoder
         if self.method == "ssl":
@@ -564,6 +591,7 @@ class NDT1(nn.Module):
         masking_mode:     Optional[str] = None,
         spike_augmentation: Optional[bool] = False,
         eval_mask:        Optional[torch.LongTensor] = None,
+        num_neuron:       Optional[torch.LongTensor] = None,
     ) -> NDT1Output:  
 
         # if neuron_regions type is list 
@@ -589,7 +617,7 @@ class NDT1(nn.Module):
 
         # Encode neural data
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask,num_neuron)
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
@@ -601,6 +629,9 @@ class NDT1(nn.Module):
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
+            if hasattr(self, "stitching"):
+                    print(self.n_channels)
+                    targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
             if self.encoder.mask:
                 loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
             else:

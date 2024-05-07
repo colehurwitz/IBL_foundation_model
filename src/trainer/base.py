@@ -159,7 +159,8 @@ class Trainer():
             targets = batch['target'],
             neuron_regions=batch['neuron_regions'],
             masking_mode=masking_mode, 
-            spike_augmentation=self.config.data.spike_augmentation
+            spike_augmentation=self.config.data.spike_augmentation,
+            num_neuron=batch['spikes_data'].shape[2]
         ) 
     
     def eval_epoch(self):

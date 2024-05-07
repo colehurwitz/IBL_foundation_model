@@ -15,12 +15,12 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
+    "model": "include:src/configs/ndt1_stitching.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1.yaml", config)
+config = update_config("src/configs/ndt1_stitching.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # make log dir
@@ -38,12 +38,13 @@ set_seed(config.seed)
 
 # download dataset from huggingface
 eid = None
-train_dataset, val_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                            config.dirs.huggingface_org,
                            eid=eid,
                            num_sessions=config.data.num_sessions,
                            split_method=config.data.split_method,
                            test_session_eid=config.data.test_session_eid,
+                           batch_size=config.training.train_batch_size,
                            seed=config.seed)
 if config.data.use_aligned_test:
     # aligned dataset
@@ -92,8 +93,10 @@ accelerator = Accelerator()
 
 # load model
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+
+config = update_config(config, meta_data)
 model_class = NAME2MODEL[config.model.model_class]
-model = model_class(config.model, **config.method.model_kwargs)
+model = model_class(config.model, **config.method.model_kwargs, **meta_data)
 model = accelerator.prepare(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
