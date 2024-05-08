@@ -185,8 +185,22 @@ class Trainer():
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
-                    gt.append(outputs.targets.clone())
-                    preds.append(outputs.preds.clone())
+                    
+                    if outputs.targets.shape[2] < self.config.encoder.embedder.n_channels:
+                        targets_clone = torch.zeros(
+                            outputs.targets.shape[0], outputs.targets.shape[1], self.config.encoder.embedder.n_channels
+                        ).to(outputs.targets.device)
+                        targets_clone[:, :, :outputs.targets.shape[2]] = outputs.targets
+
+                        preds_clone = torch.zeros(
+                            outputs.preds.shape[0], outputs.preds.shape[1], self.config.encoder.embedder.n_channels
+                        ).to(outputs.preds.device)
+                        preds_clone[:, :, :outputs.preds.shape[2]] = outputs.preds
+                        gt.append(targets_clone.clone())
+                        preds.append(preds_clone.clone())
+                    else:
+                        gt.append(outputs.targets.clone())
+                        preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
             

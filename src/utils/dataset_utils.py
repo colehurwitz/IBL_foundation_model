@@ -245,7 +245,6 @@ def load_ibl_dataset(cache_dir,
             test_trials = len(session_dataset["test"]["spikes_sparse_data"])
             test_trials = test_trials - test_trials % batch_size
             session_test_datasets.append(session_dataset["test"].select(list(range(test_trials))))
-            session_test_datasets.append(session_dataset["test"])
             binned_spikes_data = get_binned_spikes_from_sparse([session_dataset["train"]["spikes_sparse_data"][0]], 
                                                                 [session_dataset["train"]["spikes_sparse_indices"][0]],
                                                                 [session_dataset["train"]["spikes_sparse_indptr"][0]],

@@ -79,6 +79,7 @@ train_dataloader = make_loader(train_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
+                         stitching=config.encoder.stitching,
                          shuffle=True)
 
 val_dataloader = make_loader(val_dataset, 
@@ -92,6 +93,7 @@ val_dataloader = make_loader(val_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
+                         stitching=config.encoder.stitching,
                          shuffle=False)
 
 # Initialize the accelerator
