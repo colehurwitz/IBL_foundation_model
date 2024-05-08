@@ -59,6 +59,9 @@ encoder:
     spike_log_init: false # special initialization 
     max_spikes: 0         # max number of spikes in a single time bin
 
+    tokenize_binary_mask: false
+    use_prompt: false
+
     stack:
       active: false        # wether to stack consecutive timesteps
       size: 32            # number of consecutive timesteps to stack
