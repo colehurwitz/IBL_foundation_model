@@ -202,6 +202,8 @@ def co_smoothing_eval(
                             neuron_regions_lst.append(batch['neuron_regions'])
                         else:
                             break
+
+                    masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
                     
                     outputs = model(
                         torch.cat(mask_spikes_lst, 0),
@@ -211,7 +213,8 @@ def co_smoothing_eval(
                         spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
                         targets = torch.cat(targets_lst, 0),
                         neuron_regions=np.stack(neuron_regions_lst),
-                        eval_mask=torch.cat(eval_mask_lst, 0)
+                        eval_mask=torch.cat(eval_mask_lst, 0),
+                        masking_mode = masking_mode
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -276,6 +279,9 @@ def co_smoothing_eval(
                         target_regions=target_regions,
                         neuron_regions=region_list
                     )                
+                    
+                    masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
+                    
                     outputs = model(
                         mask_result['spikes'],
                         time_attn_mask=batch['time_attn_mask'],
@@ -284,7 +290,8 @@ def co_smoothing_eval(
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
                         neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask']
+                        eval_mask=mask_result['eval_mask'],
+                        masking_mode=masking_mode
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -358,7 +365,10 @@ def co_smoothing_eval(
                         heldout_idxs=hd,
                         target_regions=[region],
                         neuron_regions=region_list
-                    )                
+                    )              
+
+                    masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+                    
                     outputs = model(
                         mask_result['spikes'],
                         time_attn_mask=batch['time_attn_mask'],
@@ -367,7 +377,8 @@ def co_smoothing_eval(
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
                         neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask']
+                        eval_mask=mask_result['eval_mask'],
+                        masking_mode=masking_mode
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -460,7 +471,9 @@ def co_smoothing_eval(
                                 neuron_regions_lst.append(batch['neuron_regions'])
                             else:
                                 break
-                            
+
+                        masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
+                        
                         outputs = model(
                             torch.cat(mask_spikes_lst, 0),
                             time_attn_mask=torch.cat(time_attn_mask_lst, 0),
@@ -469,7 +482,8 @@ def co_smoothing_eval(
                             spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
                             targets = torch.cat(targets_lst, 0),
                             neuron_regions=np.stack(neuron_regions_lst),
-                            eval_mask=torch.cat(eval_mask_lst, 0)
+                            eval_mask=torch.cat(eval_mask_lst, 0),
+                            masking_mode=masking_mode
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
@@ -777,7 +791,8 @@ def behavior_decoding(**kwargs):
                 spikes_timestamps=batch['spikes_timestamps'], 
                 spikes_spacestamps=batch['spikes_spacestamps'], 
                 targets = batch['target'],
-                neuron_regions=batch['neuron_regions']
+                neuron_regions=batch['neuron_regions'],
+                masking_mode = model.encoder.masker.mode
             )
             gt.append(outputs.targets.clone())
             preds.append(outputs.preds.clone())

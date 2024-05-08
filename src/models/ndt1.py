@@ -139,6 +139,13 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.pos:
             self.embed_pos = nn.Embedding(config.max_F, hidden_size)
 
+        # Embed prompt token
+        self.use_prompt = config.use_prompt
+        if self.use_prompt:
+            self.mask_types = ['neuron', 'causal', 'inter-region', 'intra-region']
+            self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
+            self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
+
         # Regularization
         self.dropout = nn.Dropout(config.dropout)
 
@@ -150,8 +157,11 @@ class NeuralEmbeddingLayer(nn.Module):
             block_idx:        Optional[torch.LongTensor] = None,   # (bs)
             date_idx:         Optional[torch.LongTensor] = None,   # (bs)
             targets_mask:     Optional[torch.LongTensor] = None,
+            masking_mode:     Optional[str] = None,
         ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:   # (bs, new_seq_len, hidden_size),  (bs, new_seq_len), (bs, new_seq_len)
 
+        B, _, _ = spikes.size()
+        
         if self.tokenize_binary_mask:
             spikes = torch.cat((spikes, targets_mask), 2)
 
@@ -176,8 +186,17 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.pos:
             x += self.embed_pos(spikes_timestamp)
 
-        return self.dropout(x), spikes_mask, spikes_timestamp
+        # Prepend prompt token 
+        if self.use_prompt:
+            mask_idx = torch.tensor(self.mask_to_indx[masking_mode], dtype=torch.int64, device=spikes.device)
+            x = torch.cat((self.embed_prompt(mask_idx)[None,None,:].expand(B,-1,-1), x), dim=1) 
+            spikes_mask = F.pad(spikes_mask, (1, 0), value=1)
+            spikes_timestamp = torch.cat(
+                (torch.zeros((spikes_timestamp.size(0), 1), dtype=spikes_timestamp.dtype, device=spikes_timestamp.device), 
+                 spikes_timestamp+1), dim=1
+            )
 
+        return self.dropout(x), spikes_mask, spikes_timestamp
 
     # Compute new lens after stacking
     def get_stacked_lens(self, lens):
@@ -404,7 +423,9 @@ class NeuralEncoder(nn.Module):
         if config.stitching:
             self.stitcher = NeuralStitcher(kwargs['num_neurons'],
                                            config.embedder.n_channels)
-       
+
+        self.use_prompt = config.embedder.use_prompt
+
         # Embedding layer
         self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
 
@@ -458,13 +479,18 @@ class NeuralEncoder(nn.Module):
             spikes = self.stitcher(spikes, str(num_neuron))
         # Embed neural data
         x, spikes_mask, spikes_timestamp = self.embedder(
-            spikes, spikes_mask, spikes_timestamp, block_idx, date_idx, targets_mask
+            spikes, spikes_mask, spikes_timestamp, block_idx, date_idx, targets_mask, masking_mode
         )
 
         _, T, _ = x.size() # feature len may have changed after stacking
 
         # Prepare 
-        context_mask = self.context_mask[:T,:T].to(x.device).unsqueeze(0).expand(B,T,T)
+        if self.use_prompt:
+            context_mask = F.pad(self.context_mask[:T-1,:T-1], (1,0), value=1)
+            context_mask = torch.cat((torch.ones((1,T)), context_mask), dim=0)
+            context_mask = context_mask.to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
+        else:
+            context_mask = self.context_mask[:T,:T].to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
         spikes_mask = spikes_mask.unsqueeze(1).expand(B,T,T)
         self_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) # hack so that even padded spikes attend to themselves and avoid attention issues
         attn_mask = self_mask | (context_mask & spikes_mask)
@@ -475,6 +501,7 @@ class NeuralEncoder(nn.Module):
         x = self.out_norm(x)
 
         return self.out_proj(x), targets_mask
+
 
 class NeuralStitcher(nn.Module):
 
@@ -514,6 +541,8 @@ class NDT1(nn.Module):
         # Load encoder weights
         if encoder_pt_path is not None:
             self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
+
+        self.use_prompt = config.encoder.embedder.use_prompt
 
         # stitching
         if config.encoder.stitching:
@@ -621,10 +650,13 @@ class NDT1(nn.Module):
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
+        if self.use_prompt:
+            x = x[:,1:]
+
         # Transform neural embeddings into rates/logits
         if self.method == "sl":
             x = x.flatten(start_dim=1)
-            
+
         outputs = self.decoder(x)
 
         # Compute the loss over unmasked outputs

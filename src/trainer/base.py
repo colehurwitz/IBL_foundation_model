@@ -36,7 +36,7 @@ class Trainer():
 
         self.masking_ratio = model.encoder.masker.ratio
         self.masking_mode = model.encoder.masker.mode
-        self.masking_schemes = ['neuron', 'temporal', 'causal']
+        self.masking_schemes = ['neuron', 'causal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
         if self.config.model.model_class == 'STPatch':
@@ -55,8 +55,8 @@ class Trainer():
             print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
 
             if eval_epoch_results:
-                # if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
-                if eval_epoch_results[f'eval_loss'] < best_eval_loss:
+                if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                # if eval_epoch_results[f'eval_loss'] < best_eval_loss:
                     best_eval_loss = eval_epoch_results[f'eval_loss']
                     best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
                     print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
