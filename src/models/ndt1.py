@@ -662,8 +662,10 @@ class NDT1(nn.Module):
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
             if hasattr(self, "stitching"):
-                    print(self.n_channels)
-                    targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
+                    if self.n_channels <= targets.shape[2]:
+                        targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
+                    else:
+                        outputs = outputs[:,:,:targets.shape[2]]
             if self.encoder.mask:
                 loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
             else:

@@ -24,14 +24,20 @@ config = update_config("src/configs/ndt1_stitching.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "train", "multi_sessions", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
+log_dir = os.path.join(config.dirs.log_dir, 
+                       "train", 
+                       "multi_sessions", 
+                       "model_{}".format(config.model.model_class), 
+                       "method_{}".format(config.method.model_kwargs.method_name), 
+                       "mask_{}".format(config.encoder.masker.mode),
+                       "stitch_{}".format(config.encoder.stitching))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -73,6 +79,7 @@ train_dataloader = make_loader(train_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
+                         stitching=config.encoder.stitching,
                          shuffle=True)
 
 val_dataloader = make_loader(val_dataset, 
@@ -86,6 +93,7 @@ val_dataloader = make_loader(val_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
+                         stitching=config.encoder.stitching,
                          shuffle=False)
 
 # Initialize the accelerator

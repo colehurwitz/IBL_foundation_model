@@ -1,6 +1,9 @@
 import torch
 import numpy as np
 from utils.dataset_utils import get_binned_spikes_from_sparse
+from torch.utils.data.sampler import Sampler
+from typing import List, Optional, Tuple, Dict
+from torch.utils.data import Dataset
 
 def _pad_seq_right_to_n(
     seq: np.ndarray,
@@ -113,6 +116,71 @@ def _pad_spike_seq(
             seq = _pad_seq_left_to_n(seq, max_length, pad_value)
     return seq, pad_length
 
+def get_length_grouped_indices(lengths, batch_size, generator=None):
+    # sort indices by length
+    sorted_indices = np.argsort(lengths)
+    # random indices in same length group
+    group_indicies = []
+    group_lengths = []
+    group = []
+    for i, idx in enumerate(sorted_indices):
+        if i == 0:
+            group.append(idx)
+            group_lengths.append(lengths[idx])
+        elif lengths[idx] == group_lengths[-1]:
+            group.append(idx)
+        else:
+            group_indicies.append(group)
+            group = [idx]
+            group_lengths.append(lengths[idx])
+    group_indicies.append(group)
+    group_indicies = sum(group_indicies,[])
+    # makke group_indice a multiple of batch_size
+    batch_group_indicies = []
+    for i in range(0, len(group_indicies), batch_size):
+        batch_group_indicies.append(group_indicies[i:i+batch_size])
+    if generator is not None:
+        generator.shuffle(batch_group_indicies)
+    else:
+        np.random.shuffle(batch_group_indicies)
+    batch_group_indicies = sum(batch_group_indicies, [])
+    batch_group_indicies = [int(i) for i in batch_group_indicies]
+    return batch_group_indicies
+
+
+
+class LengthStitchGroupedSampler(Sampler):
+    r"""
+    Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
+    keeping a bit of randomness.
+    """
+
+    def __init__(
+        self,
+        dataset: Dataset,
+        batch_size: int,
+        lengths: Optional[List[int]] = None,
+        model_input_name: Optional[str] = None,
+    ):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.model_input_name = model_input_name if model_input_name is not None else "input_ids"
+        if lengths is None:
+            if not isinstance(dataset[0], dict) or model_input_name not in dataset[0]:
+                raise ValueError(
+                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
+                    f"'{self.model_input_name}' key."
+                )
+            lengths = [len(feature[self.model_input_name]) for feature in dataset]
+        self.lengths = lengths
+
+    def __len__(self):
+        return len(self.lengths)
+
+    def __iter__(self):
+        indices = get_length_grouped_indices(self.lengths, self.batch_size)
+        return iter(indices)
+
 
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
@@ -130,6 +198,7 @@ class BaseDataset(torch.utils.data.Dataset):
         load_meta = False,
         brain_region = 'all',
         dataset_name = "ibl",
+        stitching = False,
     ) -> None:
         self.dataset = dataset
         self.target = target
@@ -144,6 +213,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.brain_region = brain_region
         self.load_meta = load_meta
         self.dataset_name = dataset_name
+        self.stitching = stitching
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -232,8 +302,8 @@ class BaseDataset(torch.utils.data.Dataset):
             else:
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
-        stitching = True
-        if not stitching:
+
+        if not self.stitching:
             # pad along space dimension
             if num_neurons > self.max_space_length:
                 binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
