@@ -1,6 +1,5 @@
 import torch
-from loader.base import BaseDataset
-from torch.utils.data.sampler import BatchSampler
+from loader.base import BaseDataset, LengthStitchGroupedSampler
 from transformers.trainer_pt_utils import LengthGroupedSampler
 
 def make_loader(dataset, 
@@ -16,6 +15,7 @@ def make_loader(dataset,
                  brain_region = 'all',
                  load_meta=False,
                  dataset_name = "ibl",
+                 stitching = False,
                  shuffle = True):
     dataset = BaseDataset(dataset=dataset, 
                           target=target,
@@ -29,12 +29,17 @@ def make_loader(dataset,
                           sort_by_region = sort_by_region,
                           brain_region = brain_region,
                           load_meta=load_meta,
+                          stitching=stitching
             )
     print(f"len(dataset): {len(dataset)}")
-    
-    train_sampler = LengthGroupedSampler(
-        dataset=dataset, batch_size=batch_size, lengths=[sum(x["space_attn_mask"]) for x in dataset]
-    )
+    if stitching:
+        train_sampler = LengthStitchGroupedSampler(
+            dataset=dataset, batch_size=batch_size, lengths=[sum(x["space_attn_mask"]) for x in dataset]
+        )
+    else:
+        train_sampler = LengthGroupedSampler(
+            dataset=dataset, batch_size=batch_size, lengths=[sum(x["space_attn_mask"]) for x in dataset]
+        )
 
     # batch by neuron lengths makes multi-session training easier and NDT2 training faster
     dataloader = torch.utils.data.DataLoader(
