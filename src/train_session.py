@@ -26,7 +26,9 @@ log_dir = os.path.join(config.dirs.log_dir,
                        "single_session",
                        "model_{}".format(config.model.model_class), 
                        "method_{}".format(config.method.model_kwargs.method_name), 
-                       "mask_{}".format(config.encoder.masker.mode))
+                       "mask_{}".format(config.encoder.masker.mode),
+                       "finetune_{}".format(config.training.finetune))
+
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
@@ -36,7 +38,7 @@ if config.wandb.use:
     wandb.init(project=config.wandb.project, 
                entity=config.wandb.entity, 
                config=config, 
-               name="train_model_{}_method_{}_mask_{}_finetune_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.training.finetune))
+               name="train_model_{}_method_{}_mask_{}_finetune_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching, config.training.finetune))
 
 # set seed for reproducibility
 set_seed(config.seed)
