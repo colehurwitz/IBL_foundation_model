@@ -121,6 +121,7 @@ trainer_kwargs = {
     "accelerator": accelerator,
     "lr_scheduler": lr_scheduler,
     "config": config,
+    "stitching": config.encoder.stitching,
 }
 trainer = make_trainer(
     model=model,
