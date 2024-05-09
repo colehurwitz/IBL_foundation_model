@@ -227,13 +227,13 @@ print(mask_name)
 base_path = '/mnt/home/yzhang1/ceph'
 
 if args.mask_mode == 'causal':
-    model_config = f'src/configs/{model_acroynm}_causal.yaml'
+    model_config = f'src/configs/{model_acroynm}_causal_eval.yaml'
 elif args.tokenize_binary_mask:
-    model_config = f'src/configs/{model_acroynm}_mask_token.yaml'
+    model_config = f'src/configs/{model_acroynm}_mask_token_eval.yaml'
 elif args.prompting:
-    model_config = f'src/configs/{model_acroynm}_prompting.yaml'
+    model_config = f'src/configs/{model_acroynm}_prompting_eval.yaml'
 else:
-    model_config = f'src/configs/{model_acroynm}.yaml'
+    model_config = f'src/configs/{model_acroynm}_eval.yaml'
 
 # Configuration
 configs = {
