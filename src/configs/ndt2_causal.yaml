@@ -10,7 +10,7 @@ encoder:
   # Mask spikes
   masker:
     force_active: true         
-    mode: neuron  # masking mode: random_token / ...
+    mode: temporal  # masking mode: random_token / ...
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
@@ -29,7 +29,7 @@ encoder:
 
   # Context available for each timestep
   context:
-    forward: -1
+    forward: 0
     backward: -1
 
   # Embedding layer
