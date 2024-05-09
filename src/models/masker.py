@@ -58,6 +58,13 @@ class Masker(nn.Module):
 
         if not self.training and not self.force_active:
             return spikes, torch.zeros_like(spikes)
+        elif self.target_regions is None:
+            return spikes, torch.zeros_like(spikes)
+        elif self.mask_regions is None:
+            return spikes, torch.zeros_like(spikes)
+        elif self.ratio == 0:
+            return spikes, torch.zeros_like(spikes)
+
 
         if 'all' in self.mask_regions:
             self.mask_regions = list(np.unique(neuron_regions))
@@ -90,7 +97,7 @@ class Masker(nn.Module):
                 mask_probs[t] = 1
         elif self.mode == "inter-region":
             assert neuron_regions is not None, "Can't mask region without brain region information"
-            assert self.mask_regions is not None, "No regions to mask"
+            #assert self.mask_regions is not None, "No regions to mask"
             mask_regions = random.sample(self.mask_regions, self.n_mask_regions)
             mask_probs = torch.zeros(spikes.shape[0],spikes.shape[2])
             for region in mask_regions:
@@ -98,7 +105,7 @@ class Masker(nn.Module):
                 mask_probs[region_indx] = 1      
         elif self.mode == "intra-region":
             assert neuron_regions is not None, "Can't mask region without brain region information"
-            assert self.target_regions is not None, "No target regions"
+            #assert self.target_regions is not None, "No target regions"
 
             target_regions = random.sample(self.target_regions, self.n_mask_regions)
             mask_probs = torch.ones(spikes.shape[0],spikes.shape[2])

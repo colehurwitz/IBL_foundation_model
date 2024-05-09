@@ -6,6 +6,8 @@ mask_name = 'mask_all'
 model_name = 'NDT1'
 n_time_steps = 100
 
+eid = '671c7ea7-6726-4fbe-adeb-f89c2c8e489b'
+
 co_smooth = True
 forward_pred = True
 inter_region = True
@@ -26,6 +28,7 @@ configs = {
     'test_size': 0.2,
     'seed': 42,
     'mask_name': mask_name,
+    'eid': eid
 }  
 
 # init wandb
@@ -148,7 +151,8 @@ if choice_decoding:
         'metric': 'acc',
         'from_scratch': False,
         'freeze_encoder': True,
-        'mask_ratio': 0.1
+        'mask_ratio': 0.1,
+        'eid': eid
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -169,7 +173,8 @@ if continuous_decoding:
         'metric': 'r2',
         'from_scratch': False,
         'freeze_encoder': True,
-        'mask_ratio': 0.1
+        'mask_ratio': 0.1,
+        'eid': eid
     }  
     results = behavior_decoding(**configs)
     print(results)
