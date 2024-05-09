@@ -792,7 +792,7 @@ def behavior_decoding(**kwargs):
                 spikes_spacestamps=batch['spikes_spacestamps'], 
                 targets = batch['target'],
                 neuron_regions=batch['neuron_regions'],
-                masking_mode = model.encoder.masker.mode
+                masking_mode = 'neuron' if config.data.target == 'choice' else 'causal'
             )
             gt.append(outputs.targets.clone())
             preds.append(outputs.preds.clone())
