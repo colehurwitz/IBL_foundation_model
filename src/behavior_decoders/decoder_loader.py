@@ -47,7 +47,8 @@ def get_binned_spikes(dataset):
 
 class SingleSessionDataset(Dataset):
     def __init__(self, data_dir, eid, beh_name, target, device, split='train'):
-        dataset = datasets.load_from_disk(Path(data_dir)/eid)
+        # dataset = datasets.load_from_disk(Path(data_dir)/eid)
+        dataset = datasets.load_dataset(f'neurofm123/{eid}_aligned', cache_dir=data_dir)
         self.train_spike = get_binned_spikes(dataset['train'])
         self.train_behavior = np.array(dataset['train'][beh_name])
         if split == 'val':
