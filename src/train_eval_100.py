@@ -18,6 +18,7 @@ import warnings
 warnings.simplefilter("ignore")
 
 ap = argparse.ArgumentParser()
+ap.add_argument("--eid", type=str)
 ap.add_argument("--mask_ratio", type=float, default=0.1)
 ap.add_argument("--mask_mode", type=str, default="temporal")
 ap.add_argument("--model_name", type=str, default="NDT1")
@@ -26,7 +27,6 @@ ap.add_argument("--prompting", action='store_true')
 ap.add_argument("--train", action='store_true')
 args = ap.parse_args()
 
-eid = '671c7ea7-6726-4fbe-adeb-f89c2c8e489b'
 
 model_acroynm = args.model_name.lower()
 
@@ -56,7 +56,8 @@ if config.wandb.use:
     import wandb
     wandb.init(
         project=config.wandb.project, entity=config.wandb.entity, config=config,
-        name="train_model_{}_method_{}_mask_{}_ratio_{}_mask_token_{}_prompt_{}".format(
+        name="{}_train_model_{}_method_{}_mask_{}_ratio_{}_mask_token_{}_prompt_{}".format(
+            args.eid[:5],
             config.model.model_class, config.method.model_kwargs.method_name, 
             args.mask_mode, args.mask_ratio, args.tokenize_binary_mask, args.prompting
         )
@@ -70,7 +71,7 @@ if args.train:
     print('=====================')
     
     log_dir = os.path.join(
-        config.dirs.log_dir, "train", "model_{}".format(config.model.model_class),
+        config.dirs.log_dir, args.eid, "train", "model_{}".format(config.model.model_class),
         "method_{}".format(config.method.model_kwargs.method_name), 
         "mask_{}".format(args.mask_mode),
         "ratio_{}".format(args.mask_ratio),
@@ -81,10 +82,12 @@ if args.train:
         os.makedirs(log_dir)
     
     if "ibl" in config.data.dataset_name:
-        dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+        dataset = load_dataset(f'neurofm123/{args.eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
         train_dataset = dataset["train"]
         val_dataset = dataset["val"]
         test_dataset = dataset["test"]
+
+        n_neurons = len(train_dataset['cluster_regions'][0])
         
         try:
            bin_size = train_dataset["binsize"][0]
@@ -114,6 +117,8 @@ if args.train:
         train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
         test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
         bin_size = None
+
+    max_space_length = n_neurons if args.model_name in ["NDT1", "iTransformer"] else config.data.max_space_length
     
     # make the dataloader
     train_dataloader = make_loader(train_dataset, 
@@ -124,7 +129,7 @@ if args.train:
                              pad_value=-1.,
                              bin_size=bin_size,
                              max_time_length=config.data.max_time_length,
-                             max_space_length=config.data.max_space_length,
+                             max_space_length=max_space_length,
                              dataset_name=config.data.dataset_name,
                              sort_by_depth=config.data.sort_by_depth,
                              sort_by_region=config.data.sort_by_region,
@@ -138,7 +143,7 @@ if args.train:
                              pad_value=-1.,
                              bin_size=bin_size,
                              max_time_length=config.data.max_time_length,
-                             max_space_length=config.data.max_space_length,
+                             max_space_length=max_space_length,
                              dataset_name=config.data.dataset_name,
                              sort_by_depth=config.data.sort_by_depth,
                              sort_by_region=config.data.sort_by_region,
@@ -152,7 +157,7 @@ if args.train:
                              pad_value=-1.,
                              bin_size=bin_size,
                              max_time_length=config.data.max_time_length,
-                             max_space_length=config.data.max_space_length,
+                             max_space_length=max_space_length,
                              dataset_name=config.data.dataset_name,
                              sort_by_depth=config.data.sort_by_depth,
                              sort_by_region=config.data.sort_by_region,
@@ -214,6 +219,7 @@ if args.model_name == "NDT2":
     model_name = "STPatch"
 else:
     model_name = args.model_name
+    
 n_time_steps = 100
 
 co_smooth = True
@@ -239,13 +245,13 @@ else:
 # Configuration
 configs = {
     'model_config': model_config,
-    'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
+    'model_path': f'{base_path}/results/{args.eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
     'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
     'dataset_path': None, 
     'test_size': 0.2,
     'seed': 42,
     'mask_name': mask_name,
-    'eid': eid
+    'eid': args.eid
 }  
 
 
@@ -259,7 +265,7 @@ if co_smooth:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/co_smooth',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/co_smooth',
         'mode': 'per_neuron',
         'n_time_steps': n_time_steps,    
         'is_aligned': True,
@@ -283,7 +289,7 @@ if forward_pred:
         'subtract': 'task',
         'onset_alignment': [],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/forward_pred',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/forward_pred',
         'mode': 'forward_pred',
         'n_time_steps': n_time_steps,    
         'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
@@ -308,7 +314,7 @@ if inter_region:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name,
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/inter_region',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/inter_region',
         'mode': 'inter_region',
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
@@ -333,7 +339,7 @@ if intra_region:
         'subtract': 'task',
         'onset_alignment': [40],
         'method_name': mask_name, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/intra_region',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/intra_region',
         'mode': 'intra_region',
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
@@ -355,10 +361,10 @@ if choice_decoding:
     print('Start choice_decoding:')
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
+        'model_path': f'{base_path}/results/{args.eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
         'trainer_config': f'src/configs/trainer_sl_choice_{model_acroynm}.yaml',
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/choice_decoding',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/choice_decoding',
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
@@ -366,7 +372,7 @@ if choice_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': eid
+        'eid': args.eid
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -377,10 +383,10 @@ if continuous_decoding:
     print('Start continuous_decoding:')
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
+        'model_path': f'{base_path}/results/{args.eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/model_best.pt',
         'trainer_config': f'src/configs/trainer_sl_continuous_{model_acroynm}.yaml',
         'dataset_path': None, 
-        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/continuous_decoding',
+        'save_path': f'{base_path}/results/{args.eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/continuous_decoding',
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
@@ -388,7 +394,7 @@ if continuous_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': eid
+        'eid': args.eid
     }  
     results = behavior_decoding(**configs)
     print(results)

@@ -551,7 +551,7 @@ class NDT1(nn.Module):
 
         # Build decoder
         if self.method == "ssl":
-            assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
+            #assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]

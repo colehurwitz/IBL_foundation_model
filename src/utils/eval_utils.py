@@ -41,6 +41,7 @@ def load_model_data_local(**kwargs):
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
     mask_mode = mask_name.split("_")[1]
+    eid = kwargs['eid']
 
     # set seed
     set_seed(seed)
@@ -69,7 +70,10 @@ def load_model_data_local(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
+    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
+
+    n_neurons = len(dataset['cluster_regions'][0])
+    max_space_length = n_neurons if config.model.model_class in ["NDT1", "iTransformer"] else config.data.max_space_length
 
     # TODO: update the loader to adapt other models (e.g., patching for NDT2)
     dataloader = make_loader(
@@ -79,7 +83,7 @@ def load_model_data_local(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=config.data.max_space_length,
+        max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
@@ -656,6 +660,7 @@ def behavior_decoding(**kwargs):
     metric = kwargs['metric']
     mask_ratio = kwargs['mask_ratio']
     mask_mode = mask_name.split("_")[1]
+    eid = kwargs['eid']
 
     # set seed
     set_seed(seed)
@@ -702,10 +707,13 @@ def behavior_decoding(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
+    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
+
+    n_neurons = len(dataset['cluster_regions'][0])
+    max_space_length = n_neurons if config.model.model_class in ["NDT1", "iTransformer"] else config.data.max_space_length
 
     train_dataloader = make_loader(
         train_dataset,
@@ -714,7 +722,7 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=config.data.max_space_length,
+        max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
@@ -727,7 +735,7 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=config.data.max_space_length,
+        max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
@@ -740,7 +748,7 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=config.data.max_space_length,
+        max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
