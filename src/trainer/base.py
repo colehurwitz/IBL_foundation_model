@@ -26,6 +26,7 @@ class Trainer():
         self.accelerator = kwargs.get("accelerator", None)
         self.lr_scheduler = kwargs.get("lr_scheduler", None)
         self.config = kwargs.get("config", None)
+        self.stitching = kwargs.get("stitching", None)
 
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
@@ -68,11 +69,11 @@ class Trainer():
                             gt=eval_epoch_results['eval_gt'], 
                             preds=eval_epoch_results['eval_preds'], epoch=epoch
                         )
-                        if self.config.wandb.use:
+                        if self.config.wandb.use and not self.stitching:
                             wandb.log({"best_epoch": epoch,
                                     "best_gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
                                     "best_r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
-                        else:
+                        elif not self.stitching:
                             gt_pred_fig['plot_gt_pred'].savefig(
                                 os.path.join(self.log_dir, f"best_gt_pred_fig_{epoch}.png")
                             )
@@ -93,12 +94,12 @@ class Trainer():
                         preds=eval_epoch_results['eval_preds'], 
                         epoch=epoch
                     )
-                    if self.config.wandb.use:
+                    if self.config.wandb.use and not self.stitching:
                         wandb.log({
                             "gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
                             "r2_fig": wandb.Image(gt_pred_fig['plot_r2'])
                         })
-                    else:
+                    elif not self.stitching:
                         gt_pred_fig['plot_gt_pred'].savefig(
                             os.path.join(self.log_dir, f"gt_pred_fig_{epoch}.png")
                         )
@@ -186,37 +187,28 @@ class Trainer():
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
                     
-                    if outputs.targets.shape[2] < self.model.encoder.embedder.n_channels:
-                        targets_clone = torch.zeros(
-                            outputs.targets.shape[0], outputs.targets.shape[1], self.model.encoder.embedder.n_channels
-                        ).to(outputs.targets.device)
-                        targets_clone[:, :, :outputs.targets.shape[2]] = outputs.targets
-
-                        preds_clone = torch.zeros(
-                            outputs.preds.shape[0], outputs.preds.shape[1], self.model.encoder.embedder.n_channels
-                        ).to(outputs.preds.device)
-                        preds_clone[:, :, :outputs.preds.shape[2]] = outputs.preds
-                        gt.append(targets_clone.clone())
-                        preds.append(preds_clone.clone())
-                    else:
-                        gt.append(outputs.targets.clone())
-                        preds.append(outputs.preds.clone())
-            gt = torch.cat(gt, dim=0)
-            preds = torch.cat(preds, dim=0)
+                    gt.append(outputs.targets.clone())
+                    preds.append(outputs.preds.clone())
+            if not self.stitching:
+                gt = torch.cat(gt, dim=0)
+                preds = torch.cat(preds, dim=0)
             
-        if self.config.method.model_kwargs.loss == "poisson_nll":
+        if self.config.method.model_kwargs.loss == "poisson_nll" and not self.stitching:
             preds = torch.exp(preds)
-        elif self.config.method.model_kwargs.loss == "cross_entropy":
+        elif self.config.method.model_kwargs.loss == "cross_entropy" and not self.stitching:
             preds = torch.nn.functional.softmax(preds, dim=1)
             
-        if self.active_neurons is None:
+        if self.active_neurons is None and not self.stitching:
             self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
 
         if self.config.method.model_kwargs.method_name == 'ssl':
-            results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
-                                   pred = preds.mean(0)[..., self.active_neurons].T, 
-                                   metrics=["r2"], 
-                                   device=self.accelerator.device)
+            if not self.stitching:
+                results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
+                                    pred = preds.mean(0)[..., self.active_neurons].T, 
+                                    metrics=["r2"], 
+                                    device=self.accelerator.device)
+            else:
+                results = {self.metric:0}
         elif self.config.method.model_kwargs.method_name == 'sl':
             if self.config.method.model_kwargs.clf:
                 results = metrics_list(gt = gt.argmax(1),
@@ -237,18 +229,21 @@ class Trainer():
         }
     
     def plot_epoch(self, gt, preds, epoch):
-        gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
-                     pred = preds.mean(0).T.detach().cpu().numpy(),
-                     epoch = epoch)
-        
-        r2_fig = plot_neurons_r2(gt = gt.mean(0),
-                pred = preds.mean(0),
-                neuron_idx=self.active_neurons,
-                epoch = epoch)
-        return {
-            "plot_gt_pred": gt_pred_fig,
-            "plot_r2": r2_fig
-        }
+        if self.stitching:
+            return {}
+        else:
+            gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
+                        pred = preds.mean(0).T.detach().cpu().numpy(),
+                        epoch = epoch)
+            
+            r2_fig = plot_neurons_r2(gt = gt.mean(0),
+                    pred = preds.mean(0),
+                    neuron_idx=self.active_neurons,
+                    epoch = epoch)
+            return {
+                "plot_gt_pred": gt_pred_fig,
+                "plot_r2": r2_fig
+            }
         
 
     def save_model(self, name="last", epoch=0):
@@ -259,3 +254,4 @@ class Trainer():
             "epoch": epoch,
         }
         torch.save(dict_config, os.path.join(self.log_dir, f"model_{name}.pt"))
+        

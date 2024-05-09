@@ -517,6 +517,21 @@ class NeuralStitcher(nn.Module):
 
     def forward(self, x, block_idx):
         return self.stitcher_dict[block_idx](x)
+    
+class StitchDecoder(nn.Module):
+
+    def __init__(self,
+                 num_neurons:list,
+                 n_channels:int):
+        super().__init__()
+
+        stitch_decoder_dict = {}
+        for num_neuron in num_neurons:
+            stitch_decoder_dict[str(num_neuron)] = nn.Linear(n_channels, num_neuron)
+        self.stitch_decoder_dict = nn.ModuleDict(stitch_decoder_dict)
+
+    def forward(self, x, block_idx):
+        return self.stitch_decoder_dict[block_idx](x)
 
 # Encoder for time binned neural data
 class NDT1(nn.Module):
@@ -548,10 +563,12 @@ class NDT1(nn.Module):
         if config.encoder.stitching:
             self.stitching=True
             self.n_channels = config.encoder.embedder.n_channels
+            self.hidden_size = config.encoder.transformer.hidden_size
+            self.stitch_decoder = StitchDecoder(kwargs['num_neurons'], self.hidden_size)
 
         # Build decoder
         if self.method == "ssl":
-            #assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
+            # assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]
@@ -656,16 +673,18 @@ class NDT1(nn.Module):
         # Transform neural embeddings into rates/logits
         if self.method == "sl":
             x = x.flatten(start_dim=1)
-
-        outputs = self.decoder(x)
+        if hasattr(self, "stitching"):
+            outputs = self.stitch_decoder(x, str(num_neuron))
+        else:
+            outputs = self.decoder(x)
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
-            if hasattr(self, "stitching"):
-                    if self.n_channels <= targets.shape[2]:
-                        targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
-                    else:
-                        outputs = outputs[:,:,:targets.shape[2]]
+            # if hasattr(self, "stitching"):
+            #         if self.n_channels <= targets.shape[2]:
+            #             targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
+            #         else:
+            #             outputs = outputs[:,:,:targets.shape[2]]
             if self.encoder.mask:
                 loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
             else:
