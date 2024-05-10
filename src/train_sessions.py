@@ -15,12 +15,12 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1_stitching.yaml"
+    "model": "include:src/configs/ndt1_prompting.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1_stitching.yaml", config)
+config = update_config("src/configs/ndt1_prompting.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # make log dir
