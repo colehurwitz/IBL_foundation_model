@@ -1,7 +1,7 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
 from loader.make_loader import make_loader
-from utils.dataset_utils import split_both_dataset
+from utils.dataset_utils import load_ibl_dataset
 from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
 from utils.config_utils import config_from_kwargs, update_config
@@ -42,6 +42,7 @@ def load_model_data_local(**kwargs):
     mask_name = kwargs['mask_name']
     mask_mode = mask_name.split("_")[1]
     eid = kwargs['eid']
+    stitching = kwargs['stitching']
 
     # set seed
     set_seed(seed)
@@ -54,8 +55,18 @@ def load_model_data_local(**kwargs):
 
     accelerator = Accelerator()
 
+    _,_,_, meta_data = load_ibl_dataset(
+                        cache_dir=config.dirs.dataset_cache_dir,
+                        user_or_org_name=config.dirs.huggingface_org,
+                        num_sessions=10,
+                        split_method="predefined",
+                        test_session_eid=[],
+                        batch_size=config.training.train_batch_size,
+                        seed=config.seed
+                    )
+
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs)
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
     model = torch.load(model_path)['model']
 
     model.encoder.masker.mode = mask_mode
@@ -218,7 +229,8 @@ def co_smoothing_eval(
                         targets = torch.cat(targets_lst, 0),
                         neuron_regions=np.stack(neuron_regions_lst),
                         eval_mask=torch.cat(eval_mask_lst, 0),
-                        masking_mode = masking_mode
+                        masking_mode = masking_mode,
+                        num_neuron=batch['spikes_data'].shape[2]
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -295,7 +307,8 @@ def co_smoothing_eval(
                         targets = batch['target'],
                         neuron_regions=batch['neuron_regions'],
                         eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode
+                        masking_mode=masking_mode,
+                        num_neuron=batch['spikes_data'].shape[2]
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -382,7 +395,8 @@ def co_smoothing_eval(
                         targets = batch['target'],
                         neuron_regions=batch['neuron_regions'],
                         eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode
+                        masking_mode=masking_mode,
+                        num_neuron=batch['spikes_data'].shape[2]
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -487,7 +501,8 @@ def co_smoothing_eval(
                             targets = torch.cat(targets_lst, 0),
                             neuron_regions=np.stack(neuron_regions_lst),
                             eval_mask=torch.cat(eval_mask_lst, 0),
-                            masking_mode=masking_mode
+                            masking_mode=masking_mode,
+                            num_neuron=batch['spikes_data'].shape[2]
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
