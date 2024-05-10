@@ -91,15 +91,22 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
     return fig
 
 # metrics list, return different metrics results
-def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
+def metrics_list(gt, pred, metrics=["r2", "r2_behave", "mse", "mae", "acc"], device="cpu"):
     results = {}
     if "r2" in metrics:
         r2_list = []
         for i in range(gt.shape[0]):
-            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device)
-            r2_list.append(r2)
+            r2s = [r2_score(y_true=gt[i].T[k], y_pred=pred[i].T[k], device=device) for k in range(len(gt[i].T))]
+            r2_list.append(np.ma.masked_invalid(r2s).mean())
         r2 = np.mean(r2_list)
         results["r2"] = r2
+    if "r2_behave" in metrics:
+        r2_list = []
+        for i in range(gt.shape[0]):
+            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device) 
+            r2_list.append(r2)
+        r2 = np.mean(r2_list)
+        results["r2_behave"] = r2
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)
         results["mse"] = mse

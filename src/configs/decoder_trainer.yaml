@@ -17,8 +17,8 @@ training:
 
 model: 
   model_class: DECODER   # Any registered model class name. 
-  target: clf           # reg
-  output_size: 2       # 100 
+  target: reg           # clf
+  output_size: 100       # 2 
 
 data:
   dataset_class: decoding # Any registered dataset class name. 

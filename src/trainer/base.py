@@ -30,6 +30,8 @@ class Trainer():
 
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
+        elif self.config.method.model_kwargs.reg:
+            self.metric = 'r2_behave'
         else:
             self.metric = 'r2'
                 
@@ -199,12 +201,12 @@ class Trainer():
             preds = torch.nn.functional.softmax(preds, dim=1)
             
         if self.active_neurons is None and not self.stitching:
-            self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
+            self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:50].tolist()
 
         if self.config.method.model_kwargs.method_name == 'ssl':
             if not self.stitching:
-                results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
-                                    pred = preds.mean(0)[..., self.active_neurons].T, 
+                results = metrics_list(gt = gt[:,:,self.active_neurons].transpose(-1,0),
+                                    pred = preds[:,:,self.active_neurons].transpose(-1,0), 
                                     metrics=["r2"], 
                                     device=self.accelerator.device)
             else:
