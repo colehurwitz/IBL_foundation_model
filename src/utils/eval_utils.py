@@ -712,7 +712,7 @@ def behavior_decoding(**kwargs):
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
 
-    n_neurons = len(dataset['cluster_regions'][0])
+    n_neurons = len(train_dataset['cluster_regions'][0])
     max_space_length = n_neurons if config.model.model_class in ["NDT1", "iTransformer"] else config.data.max_space_length
 
     train_dataloader = make_loader(
