@@ -118,7 +118,7 @@ def _pad_spike_seq(
 
 
 
-def get_length_grouped_indices(lengths, batch_size, mega_batch_mult=None, generator=None):
+def get_length_grouped_indices(lengths, batch_size, shuffle=True, mega_batch_mult=None, generator=None):
     # Default for mega_batch_mult: 50 or the number to get 4 megabatches, whichever is smaller.
     if mega_batch_mult is None:
         mega_batch_mult = min(len(lengths) // (batch_size * 4), 50)
@@ -127,7 +127,10 @@ def get_length_grouped_indices(lengths, batch_size, mega_batch_mult=None, genera
             mega_batch_mult = 1
 
     # We need to use torch for the random part as a distributed sampler will set the random seed for torch.
-    indices = torch.arange(len(lengths))
+    if shuffle:
+        indices = torch.randperm(len(lengths), generator=generator)
+    else:
+        indices = torch.arange(len(lengths))
     megabatch_size = mega_batch_mult * batch_size
     megabatches = [indices[i : i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
     megabatches = [list(sorted(megabatch, key=lambda i: lengths[i], reverse=True)) for megabatch in megabatches]
@@ -186,6 +189,7 @@ class LengthGroupedSampler(Sampler):
         dataset: Dataset,
         batch_size: int,
         lengths: Optional[List[int]] = None,
+        shuffle: Optional[bool] = True,
         model_input_name: Optional[str] = None,
     ):
         self.dataset = dataset
@@ -199,12 +203,13 @@ class LengthGroupedSampler(Sampler):
                 )
             lengths = [len(feature[self.model_input_name]) for feature in dataset]
         self.lengths = lengths
+        self.shuffle = shuffle
 
     def __len__(self):
         return len(self.lengths)
 
     def __iter__(self):
-        indices = get_length_grouped_indices(self.lengths, self.batch_size)
+        indices = get_length_grouped_indices(self.lengths, self.batch_size, self.shuffle)
         return iter(indices)
 
 
