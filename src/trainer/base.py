@@ -31,7 +31,7 @@ class Trainer():
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
         elif self.config.method.model_kwargs.reg:
-            self.metric = 'r2_behave'
+            self.metric = 'rsquared'
         else:
             self.metric = 'r2'
                 
@@ -207,7 +207,7 @@ class Trainer():
             if not self.stitching:
                 results = metrics_list(gt = gt[:,:,self.active_neurons].transpose(-1,0),
                                     pred = preds[:,:,self.active_neurons].transpose(-1,0), 
-                                    metrics=["r2"], 
+                                    metrics=[self.metric], 
                                     device=self.accelerator.device)
             else:
                 results = {self.metric:0}

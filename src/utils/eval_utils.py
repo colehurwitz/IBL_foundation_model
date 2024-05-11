@@ -62,11 +62,12 @@ def load_model_data_local(**kwargs):
                         split_method="predefined",
                         test_session_eid=[],
                         batch_size=config.training.train_batch_size,
-                        seed=config.seed
+                        seed=seed,
+                        eid=eid
                     )
 
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
     model = torch.load(model_path)['model']
 
     model.encoder.masker.mode = mask_mode
@@ -78,6 +79,7 @@ def load_model_data_local(**kwargs):
     if 'causal' in mask_name:
         model.encoder.context_forward = 0
         print("(behave decoding) context forward: ", model.encoder.context_forward)
+    
     model = accelerator.prepare(model)
 
     # load the dataset
@@ -97,7 +99,7 @@ def load_model_data_local(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
-        shuffle=False
+        shuffle=False,
     )
 
     # check the shape of the dataset
@@ -181,15 +183,12 @@ def co_smoothing_eval(
         var_tasklist = ['block', 'choice', 'reward']
         var_behlist = []
 
-    for batch in test_dataloader:
-        break
-
     if mode == 'per_neuron':
         
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
         counter = 0
-        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):
+        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
             if counter > tot_num_neurons:
                 break
             gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
@@ -197,18 +196,19 @@ def co_smoothing_eval(
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    gt_spike_data = batch['spikes_data'].clone()
                     for i in range(n_jobs):
                         counter += 1
                         if counter <= tot_num_neurons:
-                            batch = move_batch_to_device(batch, accelerator.device)
                             mask_result = heldout_mask(
-                                batch['spikes_data'],
+                                batch['spikes_data'].clone(),
                                 mode='manual',
                                 heldout_idxs=np.array([n_i+i])
                             )
                             mask_spikes_lst.append(mask_result['spikes'])
                             eval_mask_lst.append(mask_result['eval_mask'])
-                            gt_spikes_lst.append(batch['spikes_data'])
+                            gt_spikes_lst.append(gt_spike_data)
                             time_attn_mask_lst.append(batch['time_attn_mask'])
                             space_attn_mask_lst.append(batch['space_attn_mask'])
                             spikes_timestamps_lst.append(batch['spikes_timestamps'])
@@ -219,6 +219,7 @@ def co_smoothing_eval(
                             break
 
                     masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
+                    model.encoder.mask = False
                     
                     outputs = model(
                         torch.cat(mask_spikes_lst, 0),
@@ -288,8 +289,9 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     batch = move_batch_to_device(batch, accelerator.device)
+                    gt_spike_data = batch['spikes_data'].clone()
                     mask_result = heldout_mask(
-                        batch['spikes_data'],
+                        batch['spikes_data'].clone(),
                         mode=mode,
                         heldout_idxs=hd,
                         target_regions=target_regions,
@@ -297,6 +299,7 @@ def co_smoothing_eval(
                     )                
                     
                     masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
+                    model.encoder.mask = False
                     
                     outputs = model(
                         mask_result['spikes'],
@@ -312,7 +315,7 @@ def co_smoothing_eval(
                     )
             outputs.preds = torch.exp(outputs.preds)
         
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = gt_spike_data.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
     
             target_neuron_idxs = np.arange(tot_num_neurons)
@@ -376,8 +379,9 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     batch = move_batch_to_device(batch, accelerator.device)
+                    gt_spike_data = batch['spikes_data'].clone()
                     mask_result = heldout_mask(
-                        batch['spikes_data'],
+                        batch['spikes_data'].clone(),
                         mode=mode,
                         heldout_idxs=hd,
                         target_regions=[region],
@@ -385,6 +389,7 @@ def co_smoothing_eval(
                     )              
 
                     masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+                    model.encoder.mask = False
                     
                     outputs = model(
                         mask_result['spikes'],
@@ -400,7 +405,7 @@ def co_smoothing_eval(
                     )
             outputs.preds = torch.exp(outputs.preds)
         
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = gt_spike_data.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
     
             target_neuron_idxs = mask_result['heldout_idxs']
@@ -467,11 +472,12 @@ def co_smoothing_eval(
                 model.eval()
                 with torch.no_grad():
                     for batch in test_dataloader:
+                        batch = move_batch_to_device(batch, accelerator.device)
+                        gt_spike_data = batch['spikes_data'].clone()
                         for i in range(n_jobs):
                             if hd_idx+i < len(target_neuron_idxs):
-                                batch = move_batch_to_device(batch, accelerator.device)
                                 mask_result = heldout_mask(
-                                    batch['spikes_data'],
+                                    batch['spikes_data'].clone(),
                                     mode=mode,
                                     heldout_idxs=np.array([hd_idx+i]).flatten(),
                                     target_regions=[region],
@@ -480,7 +486,7 @@ def co_smoothing_eval(
                                 mask_spikes_lst.append(mask_result['spikes'])
                                 eval_mask_lst.append(mask_result['eval_mask'])
                                 heldout_idxs_lst.append(mask_result['heldout_idxs'])
-                                gt_spikes_lst.append(batch['spikes_data'])
+                                gt_spikes_lst.append(gt_spike_data)
                                 time_attn_mask_lst.append(batch['time_attn_mask'])
                                 space_attn_mask_lst.append(batch['space_attn_mask'])
                                 spikes_timestamps_lst.append(batch['spikes_timestamps'])
@@ -491,6 +497,7 @@ def co_smoothing_eval(
                                 break
 
                         masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
+                        model.encoder.mask = False
                         
                         outputs = model(
                             torch.cat(mask_spikes_lst, 0),
@@ -807,6 +814,9 @@ def behavior_decoding(**kwargs):
     with torch.no_grad():
         for batch in test_dataloader:
             batch = move_batch_to_device(batch, accelerator.device)
+            
+            model.encoder.mask = False
+            
             outputs = model(
                 batch['spikes_data'],
                 time_attn_mask=batch['time_attn_mask'],
@@ -1046,6 +1056,7 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
         ax = axes[ci]
         psth_xy = compute_all_psth(X, y, var_name2idx[var])
         psth_pred_xy = compute_all_psth(X, y_pred, var_name2idx[var])
+        
         for _i, _x in enumerate(psth_xy.keys()):
             psth = psth_xy[_x]
             psth_pred = psth_pred_xy[_x]
