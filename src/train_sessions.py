@@ -128,7 +128,8 @@ trainer = make_trainer(
     train_dataloader=train_dataloader,
     eval_dataloader=val_dataloader,
     optimizer=optimizer,
-    **trainer_kwargs
+    **trainer_kwargs,
+    **meta_data
 )
 
 # train loop

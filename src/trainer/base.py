@@ -27,6 +27,7 @@ class Trainer():
         self.lr_scheduler = kwargs.get("lr_scheduler", None)
         self.config = kwargs.get("config", None)
         self.stitching = kwargs.get("stitching", None)
+        self.num_neurons = kwargs.get("num_neurons", None)
 
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
@@ -35,7 +36,7 @@ class Trainer():
         else:
             self.metric = 'r2'
                 
-        self.active_neurons = None
+        self.session_active_neurons = []
 
         self.masking_ratio = model.encoder.masker.ratio
         self.masking_mode = model.encoder.masker.mode
@@ -68,20 +69,24 @@ class Trainer():
                     self.save_model(name="best", epoch=epoch)
                     if self.config.method.model_kwargs.method_name == 'ssl':
                         gt_pred_fig = self.plot_epoch(
-                            gt=eval_epoch_results['eval_gt'], 
-                            preds=eval_epoch_results['eval_preds'], epoch=epoch
+                            gt=eval_epoch_results['eval_gt'][0], 
+                            preds=eval_epoch_results['eval_preds'][0], epoch=epoch,
+                            active_neurons=self.session_active_neurons[0][:5]
                         )
-                        if self.config.wandb.use and not self.stitching:
+
+                        if self.config.wandb.use:
                             wandb.log({"best_epoch": epoch,
                                     "best_gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
                                     "best_r2_fig": wandb.Image(gt_pred_fig['plot_r2'])})
-                        elif not self.stitching:
+
+                        else:
                             gt_pred_fig['plot_gt_pred'].savefig(
                                 os.path.join(self.log_dir, f"best_gt_pred_fig_{epoch}.png")
                             )
                             gt_pred_fig['plot_r2'].savefig(
                                 os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png")
                             )
+
                 print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']} {self.metric}: {eval_epoch_results[f'eval_trial_avg_{self.metric}']}")
 
             # save model by epoch
@@ -91,17 +96,19 @@ class Trainer():
             # plot epoch
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
                 if self.config.method.model_kwargs.method_name == 'ssl':
+
                     gt_pred_fig = self.plot_epoch(
-                        gt=eval_epoch_results['eval_gt'], 
-                        preds=eval_epoch_results['eval_preds'], 
-                        epoch=epoch
+                        gt=eval_epoch_results['eval_gt'][0], 
+                        preds=eval_epoch_results['eval_preds'][0], 
+                        epoch=epoch,
+                        active_neurons=self.session_active_neurons[0][:5]
                     )
-                    if self.config.wandb.use and not self.stitching:
+                    if self.config.wandb.use:
                         wandb.log({
                             "gt_pred_fig": wandb.Image(gt_pred_fig['plot_gt_pred']),
                             "r2_fig": wandb.Image(gt_pred_fig['plot_r2'])
                         })
-                    elif not self.stitching:
+                    else:
                         gt_pred_fig['plot_gt_pred'].savefig(
                             os.path.join(self.log_dir, f"gt_pred_fig_{epoch}.png")
                         )
@@ -170,6 +177,12 @@ class Trainer():
         self.model.eval()
         eval_loss = 0.
         eval_examples = 0
+        session_results = {}
+        for num_neuron in self.num_neurons:
+            session_results[num_neuron] = {
+                "gt": [],
+                "preds": []
+            }
         if self.eval_dataloader:
             gt, preds = [], []
             with torch.no_grad():  
@@ -188,64 +201,63 @@ class Trainer():
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
-                    
-                    gt.append(outputs.targets.clone())
-                    preds.append(outputs.preds.clone())
-            if not self.stitching:
-                gt = torch.cat(gt, dim=0)
-                preds = torch.cat(preds, dim=0)
-            
-        if self.config.method.model_kwargs.loss == "poisson_nll" and not self.stitching:
-            preds = torch.exp(preds)
-        elif self.config.method.model_kwargs.loss == "cross_entropy" and not self.stitching:
-            preds = torch.nn.functional.softmax(preds, dim=1)
-            
-        if self.active_neurons is None and not self.stitching:
-            self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:50].tolist()
+                    num_neuron = batch['spikes_data'].shape[2]
+                    session_results[num_neuron]["gt"].append(outputs.targets.clone())
+                    session_results[num_neuron]["preds"].append(outputs.preds.clone())
+            results_list = []
+            for idx, num_neuron in enumerate(self.num_neurons):
+                _gt = torch.cat(session_results[num_neuron]["gt"], dim=0)
+                _preds = torch.cat(session_results[num_neuron]["preds"], dim=0)
 
-        if self.config.method.model_kwargs.method_name == 'ssl':
-            if not self.stitching:
-                results = metrics_list(gt = gt[:,:,self.active_neurons].transpose(-1,0),
-                                    pred = preds[:,:,self.active_neurons].transpose(-1,0), 
-                                    metrics=["r2"], 
-                                    device=self.accelerator.device)
-            else:
-                results = {self.metric:0}
-        elif self.config.method.model_kwargs.method_name == 'sl':
-            if self.config.method.model_kwargs.clf:
-                results = metrics_list(gt = gt.argmax(1),
-                                       pred = preds.argmax(1), 
-                                       metrics=[self.metric], 
-                                       device=self.accelerator.device)
-            elif self.config.method.model_kwargs.reg:
-                results = metrics_list(gt = gt,
-                                       pred = preds,
-                                       metrics=[self.metric],
-                                       device=self.accelerator.device)
+                if self.config.method.model_kwargs.loss == "poisson_nll":
+                    _preds = torch.exp(_preds)
+                elif self.config.method.model_kwargs.loss == "cross_entropy" :
+                    _preds = torch.nn.functional.softmax(_preds, dim=1)
+                gt.append(_gt)
+                preds.append(_preds)
+
+                if len(self.session_active_neurons) < len(self.num_neurons):
+                    active_neurons = np.argsort(gt[idx].cpu().numpy().sum((0,1)))[::-1][:50].tolist()
+                    self.session_active_neurons.append(active_neurons)
+                if self.config.method.model_kwargs.method_name == 'ssl':
+                    results = metrics_list(gt = gt[idx][:,:,self.session_active_neurons[idx]].transpose(-1,0),
+                                        pred = preds[idx][:,:,self.session_active_neurons[idx]].transpose(-1,0), 
+                                        metrics=["r2"], 
+                                        device=self.accelerator.device)
+                    
+                elif self.config.method.model_kwargs.method_name == 'sl':
+                    if self.config.method.model_kwargs.clf:
+                        results = metrics_list(gt = gt[idx].argmax(1),
+                                            pred = preds[idx].argmax(1), 
+                                            metrics=[self.metric], 
+                                            device=self.accelerator.device)
+                elif self.config.method.model_kwargs.reg:
+                    results = metrics_list(gt = gt[idx],
+                                        pred = preds[idx],
+                                        metrics=[self.metric],
+                                        device=self.accelerator.device)
+                results_list.append(results[self.metric])
 
         return {
             "eval_loss": eval_loss/eval_examples,
-            f"eval_trial_avg_{self.metric}": results[self.metric],
+            f"eval_trial_avg_{self.metric}": np.mean(results_list),
             "eval_gt": gt,
             "eval_preds": preds,
         }
     
-    def plot_epoch(self, gt, preds, epoch):
-        if self.stitching:
-            return {}
-        else:
-            gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
-                        pred = preds.mean(0).T.detach().cpu().numpy(),
-                        epoch = epoch)
-            
-            r2_fig = plot_neurons_r2(gt = gt.mean(0),
-                    pred = preds.mean(0),
-                    neuron_idx=self.active_neurons,
+    def plot_epoch(self, gt, preds, epoch, active_neurons):
+        gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
+                    pred = preds.mean(0).T.detach().cpu().numpy(),
                     epoch = epoch)
-            return {
-                "plot_gt_pred": gt_pred_fig,
-                "plot_r2": r2_fig
-            }
+        
+        r2_fig = plot_neurons_r2(gt = gt.mean(0),
+                pred = preds.mean(0),
+                neuron_idx=active_neurons,
+                epoch = epoch)
+        return {
+            "plot_gt_pred": gt_pred_fig,
+            "plot_r2": r2_fig
+        }
         
 
     def save_model(self, name="last", epoch=0):
