@@ -1,6 +1,5 @@
 import torch
-from loader.base import BaseDataset, LengthStitchGroupedSampler
-from transformers.trainer_pt_utils import LengthGroupedSampler
+from loader.base import BaseDataset, LengthStitchGroupedSampler, LengthGroupedSampler
 
 def make_loader(dataset, 
                  batch_size, 
@@ -17,6 +16,7 @@ def make_loader(dataset,
                  dataset_name = "ibl",
                  stitching = False,
                  shuffle = True):
+    
     dataset = BaseDataset(dataset=dataset, 
                           target=target,
                           pad_value=pad_value,
@@ -48,6 +48,8 @@ def make_loader(dataset,
         batch_size=batch_size,
         # shuffle=shuffle
     )
+
+    
 
     # the original data loader - each batch can contain different neuron lengths
     # dataloader = torch.utils.data.DataLoader(dataset,
