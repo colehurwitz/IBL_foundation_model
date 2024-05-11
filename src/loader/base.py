@@ -116,7 +116,34 @@ def _pad_spike_seq(
             seq = _pad_seq_left_to_n(seq, max_length, pad_value)
     return seq, pad_length
 
-def get_length_grouped_indices(lengths, batch_size, generator=None):
+
+
+def get_length_grouped_indices(lengths, batch_size, mega_batch_mult=None, generator=None):
+    # Default for mega_batch_mult: 50 or the number to get 4 megabatches, whichever is smaller.
+    if mega_batch_mult is None:
+        mega_batch_mult = min(len(lengths) // (batch_size * 4), 50)
+        # Just in case, for tiny datasets
+        if mega_batch_mult == 0:
+            mega_batch_mult = 1
+
+    # We need to use torch for the random part as a distributed sampler will set the random seed for torch.
+    indices = torch.arange(len(lengths))
+    megabatch_size = mega_batch_mult * batch_size
+    megabatches = [indices[i : i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
+    megabatches = [list(sorted(megabatch, key=lambda i: lengths[i], reverse=True)) for megabatch in megabatches]
+
+    # The rest is to get the biggest batch first.
+    # Since each megabatch is sorted by descending length, the longest element is the first
+    megabatch_maximums = [lengths[megabatch[0]] for megabatch in megabatches]
+    max_idx = torch.argmax(torch.tensor(megabatch_maximums)).item()
+    # Switch to put the longest element in first position
+    megabatches[0][0], megabatches[max_idx][0] = megabatches[max_idx][0], megabatches[0][0]
+
+    return sum(megabatches, [])
+
+
+
+def get_length_grouped_indices_stitched(lengths, batch_size, generator=None):
     # sort indices by length
     sorted_indices = np.argsort(lengths)
     # random indices in same length group
@@ -146,6 +173,39 @@ def get_length_grouped_indices(lengths, batch_size, generator=None):
     batch_group_indicies = sum(batch_group_indicies, [])
     batch_group_indicies = [int(i) for i in batch_group_indicies]
     return batch_group_indicies
+
+
+class LengthGroupedSampler(Sampler):
+    r"""
+    Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
+    keeping a bit of randomness.
+    """
+
+    def __init__(
+        self,
+        dataset: Dataset,
+        batch_size: int,
+        lengths: Optional[List[int]] = None,
+        model_input_name: Optional[str] = None,
+    ):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.model_input_name = model_input_name if model_input_name is not None else "input_ids"
+        if lengths is None:
+            if not isinstance(dataset[0], dict) or self.model_input_name not in dataset[0]:
+                raise ValueError(
+                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
+                    f"'{self.model_input_name}' key."
+                )
+            lengths = [len(feature[self.model_input_name]) for feature in dataset]
+        self.lengths = lengths
+
+    def __len__(self):
+        return len(self.lengths)
+
+    def __iter__(self):
+        indices = get_length_grouped_indices(self.lengths, self.batch_size)
+        return iter(indices)
 
 
 
@@ -178,8 +238,9 @@ class LengthStitchGroupedSampler(Sampler):
         return len(self.lengths)
 
     def __iter__(self):
-        indices = get_length_grouped_indices(self.lengths, self.batch_size)
+        indices = get_length_grouped_indices_stitched(self.lengths, self.batch_size)
         return iter(indices)
+
 
 
 class BaseDataset(torch.utils.data.Dataset):
@@ -333,6 +394,7 @@ class BaseDataset(torch.utils.data.Dataset):
         # add attention mask
         time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
+        
         return {
             "spikes_data": binned_spikes_data,
             "time_attn_mask": time_attn_mask,
