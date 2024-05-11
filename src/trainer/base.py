@@ -32,7 +32,7 @@ class Trainer():
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
         elif self.config.method.model_kwargs.reg:
-            self.metric = 'r2_behave'
+            self.metric = 'rsquared'
         else:
             self.metric = 'r2'
                 

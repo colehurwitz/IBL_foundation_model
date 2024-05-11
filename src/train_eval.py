@@ -209,6 +209,8 @@ if args.train:
 print('Start model evaluation.')
 print('=======================')
 
+print(config.seed)
+
 mask_name = f"mask_{args.mask_mode}"
 if args.model_name == "NDT2":
     model_name = "STPatch"
@@ -243,9 +245,10 @@ configs = {
     'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
     'dataset_path': None, 
     'test_size': 0.2,
-    'seed': 42,
+    'seed': config.seed,
     'mask_name': mask_name,
-    'eid': eid
+    'eid': eid,
+    'stitching': False 
 }  
 
 
@@ -360,7 +363,7 @@ if choice_decoding:
         'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
         'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/choice_decoding',
         'test_size': 0.2,
-        'seed': 42,
+        'seed': config.seed,
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
@@ -382,7 +385,7 @@ if continuous_decoding:
         'dataset_path': None, 
         'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/continuous_decoding',
         'test_size': 0.2,
-        'seed': 42,
+        'seed': config.seed,
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
