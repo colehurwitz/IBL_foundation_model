@@ -689,8 +689,8 @@ def bin_behaviors(
 ):
 
     behaviors = [
-        'wheel-velocity', 'wheel-speed', 'whisker-motion-energy', 'pupil-diameter', 
-        # 'lightning-pose-left-pupil-diameter',
+        'wheel-velocity', 'wheel-speed', 'whisker-motion-energy', 
+        # 'pupil-diameter', # 'lightning-pose-left-pupil-diameter',
     ]
 
     behave_dict, mask_dict = {}, {}
@@ -715,12 +715,11 @@ def bin_behaviors(
         
     for beh in behaviors:
         if beh == 'whisker-motion-energy':
-            target_dict = load_target_behavior(one, eid, beh)
-        elif beh == 'pupil-diameter':
-
+            target_dict = load_target_behavior(one, eid, 'left-whisker-motion-energy')
+            if target_dict['skip']:
+                target_dict = load_target_behavior(one, eid, 'right-whisker-motion-energy')                    
         else:
             target_dict = load_target_behavior(one, eid, beh)
-            
         target_times, target_vals = target_dict['times'], target_dict['values']
         target_times_list, target_vals_list, target_mask, skip_reasons = get_behavior_per_interval(
             target_times, target_vals, intervals=intervals, 
@@ -795,7 +794,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
     beh_names = ['choice', 'reward', 'block', 
-                 'wheel-speed', 'whisker-motion-energy', 'pupil-diameter', 
+                 'wheel-speed', 'whisker-motion-energy', #'pupil-diameter', 
                 ]
 
     target_mask = [1] * len(binned_spikes)
