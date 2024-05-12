@@ -43,6 +43,7 @@ def load_model_data_local(**kwargs):
     mask_mode = mask_name.split("_")[1]
     eid = kwargs['eid']
     stitching = kwargs['stitching']
+    num_sessions = kwargs['num_sessions']
 
     # set seed
     set_seed(seed)
@@ -56,15 +57,16 @@ def load_model_data_local(**kwargs):
     accelerator = Accelerator()
 
     _,_,_, meta_data = load_ibl_dataset(
-                        cache_dir=config.dirs.dataset_cache_dir,
-                        user_or_org_name=config.dirs.huggingface_org,
-                        num_sessions=10,
-                        split_method="predefined",
-                        test_session_eid=[],
-                        batch_size=config.training.train_batch_size,
-                        seed=seed,
-                        eid=eid
-                    )
+                            cache_dir=config.dirs.dataset_cache_dir,
+                            user_or_org_name=config.dirs.huggingface_org,
+                            num_sessions=num_sessions,
+                            split_method="predefined",
+                            test_session_eid=[],
+                            batch_size=config.training.train_batch_size,
+                            seed=seed,
+                            eid=eid
+                        )
+    print(meta_data)
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
@@ -683,6 +685,7 @@ def behavior_decoding(**kwargs):
     mask_ratio = kwargs['mask_ratio']
     mask_mode = mask_name.split("_")[1]
     eid = kwargs['eid']
+    num_sessions = kwargs['num_sessions']
 
     # set seed
     set_seed(seed)
@@ -705,8 +708,20 @@ def behavior_decoding(**kwargs):
 
     accelerator = Accelerator()
 
+    _,_,_, meta_data = load_ibl_dataset(
+                        cache_dir=config.dirs.dataset_cache_dir,
+                        user_or_org_name=config.dirs.huggingface_org,
+                        num_sessions=num_sessions,
+                        split_method="predefined",
+                        test_session_eid=[],
+                        batch_size=config.training.train_batch_size,
+                        seed=seed,
+                        eid=eid
+                    )
+    print(meta_data)
+
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs)
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
 
     if not kwargs['from_scratch']:
         pretrained_model = torch.load(model_path)['model']
@@ -799,7 +814,8 @@ def behavior_decoding(**kwargs):
         eval_dataloader=val_dataloader,
         test_dataloader=test_dataloader,
         optimizer=optimizer,
-        **trainer_kwargs
+        **trainer_kwargs,
+        **meta_data
     )
     
     trainer_.train()

@@ -689,14 +689,8 @@ def bin_behaviors(
 ):
 
     behaviors = [
-        'wheel-position', 'wheel-velocity', 'wheel-speed',
-        'left-whisker-motion-energy', 'right-whisker-motion-energy',
-        'left-pupil-diameter', 'right-pupil-diameter',
-        #'lightning-pose-left-pupil-diameter',
-        # These behaviors are of bad quality - skip them for now
-        # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
-        # 'right-camera-left-paw-speed', 'right-camera-right-paw-speed',
-        # 'left-nose-speed', 'right-nose-speed'
+        'wheel-velocity', 'wheel-speed', 'whisker-motion-energy', 'pupil-diameter', 
+        # 'lightning-pose-left-pupil-diameter',
     ]
 
     behave_dict, mask_dict = {}, {}
@@ -720,7 +714,13 @@ def bin_behaviors(
         behave_mask = np.ones(len(intervals)) 
         
     for beh in behaviors:
-        target_dict = load_target_behavior(one, eid, beh)
+        if beh == 'whisker-motion-energy':
+            target_dict = load_target_behavior(one, eid, beh)
+        elif beh == 'pupil-diameter':
+
+        else:
+            target_dict = load_target_behavior(one, eid, beh)
+            
         target_times, target_vals = target_dict['times'], target_dict['values']
         target_times_list, target_vals_list, target_mask, skip_reasons = get_behavior_per_interval(
             target_times, target_vals, intervals=intervals, 
@@ -795,12 +795,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
     beh_names = ['choice', 'reward', 'block', 
-                 'wheel-speed',
-                'left-whisker-motion-energy', 
-                #'right-whisker-motion-energy',
-                'left-pupil-diameter', 
-                #'right-pupil-diameter',
-                #'lightning-pose-left-pupil-diameter', 
+                 'wheel-speed', 'whisker-motion-energy', 'pupil-diameter', 
                 ]
 
     target_mask = [1] * len(binned_spikes)

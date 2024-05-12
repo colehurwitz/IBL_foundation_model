@@ -60,7 +60,7 @@ encoder:
     max_spikes: 0         # max number of spikes in a single time bin
 
     tokenize_binary_mask: false
-    use_prompt: true
+    use_prompt: false
 
     stack:
       active: false        # wether to stack consecutive timesteps

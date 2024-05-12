@@ -1,5 +1,6 @@
 import argparse
 from datasets import load_dataset, load_from_disk, concatenate_datasets
+from utils.dataset_utils import load_ibl_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
@@ -64,6 +65,17 @@ if config.wandb.use:
 
 # set seed for reproducibility
 set_seed(config.seed)
+
+_, _, _, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+                           config.dirs.huggingface_org,
+                           eid=eid,
+                           num_sessions=1,
+                           split_method="predefined",
+                           test_session_eid=[],
+                           batch_size=config.training.train_batch_size,
+                           seed=config.seed)
+
+print(meta_data)
 
 if args.train:
     print('Start model training.')
@@ -164,7 +176,7 @@ if args.train:
     # load model
     NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs)
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
     
     model.encoder.masker.mode = args.mask_mode
     model.encoder.masker.ratio = args.mask_ratio
@@ -198,7 +210,8 @@ if args.train:
         eval_dataloader=val_dataloader,
         test_dataloader=test_dataloader,
         optimizer=optimizer,
-        **trainer_kwargs
+        **trainer_kwargs,
+        **meta_data
     )
     
     # train loop
@@ -248,7 +261,8 @@ configs = {
     'seed': config.seed,
     'mask_name': mask_name,
     'eid': eid,
-    'stitching': False 
+    'stitching': False,
+    'num_sessions': 1 
 }  
 
 
@@ -369,7 +383,8 @@ if choice_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': eid
+        'eid': eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -391,7 +406,8 @@ if continuous_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': eid
+        'eid': eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)
