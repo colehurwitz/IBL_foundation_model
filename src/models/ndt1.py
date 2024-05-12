@@ -72,12 +72,12 @@ def apply_rotary_pos_emb(q, k, pos_ids, cos, sin, unsqueeze_dim=1):
 # Embed and stack
 class NeuralEmbeddingLayer(nn.Module):
 
-    def __init__(self, hidden_size, config: DictConfig):
+    def __init__(self, hidden_size, n_channels, config: DictConfig):
         super().__init__()
 
         self.adapt = config.adapt
         self.bias = config.bias
-        self.n_channels = config.n_channels
+        self.n_channels = n_channels
         self.tokenize_binary_mask = config.tokenize_binary_mask
         if self.tokenize_binary_mask:
             self.n_channels *= 2
@@ -427,7 +427,10 @@ class NeuralEncoder(nn.Module):
         self.use_prompt = config.embedder.use_prompt
 
         # Embedding layer
-        self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder)
+        if config.stitching:
+            self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder.n_channels, config.embedder)
+        else:
+            self.embedder = NeuralEmbeddingLayer(self.hidden_size, kwargs['num_neurons'][0], config.embedder)
 
         # Transformer
         self.layers = nn.ModuleList([NeuralEncoderLayer(idx, config.embedder.max_F, config.transformer) for idx in range(self.n_layers)])
@@ -565,11 +568,13 @@ class NDT1(nn.Module):
             self.n_channels = config.encoder.embedder.n_channels
             self.hidden_size = config.encoder.transformer.hidden_size
             self.stitch_decoder = StitchDecoder(kwargs['num_neurons'], self.hidden_size)
+        else:
+            self.n_channels = kwargs['num_neurons'][0]
 
         # Build decoder
         if self.method == "ssl":
             # assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
-            n_outputs = config.encoder.embedder.n_channels
+            n_outputs = self.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]
         elif self.method == "sl":
@@ -663,7 +668,7 @@ class NDT1(nn.Module):
 
         # Encode neural data
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask,num_neuron)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron)
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 

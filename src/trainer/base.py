@@ -231,11 +231,11 @@ class Trainer():
                                             pred = preds[idx].argmax(1), 
                                             metrics=[self.metric], 
                                             device=self.accelerator.device)
-                elif self.config.method.model_kwargs.reg:
-                    results = metrics_list(gt = gt[idx],
-                                        pred = preds[idx],
-                                        metrics=[self.metric],
-                                        device=self.accelerator.device)
+                    elif self.config.method.model_kwargs.reg:
+                        results = metrics_list(gt = gt[idx],
+                                            pred = preds[idx],
+                                            metrics=[self.metric],
+                                            device=self.accelerator.device)
                 results_list.append(results[self.metric])
 
         return {
