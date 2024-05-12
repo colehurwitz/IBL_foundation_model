@@ -1,5 +1,6 @@
 import argparse
 from datasets import load_dataset, load_from_disk, concatenate_datasets
+from utils.dataset_utils import load_ibl_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
@@ -26,6 +27,8 @@ ap.add_argument("--tokenize_binary_mask", action='store_true')
 ap.add_argument("--prompting", action='store_true')
 ap.add_argument("--train", action='store_true')
 args = ap.parse_args()
+
+base_path = '/expanse/lustre/scratch/yzhang39/temp_project'
 
 
 model_acroynm = args.model_name.lower()
@@ -65,6 +68,17 @@ if config.wandb.use:
 
 # set seed for reproducibility
 set_seed(config.seed)
+
+_, _, _, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+                           config.dirs.huggingface_org,
+                           eid=args.eid,
+                           num_sessions=1,
+                           split_method="predefined",
+                           test_session_eid=[],
+                           batch_size=config.training.train_batch_size,
+                           seed=config.seed)
+
+print(meta_data)
 
 if args.train:
     print('Start model training.')
@@ -169,7 +183,7 @@ if args.train:
     # load model
     NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs)
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
     
     model.encoder.masker.mode = args.mask_mode
     model.encoder.masker.ratio = args.mask_ratio
@@ -203,7 +217,8 @@ if args.train:
         eval_dataloader=val_dataloader,
         test_dataloader=test_dataloader,
         optimizer=optimizer,
-        **trainer_kwargs
+        **trainer_kwargs,
+        **meta_data
     )
     
     # train loop
@@ -231,8 +246,6 @@ continuous_decoding = True
 
 print(mask_name)
 
-base_path = '/mnt/home/yzhang1/ceph'
-
 if args.mask_mode == 'causal':
     model_config = f'src/configs/{model_acroynm}_causal_eval.yaml'
 elif args.tokenize_binary_mask:
@@ -251,7 +264,9 @@ configs = {
     'test_size': 0.2,
     'seed': 42,
     'mask_name': mask_name,
-    'eid': args.eid
+    'eid': args.eid,
+    'stitching': False,
+    'num_sessions': 1 
 }  
 
 
@@ -372,7 +387,8 @@ if choice_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': args.eid
+        'eid': args.eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -390,11 +406,12 @@ if continuous_decoding:
         'test_size': 0.2,
         'seed': 42,
         'mask_name': mask_name,
-        'metric': 'r2',
+        'metric': 'rsquared',
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,
-        'eid': args.eid
+        'eid': args.eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)

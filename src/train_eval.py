@@ -402,7 +402,7 @@ if continuous_decoding:
         'test_size': 0.2,
         'seed': config.seed,
         'mask_name': mask_name,
-        'metric': 'r2',
+        'metric': 'rsquared',
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': args.mask_ratio,

@@ -28,7 +28,9 @@ configs = {
     'test_size': 0.2,
     'seed': 42,
     'mask_name': mask_name,
-    'eid': eid
+    'eid': eid,
+    'stitching': False,
+    'num_sessions': 1 
 }  
 
 # init wandb
@@ -152,7 +154,8 @@ if choice_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': 0.1,
-        'eid': eid
+        'eid': eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -174,7 +177,8 @@ if continuous_decoding:
         'from_scratch': False,
         'freeze_encoder': True,
         'mask_ratio': 0.1,
-        'eid': eid
+        'eid': eid,
+        'num_sessions': 1 
     }  
     results = behavior_decoding(**configs)
     print(results)

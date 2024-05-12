@@ -15,9 +15,9 @@ wandb:
 
 # Logging directories
 dirs:
-  checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: /mnt/home/yzhang1/ceph/results  # save tensorboard logs
-  dataset_cache_dir: /mnt/home/yzhang1/ceph/checkpoints/datasets_cache  # save dataset cache
+  checkpoint_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: /expanse/lustre/scratch/yzhang39/temp_project/results  # save tensorboard logs
+  dataset_cache_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
