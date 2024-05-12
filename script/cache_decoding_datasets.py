@@ -27,7 +27,8 @@ np.random.seed(42)
 
 one = ONE(
     base_url='https://openalyx.internationalbrainlab.org', 
-    #password='international', silent=True
+    password='international', silent=True,
+    cache_dir = '/expanse/lustre/scratch/yzhang39/temp_project/'
 )
 
 freeze_file = Path(path_root)/'data/2023_12_bwm_release.csv'
@@ -39,7 +40,7 @@ subjects = np.unique(bwm_df.subject)
 selected_subs = np.random.choice(subjects, n_sub, replace=False)
 by_subject = bwm_df.groupby('subject')
 include_eids = np.array([bwm_df.eid[by_subject.groups[sub][0]] for sub in selected_subs])
-include_eids = np.insert(include_eids, -1, '671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
+# include_eids = np.insert(include_eids, -1, '671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
 
 # setup
 params = {
@@ -58,7 +59,7 @@ for eid_idx, eid in enumerate(include_eids):
         regions, beryl_reg = list_brain_regions(neural_dict, **params)
         region_cluster_ids = select_brain_regions(neural_dict, beryl_reg, regions, **params)
         binned_spikes, clusters_used_in_bins = bin_spiking_data(
-            region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=2, **params
+            region_cluster_ids, neural_dict, trials_df=trials_data['trials_df'], n_workers=10, **params
         )
         binned_behaviors, behavior_masks = bin_behaviors(
             one, eid, trials_df=trials_data['trials_df'], allow_nans=True, **params
