@@ -17,11 +17,10 @@ CONFIG:
 # TO DO: ADD TIME STRIDE
 
 class Patcher(nn.Module):
-    def __init__(self, max_space_F, max_time_F, n_cls_tokens, embed_region, config: DictConfig):
+    def __init__(self, max_space_F, max_time_F, embed_region, config: DictConfig):
         super().__init__()
         self.max_space_F = max_space_F
         self.max_time_F = max_time_F
-        self.n_cls_tokens = n_cls_tokens
         self.pad_value = -1.
         self.time_stride = config.time_stride
         self.embed_region = embed_region
@@ -64,10 +63,10 @@ class Patcher(nn.Module):
         # Prepare space and time stamps after accounting for [cls] tokens
         # Majority vote the brain region for each patch
         if self.embed_region:
-            regionstamps = torch.zeros((self.n_cls_tokens+self.n_space_patches))
+            regionstamps = torch.zeros(self.n_space_patches)
             for s in range(self.n_space_patches):
                 if len(region_indx[0, s*self.max_space_F:(s+1)*self.max_space_F]) != 0:
-                    regionstamps[self.n_cls_tokens+s] = torch.mode(
+                    regionstamps[s] = torch.mode(
                         region_indx[0, s*self.max_space_F:(s+1)*self.max_space_F]
                     ).values
             regionstamps = regionstamps.to(torch.int64)[None,None,:]
@@ -75,26 +74,24 @@ class Patcher(nn.Module):
         else:
             regionstamps = None
         
-        spacestamps = torch.arange(self.n_space_patches+self.n_cls_tokens).to(torch.int64)[None,None,:]
+        spacestamps = torch.arange(self.n_space_patches).to(torch.int64)[None,None,:]
         spacestamps = spacestamps.expand(B, self.n_time_patches,-1).to(spikes.device).flatten(1)
         
         timestamps = torch.arange(self.n_time_patches).to(torch.int64)[None,:,None]
-        timestamps = timestamps.expand(B, -1, self.n_space_patches+self.n_cls_tokens).to(spikes.device).flatten(1)
+        timestamps = timestamps.expand(B, -1, self.n_space_patches).to(spikes.device).flatten(1)
         
         # Prepare space and time masks after accounting for [cls] tokens
-        _time_attn_mask = time_attn_mask[:,:,None].expand(-1,-1,self.n_space_patches+self.n_cls_tokens) 
-        time_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches+self.n_cls_tokens))
-        time_attn_mask[:,:,:self.n_cls_tokens] = 1
+        _time_attn_mask = time_attn_mask[:,:,None].expand(-1,-1,self.n_space_patches) 
+        time_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches))
         for t in range(self.n_time_patches):
             if (_time_attn_mask[:,t*self.max_time_F:(t+1)*self.max_time_F]==1).sum() > 0:
-                time_attn_mask[:,t,self.n_cls_tokens:] = 1
+                time_attn_mask[:,t,:] = 1
 
         _space_attn_mask = space_attn_mask[:,None,:].expand(-1,self.n_time_patches,-1) 
-        space_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches+self.n_cls_tokens))   
-        space_attn_mask[:,:,:self.n_cls_tokens] = 1
+        space_attn_mask = torch.zeros((B, self.n_time_patches, self.n_space_patches))   
         for s in range(self.n_space_patches):
             if (_space_attn_mask[:,:,s*self.max_space_F:(s+1)*self.max_space_F]==1).sum() > 0:
-                space_attn_mask[:,:,self.n_cls_tokens+s] = 1
+                space_attn_mask[:,:,s] = 1
 
         time_attn_mask = time_attn_mask.to(torch.int64).to(spikes.device).flatten(1)
         space_attn_mask = space_attn_mask.to(torch.int64).to(spikes.device).flatten(1)

@@ -43,8 +43,6 @@ class Trainer():
         self.masking_schemes = ['neuron', 'causal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
-        if self.config.model.model_class == 'STPatch':
-            self.masking_schemes += ['random_token']
 
         if self.masking_mode in ["combined", "all"]:
             print("(train) switch between masking modes: ", self.masking_schemes)
@@ -170,7 +168,7 @@ class Trainer():
             neuron_regions=batch['neuron_regions'],
             masking_mode=masking_mode, 
             spike_augmentation=self.config.data.spike_augmentation,
-            num_neuron=batch['spikes_data'].shape[2]
+            num_neuron=batch['spikes_data'].shape[2] 
         ) 
     
     def eval_epoch(self):
@@ -201,7 +199,7 @@ class Trainer():
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
-                    num_neuron = batch['spikes_data'].shape[2]
+                    # num_neuron = batch['spikes_data'].shape[2]
                     session_results[num_neuron]["gt"].append(outputs.targets.clone())
                     session_results[num_neuron]["preds"].append(outputs.preds.clone())
             results_list = []

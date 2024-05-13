@@ -1,5 +1,4 @@
 import os
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 import numpy as np
 from math import ceil, floor
 from dataclasses import dataclass
@@ -78,11 +77,6 @@ class NeuralEmbeddingLayer(nn.Module):
         else:
             raise Exception(f"Invalid embed mode {config.mode}.")
 
-        # initiate [cls] tokens for downstream tasks
-        self.n_cls_tokens = config.n_cls_tokens
-        if self.n_cls_tokens != 0:
-            self.cls_tokens = nn.Parameter(torch.zeros(1, self.n_time_patches*self.n_cls_tokens, self.input_dim))
-
         self.projection = nn.Linear(self.input_dim, hidden_size)
         
         # activation after embedding 
@@ -96,32 +90,42 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.embed_region:
             self.region_embeddings = nn.Sequential(
                 nn.Embedding(
-                    self.n_time_patches * (max_region_indx+self.n_cls_tokens), hidden_size),
+                    self.n_time_patches * max_region_indx, hidden_size),
                 nn.LayerNorm(hidden_size),
             )
 
         self.embed_space_pos = nn.Sequential(
             nn.Embedding(
-                self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size
+                self.n_time_patches * self.n_space_patches, hidden_size
             ),
             nn.LayerNorm(hidden_size),
         )
             
         self.embed_time_pos = nn.Sequential(
             nn.Embedding(
-                self.n_time_patches * (self.n_space_patches + self.n_cls_tokens), hidden_size
+                self.n_time_patches * self.n_space_patches, hidden_size
             ),
             nn.LayerNorm(hidden_size),
         )
+
+        # Embed prompt token
+        self.use_prompt = config.use_prompt
+        if self.use_prompt:
+            self.mask_types = ['neuron', 'causal', 'inter-region', 'intra-region']
+            self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
+            self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
 
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(
         self, 
         spikes:               torch.FloatTensor,                   # (n_batch, n_token, n_channels)
+        space_attn_mask:      torch.LongTensor,
+        time_attn_mask:       torch.LongTensor,
         spacestamps:          torch.LongTensor,
         timestamps:           torch.LongTensor,
-        regionstamps:         Optional[torch.LongTensor] = None
+        regionstamps:         Optional[torch.LongTensor] = None,
+        masking_mode:         Optional[str] = None,
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -130,11 +134,6 @@ class NeuralEmbeddingLayer(nn.Module):
         
         # Embed spikes
         x = self.embed_spikes(spikes)
-
-        # Prepend [cls] tokens for downstream tasks
-        if self.n_cls_tokens != 0:
-            cls_tokens = self.cls_tokens.expand(B, -1, -1)  
-            x = torch.cat((cls_tokens, x), dim=1)
         
         # Rescaling
         x = self.act(x) * self.scale
@@ -149,7 +148,22 @@ class NeuralEmbeddingLayer(nn.Module):
             region_embeds = self.region_embeddings(regionstamps)  
             x += region_embeds
 
-        return self.dropout(x)
+        # Prepend prompt token 
+        if self.use_prompt:
+            mask_idx = torch.tensor(self.mask_to_indx[masking_mode], dtype=torch.int64, device=spikes.device)
+            x = torch.cat((self.embed_prompt(mask_idx)[None,None,:].expand(B,-1,-1), x), dim=1) 
+            space_attn_mask = F.pad(space_attn_mask, (1, 0), value=1)
+            time_attn_mask = F.pad(time_attn_mask, (1, 0), value=1)
+            spacestamps = torch.cat(
+                (torch.zeros((spacestamps.size(0), 1), dtype=spacestamps.dtype, device=spacestamps.device), 
+                 spacestamps+1), dim=1
+            )
+            timestamps = torch.cat(
+                (torch.zeros((timestamps.size(0), 1), dtype=timestamps.dtype, device=timestamps.device), 
+                 timestamps+1), dim=1
+            )
+
+        return self.dropout(x), space_attn_mask, time_attn_mask, spacestamps, timestamps
 
 
 class NeuralMLP(nn.Module):
@@ -292,8 +306,6 @@ class SpaceTimeTransformer(nn.Module):
 
         self.n_channels = self.max_time_F * self.max_space_F
 
-        self.n_cls_tokens = config.embedder.n_cls_tokens
-
         # Masker
         self.mask = config.masker.force_active
         self.mask_token = False
@@ -311,8 +323,7 @@ class SpaceTimeTransformer(nn.Module):
         self.patch = config.patcher.active
         if self.patch:
             self.patcher = Patcher(
-                self.max_space_F, self.max_time_F, self.n_cls_tokens, 
-                self.embed_region, config.patcher
+                self.max_space_F, self.max_time_F, self.embed_region, config.patcher
             )
 
         # Context span mask
@@ -320,9 +331,11 @@ class SpaceTimeTransformer(nn.Module):
         self.context_backward = config.context.backward
         # context_mask = create_context_mask(
         #     config.context.forward, config.context.backward, 
-        #     self.n_time_patches+self.n_cls_tokens, self.n_time_patches
+        #     self.n_time_patches, self.n_time_patches
         # )
         # self.register_buffer("context_mask", context_mask, persistent=False)
+
+        self.use_prompt = config.embedder.use_prompt
 
         # Embedding layer
         self.embedder = NeuralEmbeddingLayer(
@@ -332,7 +345,7 @@ class SpaceTimeTransformer(nn.Module):
         # Transformer
         self.layers = nn.ModuleList(
             [NeuralEncoderLayer(
-                idx, self.n_time_patches*(self.n_space_patches+self.n_cls_tokens), config.transformer
+                idx, self.n_time_patches*self.n_space_patches, config.transformer
             ) for idx in range(self.n_layers)]
         )
         self.out_norm = nn.LayerNorm(self.hidden_size) 
@@ -348,6 +361,8 @@ class SpaceTimeTransformer(nn.Module):
             spikes_spacestamp:    torch.LongTensor,   # (bs, seq_len)
             neuron_regions:       Optional[np.ndarray] = None,  # (bs, n_channels)
             masking_mode:         Optional[str] = None,
+            eval_mask:        Optional[torch.LongTensor] = None,
+            num_neuron:       Optional[torch.LongTensor] = None,
     ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
         B, T, N = spikes.size() 
@@ -357,19 +372,19 @@ class SpaceTimeTransformer(nn.Module):
             self.context_forward = 0 
             self.context_mask = create_context_mask(
                 self.context_forward, self.context_backward, 
-                self.n_time_patches+self.n_cls_tokens, self.n_time_patches
+                self.n_time_patches, self.n_time_patches
             )
         else:
             self.masker.mode = masking_mode
             self.context_forward = -1
             self.context_mask = create_context_mask(
                 self.context_forward, self.context_backward, 
-                self.n_time_patches+self.n_cls_tokens, self.n_time_patches
+                self.n_time_patches, self.n_time_patches
             )
         
         # Mask spikes
         if self.mask:
-            spikes, targets_mask = self.masker(spikes, neuron_regions, masking_mode)
+            spikes, targets_mask = self.masker(spikes, neuron_regions)
         else:
             targets_mask = None
 
@@ -392,13 +407,24 @@ class SpaceTimeTransformer(nn.Module):
             spikes, targets_mask = self.masker(spikes)
             targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
             targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N)
+
+        if eval_mask is not None:
+            targets_mask = eval_mask.clone()
             
         # Embed neural data
-        x = self.embedder(spikes, spacestamps, timestamps, regionstamps)
+        x, _space_attn_mask, _time_attn_mask, spacestamps, timestamps = self.embedder(
+            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps, masking_mode
+        )
 
         _, T, _ = x.size() 
 
-        context_mask = self.context_mask[:T,:T].to(x.device).unsqueeze(0).expand(B,T,T)
+        if self.use_prompt:
+            context_mask = F.pad(self.context_mask[:T-1,:T-1], (1,0), value=1)
+            context_mask = torch.cat((torch.ones((1,T)), context_mask), dim=0)
+            context_mask = context_mask.to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
+        else:
+            context_mask = self.context_mask[:T,:T].to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
+
         space_attn_mask = _space_attn_mask.unsqueeze(1).expand(B,T,T)
         time_attn_mask = _time_attn_mask.unsqueeze(1).expand(B,T,T)
         
@@ -440,6 +466,8 @@ class STPatch(nn.Module):
         if encoder_pt_path is not None:
             self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
 
+        self.use_prompt = config.encoder.embedder.use_prompt
+
         # Build decoder
         if self.method == "ssl":
             assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
@@ -453,7 +481,6 @@ class STPatch(nn.Module):
         if self.method == "sl":
             decoder_layers.append(
                 nn.Linear(
-                    # (self.encoder.n_time_patches * self.encoder.n_cls_tokens) * self.encoder.hidden_size, n_outputs
                     (self.encoder.n_time_patches * self.encoder.n_space_patches) * self.encoder.hidden_size, n_outputs
                 )
             )
@@ -506,6 +533,8 @@ class STPatch(nn.Module):
         neuron_regions:       Optional[torch.LongTensor] = None,   # (bs, n_channels)
         masking_mode:     Optional[str] = None,
         spike_augmentation: Optional[bool] = False,
+        eval_mask:        Optional[torch.LongTensor] = None,
+        num_neuron:       Optional[torch.LongTensor] = None,
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
@@ -542,20 +571,19 @@ class STPatch(nn.Module):
 
         # Encode neural data
         x, targets_mask = self.encoder(
-            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode
+            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode, eval_mask, num_neuron
         )
+
+        if self.use_prompt:
+            x = x[:,1:]
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
-            # Grab the spike embeddings
-            x = x[:,self.encoder.n_time_patches*self.encoder.n_cls_tokens:]
             outputs = self.decoder(x).reshape(B,T,N)[:,:,:pad_space_len]
             targets = targets.reshape(B,T,N)[:,:,:pad_space_len]
             targets_mask = targets_mask.reshape(B,T,N)[:,:,:pad_space_len]
             
         elif self.method == "sl":
-            # Grab the prepended [cls] embeddings
-            # x = x[:,:self.encoder.n_time_patches*self.encoder.n_cls_tokens]
             x = x.flatten(start_dim=1)  
             outputs = self.decoder(x)
 

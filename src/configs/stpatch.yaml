@@ -45,8 +45,6 @@ encoder:
     bias: true            # use bias in the embedding layer
     dropout: 0.2          # dropout in embedding layer
 
-    n_cls_tokens: 1       # number of [cls] tokens for downstream tasks, e.g., behavior/region decoding
-
 
   # Transformer
   transformer:
