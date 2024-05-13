@@ -61,6 +61,7 @@ encoder:
 
     tokenize_binary_mask: false
     use_prompt: false
+    use_session: false
 
     stack:
       active: false        # wether to stack consecutive timesteps
