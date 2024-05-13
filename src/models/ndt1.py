@@ -17,6 +17,9 @@ from models.masker import Masker
 
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
 
+with open('src/ibl_100_eids.txt') as file:
+    include_eids = [line.rstrip() for line in file]
+
 @dataclass
 class NDT1Output(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -148,6 +151,10 @@ class NeuralEmbeddingLayer(nn.Module):
 
         # Embed session token
         self.use_session = config.use_session
+        if self.use_session:
+            self.eid_lookup = include_eids
+            self.eid_to_indx = {r: i for i,r in enumerate(self.eid_lookup)}
+            self.embed_session = nn.Embedding(len(self.eid_lookup), hidden_size) 
 
         # Regularization
         self.dropout = nn.Dropout(config.dropout)
@@ -194,6 +201,15 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.use_prompt:
             mask_idx = torch.tensor(self.mask_to_indx[masking_mode], dtype=torch.int64, device=spikes.device)
             x = torch.cat((self.embed_prompt(mask_idx)[None,None,:].expand(B,-1,-1), x), dim=1) 
+            spikes_mask = F.pad(spikes_mask, (1, 0), value=1)
+            spikes_timestamp = torch.cat(
+                (torch.zeros((spikes_timestamp.size(0), 1), dtype=spikes_timestamp.dtype, device=spikes_timestamp.device), 
+                 spikes_timestamp+1), dim=1
+            )
+
+        if self.use_session:
+            session_idx = torch.tensor(self.eid_to_indx[eid], dtype=torch.int64, device=spikes.device)
+            x = torch.cat((self.embed_session(session_idx)[None,None,:].expand(B,-1,-1), x), dim=1)
             spikes_mask = F.pad(spikes_mask, (1, 0), value=1)
             spikes_timestamp = torch.cat(
                 (torch.zeros((spikes_timestamp.size(0), 1), dtype=spikes_timestamp.dtype, device=spikes_timestamp.device), 
@@ -459,7 +475,7 @@ class NeuralEncoder(nn.Module):
             eid:              Optional[str] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
-        B, T, N = spikes.size() # batch size, fea len, n_channels
+        B, _T, N = spikes.size() # batch size, fea len, n_channels
         
         if self.int_spikes:
             spikes = spikes.to(torch.int64)
@@ -476,7 +492,7 @@ class NeuralEncoder(nn.Module):
         # Mask neural data
         if self.mask:
             spikes, targets_mask = self.masker(spikes, neuron_regions)
-            targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
+            targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,_T,N).to(torch.int64)
         else:
             targets_mask = torch.zeros_like(spikes).to(torch.int64).to(spikes.device)
 
@@ -494,12 +510,13 @@ class NeuralEncoder(nn.Module):
         _, T, _ = x.size() # feature len may have changed after stacking
 
         # Prepare 
-        if self.use_prompt:
-            context_mask = F.pad(self.context_mask[:T-1,:T-1], (1,0), value=1)
-            context_mask = torch.cat((torch.ones((1,T)), context_mask), dim=0)
+        if self.use_prompt or self.use_session:
+            context_mask = torch.cat((torch.ones((_T,T-_T)), self.context_mask[:_T,:_T]), dim=1)
+            context_mask = torch.cat((torch.ones((T-_T,T)), context_mask), dim=0)
             context_mask = context_mask.to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
         else:
             context_mask = self.context_mask[:T,:T].to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
+
         spikes_mask = spikes_mask.unsqueeze(1).expand(B,T,T)
         self_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) # hack so that even padded spikes attend to themselves and avoid attention issues
         attn_mask = self_mask | (context_mask & spikes_mask)
@@ -670,6 +687,7 @@ class NDT1(nn.Module):
                         spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
 
         if self.method == "ssl":
+            _, _T, _ = spikes.size()
             targets = spikes.clone()
             if self.encoder.int_spikes:
                 targets = targets.to(torch.int64)
@@ -680,8 +698,10 @@ class NDT1(nn.Module):
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
-        if self.use_prompt:
-            x = x[:,1:]
+        _, T, _ = x.size()
+
+        if self.use_prompt or self.use_session:
+            x = x[:,T-_T:]
 
         # Transform neural embeddings into rates/logits
         if self.method == "sl":
