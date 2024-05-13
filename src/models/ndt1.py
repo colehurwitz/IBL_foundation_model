@@ -146,6 +146,9 @@ class NeuralEmbeddingLayer(nn.Module):
             self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
             self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
 
+        # Embed session token
+        self.use_session = config.use_session
+
         # Regularization
         self.dropout = nn.Dropout(config.dropout)
 
@@ -158,6 +161,7 @@ class NeuralEmbeddingLayer(nn.Module):
             date_idx:         Optional[torch.LongTensor] = None,   # (bs)
             targets_mask:     Optional[torch.LongTensor] = None,
             masking_mode:     Optional[str] = None,
+            eid:              Optional[str] = None,
         ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:   # (bs, new_seq_len, hidden_size),  (bs, new_seq_len), (bs, new_seq_len)
 
         B, _, _ = spikes.size()
@@ -425,6 +429,7 @@ class NeuralEncoder(nn.Module):
                                            config.embedder.n_channels)
 
         self.use_prompt = config.embedder.use_prompt
+        self.use_session = config.embedder.use_session
 
         # Embedding layer
         if config.stitching:
@@ -451,6 +456,7 @@ class NeuralEncoder(nn.Module):
             masking_mode:     Optional[str] = None,
             eval_mask:        Optional[torch.LongTensor] = None,
             num_neuron:       Optional[torch.LongTensor] = None,
+            eid:              Optional[str] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
         B, T, N = spikes.size() # batch size, fea len, n_channels
@@ -482,7 +488,7 @@ class NeuralEncoder(nn.Module):
             spikes = self.stitcher(spikes, str(num_neuron))
         # Embed neural data
         x, spikes_mask, spikes_timestamp = self.embedder(
-            spikes, spikes_mask, spikes_timestamp, block_idx, date_idx, targets_mask, masking_mode
+            spikes, spikes_mask, spikes_timestamp, block_idx, date_idx, targets_mask, masking_mode, eid
         )
 
         _, T, _ = x.size() # feature len may have changed after stacking
@@ -561,6 +567,7 @@ class NDT1(nn.Module):
             self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
 
         self.use_prompt = config.encoder.embedder.use_prompt
+        self.use_session = config.encoder.embedder.use_session
 
         # stitching
         if config.encoder.stitching:
@@ -643,6 +650,7 @@ class NDT1(nn.Module):
         spike_augmentation: Optional[bool] = False,
         eval_mask:        Optional[torch.LongTensor] = None,
         num_neuron:       Optional[torch.LongTensor] = None,
+        eid:              Optional[str] = None,
     ) -> NDT1Output:  
 
         # if neuron_regions type is list 
@@ -668,7 +676,7 @@ class NDT1(nn.Module):
 
         # Encode neural data
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron, eid)
         targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
