@@ -191,7 +191,7 @@ def co_smoothing_eval(
         # loop through all the neurons
         counter = 0
         for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
-            if counter > tot_num_neurons:
+            if counter >= tot_num_neurons:
                 break
             gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
             time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
