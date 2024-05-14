@@ -670,6 +670,8 @@ class NDT1(nn.Module):
         eid:              Optional[str] = None,
     ) -> NDT1Output:  
 
+        _, _T, _ = spikes.size()
+        
         # if neuron_regions type is list 
         if isinstance(neuron_regions, list):
             neuron_regions = np.asarray(neuron_regions).T
@@ -687,7 +689,6 @@ class NDT1(nn.Module):
                         spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
 
         if self.method == "ssl":
-            _, _T, _ = spikes.size()
             targets = spikes.clone()
             if self.encoder.int_spikes:
                 targets = targets.to(torch.int64)
@@ -706,7 +707,8 @@ class NDT1(nn.Module):
         # Transform neural embeddings into rates/logits
         if self.method == "sl":
             x = x.flatten(start_dim=1)
-        if hasattr(self, "stitching"):
+
+        if hasattr(self, "stitching") and self.method == "ssl":
             outputs = self.stitch_decoder(x, str(num_neuron))
         else:
             outputs = self.decoder(x)
