@@ -59,7 +59,7 @@ def load_model_data_local(**kwargs):
     _,_,_, meta_data = load_ibl_dataset(
                             cache_dir=config.dirs.dataset_cache_dir,
                             user_or_org_name=config.dirs.huggingface_org,
-                            num_sessions=num_sessions,
+                            num_sessions=1,
                             split_method="predefined",
                             test_session_eid=[],
                             batch_size=config.training.train_batch_size,
@@ -233,7 +233,8 @@ def co_smoothing_eval(
                         neuron_regions=np.stack(neuron_regions_lst),
                         eval_mask=torch.cat(eval_mask_lst, 0),
                         masking_mode = masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2]
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -313,7 +314,8 @@ def co_smoothing_eval(
                         neuron_regions=batch['neuron_regions'],
                         eval_mask=mask_result['eval_mask'],
                         masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2]
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -403,7 +405,8 @@ def co_smoothing_eval(
                         neuron_regions=batch['neuron_regions'],
                         eval_mask=mask_result['eval_mask'],
                         masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2]
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -511,7 +514,8 @@ def co_smoothing_eval(
                             neuron_regions=np.stack(neuron_regions_lst),
                             eval_mask=torch.cat(eval_mask_lst, 0),
                             masking_mode=masking_mode,
-                            num_neuron=batch['spikes_data'].shape[2]
+                            num_neuron=batch['spikes_data'].shape[2],
+                            eid=batch['eid'][0]  # each batch consists of data from the same eid
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
@@ -711,7 +715,7 @@ def behavior_decoding(**kwargs):
     _,_,_, meta_data = load_ibl_dataset(
                         cache_dir=config.dirs.dataset_cache_dir,
                         user_or_org_name=config.dirs.huggingface_org,
-                        num_sessions=num_sessions,
+                        num_sessions=1,
                         split_method="predefined",
                         test_session_eid=[],
                         batch_size=config.training.train_batch_size,
@@ -841,7 +845,9 @@ def behavior_decoding(**kwargs):
                 spikes_spacestamps=batch['spikes_spacestamps'], 
                 targets = batch['target'],
                 neuron_regions=batch['neuron_regions'],
-                masking_mode = 'neuron' if config.data.target == 'choice' else 'causal'
+                masking_mode = 'neuron' if config.data.target == 'choice' else 'causal',
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0]  # each batch consists of data from the same eid
             )
             gt.append(outputs.targets.clone())
             preds.append(outputs.preds.clone())
