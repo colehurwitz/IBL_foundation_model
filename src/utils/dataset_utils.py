@@ -157,6 +157,7 @@ def load_ibl_dataset(cache_dir,
                      eid=None, # specify 1 session for training, random_split will be used
                      num_sessions=5, # total number of sessions for training and testing
                      split_method="session_based",
+                     train_session_eid=[],
                      test_session_eid=[], # specify session eids for testing, session_based will be used
                      split_size = 0.1,
                      mode = "train",
@@ -197,7 +198,11 @@ def load_ibl_dataset(cache_dir,
         train_session_eid_dir = train_session_eid_dir[:num_sessions - len(test_session_eid)]
         print("Number of training sesssion datasets to be used: ", len(train_session_eid_dir))
     else:
-        train_session_eid_dir = user_datasets
+        if len(train_session_eid) > 0:
+            train_session_eid_dir = [os.path.join(user_or_org_name, eid+'_aligned') for eid in train_session_eid]
+        else:
+            print(user_datasets)
+            train_session_eid_dir = user_datasets
         if train_aligned:
             train_session_eid_dir = [eid for eid in train_session_eid_dir if "aligned" in eid]
         else:
@@ -232,6 +237,7 @@ def load_ibl_dataset(cache_dir,
         session_test_datasets = []
 
         num_neuron_set = set()
+        eids_set = set()
         for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
             session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
             train_trials = len(session_dataset["train"]["spikes_sparse_data"])
@@ -251,6 +257,9 @@ def load_ibl_dataset(cache_dir,
                                                                 [session_dataset["train"]["spikes_sparse_shape"][0]])
 
             num_neuron_set.add(binned_spikes_data.shape[2])
+            eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
+            eid_prefix = eid_prefix.split('/')[1]
+            eids_set.add(eid_prefix)
         train_dataset = concatenate_datasets(session_train_datasets)
         val_dataset = concatenate_datasets(session_val_datasets)
         test_dataset = concatenate_datasets(session_test_datasets)
@@ -261,6 +270,7 @@ def load_ibl_dataset(cache_dir,
         meta_data = {
             "num_neurons": num_neuron_set,
             "num_sessions": num_sessions,
+            "eids": eids_set
         }
     elif split_method == 'session_based':
         print("Loading train dataset sessions...")
