@@ -1,5 +1,5 @@
 model_class: NDT1
-
+# NDT1 stitching mask scheme all: all masking/stitching
 
 encoder:
 
@@ -72,7 +72,7 @@ encoder:
   # Transformer
   transformer:
     n_layers: 5           # number of transformer layers
-    hidden_size: 1024     # hidden space of the transformer
+    hidden_size: 512     # hidden space of the transformer
     use_scalenorm: false  # use scalenorm  instead of layernorm
     use_rope: false       # use rotary postional encoding
     rope_theta: 10000.0   # rope angle of rotation
