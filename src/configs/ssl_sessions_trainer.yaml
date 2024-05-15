@@ -33,7 +33,7 @@ training:
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 10  # Plot the model output every n epochs
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
