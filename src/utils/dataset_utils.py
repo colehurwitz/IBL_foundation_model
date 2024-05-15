@@ -14,9 +14,14 @@ class DATASET_MODES:
 
 DATA_COLUMNS = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape','cluster_depths']
 TARGET_EIDS="data/target_eids.txt"
+TEST_RE_EIDS="data/test_re_eids.txt"
 
 def get_target_eids():
     with open(TARGET_EIDS) as file:
+        include_eids = [line.rstrip() for line in file]
+    return include_eids
+def get_test_re_eids():
+    with open(TEST_RE_EIDS) as file:
         include_eids = [line.rstrip() for line in file]
     return include_eids
 
@@ -245,31 +250,41 @@ def load_ibl_dataset(cache_dir,
         num_neuron_set = set()
         eids_set = set()
         target_eids = get_target_eids()
+        test_re_eids = get_test_re_eids()
         if use_re:
             train_session_eid_dir = [eid for eid in train_session_eid_dir if eid.split('_')[0].split('/')[1] in target_eids]
+            # remove the test_re_eids from the train_session_eid_dir
+            train_session_eid_dir = [eid for eid in train_session_eid_dir if eid.split('_')[0].split('/')[1] not in test_re_eids]
         for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
-            session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
-            train_trials = len(session_dataset["train"]["spikes_sparse_data"])
-            train_trials = train_trials - train_trials % batch_size
-            session_train_datasets.append(session_dataset["train"].select(list(range(train_trials))))
+            try:
+                # print("Loading dataset: ", dataset_eid)
+                session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
+                train_trials = len(session_dataset["train"]["spikes_sparse_data"])
+                train_trials = train_trials - train_trials % batch_size
+                session_train_datasets.append(session_dataset["train"].select(list(range(train_trials))))
 
-            val_trials = len(session_dataset["val"]["spikes_sparse_data"])
-            val_trials = val_trials - val_trials % batch_size
-            session_val_datasets.append(session_dataset["val"].select(list(range(val_trials))))
+                val_trials = len(session_dataset["val"]["spikes_sparse_data"])
+                val_trials = val_trials - val_trials % batch_size
+                session_val_datasets.append(session_dataset["val"].select(list(range(val_trials))))
 
-            test_trials = len(session_dataset["test"]["spikes_sparse_data"])
-            test_trials = test_trials - test_trials % batch_size
-            session_test_datasets.append(session_dataset["test"].select(list(range(test_trials))))
-            binned_spikes_data = get_binned_spikes_from_sparse([session_dataset["train"]["spikes_sparse_data"][0]], 
-                                                                [session_dataset["train"]["spikes_sparse_indices"][0]],
-                                                                [session_dataset["train"]["spikes_sparse_indptr"][0]],
-                                                                [session_dataset["train"]["spikes_sparse_shape"][0]])
+                test_trials = len(session_dataset["test"]["spikes_sparse_data"])
+                test_trials = test_trials - test_trials % batch_size
+                session_test_datasets.append(session_dataset["test"].select(list(range(test_trials))))
+                binned_spikes_data = get_binned_spikes_from_sparse([session_dataset["train"]["spikes_sparse_data"][0]], 
+                                                                    [session_dataset["train"]["spikes_sparse_indices"][0]],
+                                                                    [session_dataset["train"]["spikes_sparse_indptr"][0]],
+                                                                    [session_dataset["train"]["spikes_sparse_shape"][0]])
 
-            num_neuron_set.add(binned_spikes_data.shape[2])
-            eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
-            eid_prefix = eid_prefix.split('/')[1]
-            eids_set.add(eid_prefix)
+                num_neuron_set.add(binned_spikes_data.shape[2])
+                eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
+                eid_prefix = eid_prefix.split('/')[1]
+                eids_set.add(eid_prefix)
+            except Exception as e:
+                print("Error loading dataset: ", dataset_eid)
+                print(e)
+                continue
         print("session eid used: ", eids_set)
+        print("Total number of session: ", len(eids_set))
         train_dataset = concatenate_datasets(session_train_datasets)
         val_dataset = concatenate_datasets(session_val_datasets)
         test_dataset = concatenate_datasets(session_test_datasets)
