@@ -24,22 +24,6 @@ config = config_from_kwargs(kwargs)
 config = update_config("src/configs/ndt1_stitching.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
-# make log dir
-log_dir = os.path.join(config.dirs.log_dir, 
-                       "train", 
-                       "num_session_{}".format(config.data.num_sessions), 
-                       "model_{}".format(config.model.model_class), 
-                       "method_{}".format(config.method.model_kwargs.method_name), 
-                       "mask_{}".format(config.encoder.masker.mode),
-                       "stitch_{}".format(config.encoder.stitching))
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
-# wandb
-if config.wandb.use:
-    import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.data.num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
-
 # set seed for reproducibility
 set_seed(config.seed)
 
@@ -67,7 +51,22 @@ if config.data.use_aligned_test:
         train_dataset, test_dataset = split_both_dataset(aligned_dataset=aligned_dataset,
                                                          unaligned_dataset=train_dataset,
                                                          seed=config.seed)
+num_sessions = len(meta_data["eids"])
+# make log dir
+log_dir = os.path.join(config.dirs.log_dir, 
+                       "train", 
+                       "num_session_{}".format(config.data.num_sessions), 
+                       "model_{}".format(config.model.model_class), 
+                       "method_{}".format(config.method.model_kwargs.method_name), 
+                       "mask_{}".format(config.encoder.masker.mode),
+                       "stitch_{}".format(config.encoder.stitching))
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 
+# wandb
+if config.wandb.use:
+    import wandb
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.data.num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
