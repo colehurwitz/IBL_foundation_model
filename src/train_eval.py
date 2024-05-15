@@ -25,9 +25,12 @@ ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--tokenize_binary_mask", action='store_true')
 ap.add_argument("--prompting", action='store_true')
 ap.add_argument("--train", action='store_true')
+ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
+ap.add_argument("--stitching", action='store_true')
+ap.add_argument("--eid", type=str, default='671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
 args = ap.parse_args()
 
-eid = '671c7ea7-6726-4fbe-adeb-f89c2c8e489b'
+eid = args.eid
 
 model_acroynm = args.model_name.lower()
 
@@ -240,7 +243,7 @@ continuous_decoding = True
 
 print(mask_name)
 
-base_path = '/mnt/home/yzhang1/ceph'
+base_path = args.base_path
 
 if args.mask_mode == 'causal':
     model_config = f'src/configs/{model_acroynm}_causal_eval.yaml'
@@ -261,7 +264,7 @@ configs = {
     'seed': config.seed,
     'mask_name': mask_name,
     'eid': eid,
-    'stitching': False,
+    'stitching': args.stitching,
     'num_sessions': 1 
 }  
 

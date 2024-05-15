@@ -13,6 +13,12 @@ class DATASET_MODES:
     trainval = "trainval"
 
 DATA_COLUMNS = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape','cluster_depths']
+TARGET_EIDS="data/target_eids.txt"
+
+def get_target_eids():
+    with open(TARGET_EIDS) as file:
+        include_eids = [line.rstrip() for line in file]
+    return include_eids
 
 def get_sparse_from_binned_spikes(binned_spikes):
     sparse_binned_spikes = [csr_array(binned_spikes[i], dtype=np.ubyte) for i in range(binned_spikes.shape[0])]
@@ -162,6 +168,7 @@ def load_ibl_dataset(cache_dir,
                      split_size = 0.1,
                      mode = "train",
                      batch_size=16,
+                     use_re=False,
                      seed=42):
     if aligned_data_dir:
         dataset = load_from_disk(aligned_data_dir)
@@ -201,7 +208,6 @@ def load_ibl_dataset(cache_dir,
         if len(train_session_eid) > 0:
             train_session_eid_dir = [os.path.join(user_or_org_name, eid+'_aligned') for eid in train_session_eid]
         else:
-            print(user_datasets)
             train_session_eid_dir = user_datasets
         if train_aligned:
             train_session_eid_dir = [eid for eid in train_session_eid_dir if "aligned" in eid]
@@ -238,6 +244,9 @@ def load_ibl_dataset(cache_dir,
 
         num_neuron_set = set()
         eids_set = set()
+        target_eids = get_target_eids()
+        if use_re:
+            train_session_eid_dir = [eid for eid in train_session_eid_dir if eid.split('_')[0].split('/')[1] in target_eids]
         for dataset_eid in tqdm(train_session_eid_dir[:num_sessions]):
             session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
             train_trials = len(session_dataset["train"]["spikes_sparse_data"])
@@ -260,6 +269,7 @@ def load_ibl_dataset(cache_dir,
             eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
             eid_prefix = eid_prefix.split('/')[1]
             eids_set.add(eid_prefix)
+        print("session eid used: ", eids_set)
         train_dataset = concatenate_datasets(session_train_datasets)
         val_dataset = concatenate_datasets(session_val_datasets)
         test_dataset = concatenate_datasets(session_test_datasets)
