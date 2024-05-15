@@ -88,9 +88,16 @@ def load_model_data_local(**kwargs):
     dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
 
     n_neurons = len(dataset['cluster_regions'][0])
-    max_space_length = n_neurons if config.model.model_class in ["NDT1", "iTransformer"] else config.data.max_space_length
 
-    # TODO: update the loader to adapt other models (e.g., patching for NDT2)
+    if config.model.model_class in ["NDT1", "iTransformer"]:
+        max_space_length = n_neurons  
+    elif config.model.model_class == "STPatch":
+        max_space_length = config.model.encoder.embedder.n_neurons
+    else:
+        max_space_length = config.data.max_space_length
+
+    print('encoder max space length:', max_space_length)
+
     dataloader = make_loader(
         dataset,
         target=config.data.target,
@@ -754,7 +761,15 @@ def behavior_decoding(**kwargs):
     test_dataset = dataset["test"]
 
     n_neurons = len(train_dataset['cluster_regions'][0])
-    max_space_length = n_neurons if config.model.model_class in ["NDT1", "iTransformer"] else config.data.max_space_length
+
+    if config.model.model_class in ["NDT1", "iTransformer"]:
+        max_space_length = n_neurons  
+    elif config.model.model_class == "STPatch":
+        max_space_length = config.model.encoder.embedder.n_neurons
+    else:
+        max_space_length = config.data.max_space_length
+
+    print('encoder max space length:', max_space_length)
 
     train_dataloader = make_loader(
         train_dataset,

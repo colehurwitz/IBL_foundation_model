@@ -38,13 +38,23 @@ eid = args.test_eid
 model_acroynm = args.model_name.lower()
 
 if args.prompting:
-    kwargs = {
-        "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
-    }
+    if args.model_name == 'NDT1':
+        kwargs = {
+            "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
+        }
+    elif args.model_name == 'NDT2':
+        kwargs = {
+            "model": f"include:src/configs/{model_acroynm}_prompting.yaml"
+        }
 else:
-    kwargs = {
-        "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
-    }
+    if args.model_name == 'NDT1':
+        kwargs = {
+            "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
+        }
+    elif args.model_name == 'NDT2':
+        kwargs = {
+            "model": f"include:src/configs/{model_acroynm}.yaml"
+        }
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
@@ -84,6 +94,19 @@ if args.train:
                            batch_size=config.training.train_batch_size,
                            seed=config.seed)
     print(meta_data)
+
+    if args.model_name in ["NDT1", "iTransformer"]:
+        max_space_length = config.data.max_space_length
+    elif args.model_name in ["NDT2", "STPatch"]:
+        max_space_F = config.model.encoder.embedder.max_space_F
+        max_num_neurons = max(meta_data['num_neurons'])
+        max_space_length = ceil(max_num_neurons/max_space_F) * max_space_F
+    else:
+        max_space_length = config.data.max_space_length
+    
+    meta_data['max_space_length'] = max_space_length
+
+    print('encoder max space length:', max_space_length)
     
     train_dataloader = make_loader(train_dataset, 
                              target=config.data.target,
@@ -92,7 +115,7 @@ if args.train:
                              pad_to_right=True, 
                              pad_value=-1.,
                              max_time_length=config.data.max_time_length,
-                             max_space_length=config.data.max_space_length,
+                             max_space_length=max_space_length,
                              dataset_name=config.data.dataset_name,
                              sort_by_depth=config.data.sort_by_depth,
                              sort_by_region=config.data.sort_by_region,
@@ -106,7 +129,7 @@ if args.train:
                              pad_to_right=True, 
                              pad_value=-1.,
                              max_time_length=config.data.max_time_length,
-                             max_space_length=config.data.max_space_length,
+                             max_space_length=max_space_length,
                              dataset_name=config.data.dataset_name,
                              sort_by_depth=config.data.sort_by_depth,
                              sort_by_region=config.data.sort_by_region,

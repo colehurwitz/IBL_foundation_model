@@ -1,4 +1,5 @@
 import argparse
+from math import ceil
 from datasets import load_dataset, load_from_disk, concatenate_datasets
 from utils.dataset_utils import load_ibl_dataset
 from accelerate import Accelerator
@@ -143,7 +144,15 @@ if args.train:
         test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
         bin_size = None
 
-    max_space_length = n_neurons if args.model_name in ["NDT1", "iTransformer"] else config.data.max_space_length
+    if args.model_name in ["NDT1", "iTransformer"]:
+        max_space_length = n_neurons  
+    elif args.model_name in ["NDT2", "STPatch"]:
+        max_space_F = config.model.encoder.embedder.max_space_F
+        max_space_length = ceil(n_neurons/max_space_F) * max_space_F
+    else:
+        max_space_length = config.data.max_space_length
+
+    print('encoder max space length:', max_space_length)
     
     # make the dataloader
     train_dataloader = make_loader(train_dataset, 
