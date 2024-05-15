@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --job-name=ibl-fm
-#SBATCH --output=ibl-fm.out
+#SBATCH --job-name=multi-session
+#SBATCH --output=multi-session.out
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --ntasks-per-node=1
