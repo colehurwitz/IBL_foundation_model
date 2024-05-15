@@ -38,7 +38,7 @@ if not os.path.exists(log_dir):
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.data.num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.data.num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # set seed for reproducibility
 set_seed(config.seed)
