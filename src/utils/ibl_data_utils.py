@@ -650,9 +650,9 @@ def get_behavior_per_interval(
 def load_anytime_behaviors(one, eid, n_workers=os.cpu_count()):
 
     behaviors = [
-        'wheel-position', 'wheel-velocity', 'wheel-speed',
+        #'wheel-position', 'wheel-velocity', 'wheel-speed',
         'left-whisker-motion-energy', 'right-whisker-motion-energy',
-        'left-pupil-diameter', 'right-pupil-diameter',
+        #'left-pupil-diameter', 'right-pupil-diameter',
         #'lightning-pose-left-pupil-diameter',
         # These behaviors are of bad quality - skip them for now
         # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
@@ -689,7 +689,8 @@ def bin_behaviors(
 ):
 
     behaviors = [
-        'wheel-velocity', 'wheel-speed', 'whisker-motion-energy', 
+        #'wheel-velocity', 'wheel-speed', 
+        'whisker-motion-energy', 
         # 'pupil-diameter', # 'lightning-pose-left-pupil-diameter',
     ]
 
@@ -716,7 +717,7 @@ def bin_behaviors(
     for beh in behaviors:
         if beh == 'whisker-motion-energy':
             target_dict = load_target_behavior(one, eid, 'left-whisker-motion-energy')
-            if target_dict['skip']:
+            if 'skip' in target_dict.keys():
                 target_dict = load_target_behavior(one, eid, 'right-whisker-motion-energy')                    
         else:
             target_dict = load_target_behavior(one, eid, beh)
@@ -794,7 +795,8 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
     beh_names = ['choice', 'reward', 'block', 
-                 'wheel-speed', 'whisker-motion-energy', #'pupil-diameter', 
+                 #'wheel-speed', 
+                 'whisker-motion-energy', #'pupil-diameter', 
                 ]
 
     target_mask = [1] * len(binned_spikes)
