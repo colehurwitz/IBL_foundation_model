@@ -7,6 +7,14 @@ from utils.metric_utils import r2_score
 from sklearn.metrics import r2_score as r2_score_sklearn
 from sklearn.cluster import SpectralClustering
 from sklearn.metrics import accuracy_score
+import time
+
+def dummy_load(stop_event, dummy_size=50000, check_interval=5, device="cuda"):
+    while not stop_event.is_set():
+        x = torch.rand(dummy_size, dummy_size).cuda()
+        y = torch.matmul(x, x)
+        del x, y
+        time.sleep(check_interval)  # Adjust the sleep interval as needed
 
 def set_seed(seed):
     # set seed for reproducibility
