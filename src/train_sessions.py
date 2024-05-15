@@ -55,7 +55,7 @@ num_sessions = len(meta_data["eids"])
 # make log dir
 log_dir = os.path.join(config.dirs.log_dir, 
                        "train", 
-                       "num_session_{}".format(config.data.num_sessions), 
+                       "num_session_{}".format(num_sessions), 
                        "model_{}".format(config.model.model_class), 
                        "method_{}".format(config.method.model_kwargs.method_name), 
                        "mask_{}".format(config.encoder.masker.mode),
@@ -66,7 +66,7 @@ if not os.path.exists(log_dir):
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.data.num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
