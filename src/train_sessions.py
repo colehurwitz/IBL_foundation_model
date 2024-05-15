@@ -2,7 +2,7 @@ from datasets import load_dataset, load_from_disk, concatenate_datasets, load_da
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
-from utils.utils import set_seed
+from utils.utils import set_seed, dummy_load
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
@@ -12,32 +12,17 @@ import torch
 import numpy as np
 import os
 from trainer.make import make_trainer
+import threading
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1_stitching_prompting.yaml"
+    "model": "include:src/configs/ndt1_stitching.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1_stitching_prompting.yaml", config)
+config = update_config("src/configs/ndt1_stitching.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
-
-# make log dir
-log_dir = os.path.join(config.dirs.log_dir, 
-                       "train", 
-                       "multi_sessions", 
-                       "model_{}".format(config.model.model_class), 
-                       "method_{}".format(config.method.model_kwargs.method_name), 
-                       "mask_{}".format(config.encoder.masker.mode),
-                       "stitch_{}".format(config.encoder.stitching))
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
-# wandb
-if config.wandb.use:
-    import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -66,7 +51,22 @@ if config.data.use_aligned_test:
         train_dataset, test_dataset = split_both_dataset(aligned_dataset=aligned_dataset,
                                                          unaligned_dataset=train_dataset,
                                                          seed=config.seed)
+num_sessions = len(meta_data["eids"])
+# make log dir
+log_dir = os.path.join(config.dirs.log_dir, 
+                       "train", 
+                       "num_session_{}".format(num_sessions), 
+                       "model_{}".format(config.model.model_class), 
+                       "method_{}".format(config.method.model_kwargs.method_name), 
+                       "mask_{}".format(config.encoder.masker.mode),
+                       "stitch_{}".format(config.encoder.stitching))
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 
+# wandb
+if config.wandb.use:
+    import wandb
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
@@ -132,6 +132,21 @@ trainer = make_trainer(
     **trainer_kwargs,
     **meta_data
 )
-
-# train loop
-trainer.train()
+# Shared variable to signal the dummy load to stop
+stop_dummy_load = threading.Event()
+if config.training.dummy:
+    # This is for HPC GPU usage, to avoid the GPU being idle
+    print("Running dummy load")
+    # Run dummy load in a separate thread
+    dummy_thread = threading.Thread(target=dummy_load, args=(stop_dummy_load,))
+    dummy_thread.start()
+    try:
+        # train loop
+        trainer.train()
+    finally:
+        # Signal the dummy load to stop and wait for the thread to finish
+        stop_dummy_load.set()
+        dummy_thread.join()
+else:
+    # train loop
+    trainer.train()
