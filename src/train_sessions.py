@@ -15,12 +15,12 @@ from trainer.make import make_trainer
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1_prompting.yaml"
+    "model": "include:src/configs/ndt1_stitching_prompting.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1_prompting.yaml", config)
+config = update_config("src/configs/ndt1_stitching_prompting.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # make log dir
@@ -51,6 +51,7 @@ train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.di
                            split_method=config.data.split_method,
                            test_session_eid=config.data.test_session_eid,
                            batch_size=config.training.train_batch_size,
+                           use_re=config.data.use_re,
                            seed=config.seed)
 if config.data.use_aligned_test:
     # aligned dataset
