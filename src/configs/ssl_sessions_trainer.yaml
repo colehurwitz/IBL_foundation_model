@@ -74,7 +74,7 @@ data:
   load_meta: true
 
   num_sessions: 10
-  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
+  train_session_eid: ['5dcee0eb-b34d-4652-acc3-d10afc6eae68', 'c7bf2d49-4937-4597-b307-9f39cb1c7b16', '03d9a098-07bf-4765-88b7-85f8d8f620cc', 'd57df551-6dcb-4242-9c72-b806cff5613a', '824cf03d-4012-4ab1-b499-c83a92c5589e', 'c51f34d8-42f6-4c9c-bb5b-669fd9c42cd9', 'f140a2ec-fd49-4814-994a-fe3476f14e66', 'd2832a38-27f6-452d-91d6-af72d794136c', '88224abb-5746-431f-9c17-17d7ef806e6a', 'd0ea3148-948d-4817-94f8-dcaf2342bbbe'] 
   test_session_eid: [] 
 
   split_method: predefined # random_split/session_based/predefined
@@ -119,7 +119,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
+  lr: 5.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

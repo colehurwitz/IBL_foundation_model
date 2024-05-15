@@ -3,6 +3,8 @@ model_class: STPatch # NDT2 is a sub-class of STPatch with time patch size = 1
 
 encoder:
 
+  stitching: false
+
   from_pt: null
 
   embed_region: false
@@ -37,7 +39,7 @@ encoder:
     n_neurons: 704 
     n_timesteps: 100
     max_time_F: 1
-    max_space_F: 64
+    max_space_F: 128
     max_spikes: 0         # max number of spikes in a single time bin
 
     mode: linear          # linear/embed/identity
@@ -48,12 +50,13 @@ encoder:
     dropout: 0.2          # dropout in embedding layer
 
     use_prompt: false
+    use_session: true
 
 
   # Transformer
   transformer:
     n_layers: 5           # number of transformer layers
-    hidden_size: 256      # hidden space of the transformer
+    hidden_size: 512      # hidden space of the transformer
 
     n_heads: 8            # number of attentiomn heads
     attention_bias: true  # learn bias in the attention layers

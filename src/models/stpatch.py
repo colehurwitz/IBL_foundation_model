@@ -22,6 +22,9 @@ from models.model_output import ModelOutput
 
 DEFAULT_CONFIG = "src/configs/stpatch.yaml"
 
+with open('data/target_eids.txt') as file:
+    include_eids = [line.rstrip() for line in file]
+
 @dataclass
 class STPatchOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -53,12 +56,14 @@ def create_context_mask(
 
 class NeuralEmbeddingLayer(nn.Module):
 
-    def __init__(self, hidden_size, embed_region, max_region_indx, config: DictConfig):
+    def __init__(
+        self, hidden_size, embed_region, max_region_indx, config: DictConfig, **kwargs
+    ):
         super().__init__()
 
         self.bias = config.bias
 
-        self.n_neurons = config.n_neurons
+        self.n_neurons = kwargs['max_space_length']
         self.n_timesteps = config.n_timesteps
         self.max_space_F = config.max_space_F
         self.max_time_F = config.max_time_F
@@ -115,6 +120,12 @@ class NeuralEmbeddingLayer(nn.Module):
             self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
             self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
 
+        self.use_session = config.use_session
+        if self.use_session:
+            self.eid_lookup = include_eids
+            self.eid_to_indx = {r: i for i,r in enumerate(self.eid_lookup)}
+            self.embed_session = nn.Embedding(len(self.eid_lookup), hidden_size)
+
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(
@@ -126,6 +137,7 @@ class NeuralEmbeddingLayer(nn.Module):
         timestamps:           torch.LongTensor,
         regionstamps:         Optional[torch.LongTensor] = None,
         masking_mode:         Optional[str] = None,
+        eid:              Optional[str] = None,
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -163,6 +175,20 @@ class NeuralEmbeddingLayer(nn.Module):
                  timestamps+1), dim=1
             )
 
+        if self.use_session:
+            session_idx = torch.tensor(self.eid_to_indx[eid], dtype=torch.int64, device=spikes.device)
+            x = torch.cat((self.embed_session(session_idx)[None,None,:].expand(B,-1,-1), x), dim=1)
+            space_attn_mask = F.pad(space_attn_mask, (1, 0), value=1)
+            time_attn_mask = F.pad(time_attn_mask, (1, 0), value=1)
+            spacestamps = torch.cat(
+                (torch.zeros((spacestamps.size(0), 1), dtype=spacestamps.dtype, device=spacestamps.device), 
+                 spacestamps+1), dim=1
+            )
+            timestamps = torch.cat(
+                (torch.zeros((timestamps.size(0), 1), dtype=timestamps.dtype, device=timestamps.device), 
+                 timestamps+1), dim=1
+            )
+            
         return self.dropout(x), space_attn_mask, time_attn_mask, spacestamps, timestamps
 
 
@@ -301,12 +327,12 @@ class SpaceTimeTransformer(nn.Module):
         self.max_time_F = config.embedder.max_time_F
         self.max_space_F = config.embedder.max_space_F
 
-        self.n_space_patches = ceil(config.embedder.n_neurons/self.max_space_F)
+        self.n_space_patches = ceil(kwargs['max_space_length']/self.max_space_F)
         self.n_time_patches = ceil(config.embedder.n_timesteps/self.max_time_F)
 
         self.n_channels = self.max_time_F * self.max_space_F
 
-        # Masker
+        # Mask
         self.mask = config.masker.force_active
         self.mask_token = False
         if config.masker.mode == 'random_token':
@@ -336,10 +362,12 @@ class SpaceTimeTransformer(nn.Module):
         # self.register_buffer("context_mask", context_mask, persistent=False)
 
         self.use_prompt = config.embedder.use_prompt
+        self.use_session = config.embedder.use_session
 
         # Embedding layer
         self.embedder = NeuralEmbeddingLayer(
-            self.hidden_size, self.embed_region, self.regionlookup.max_region_indx, config.embedder
+            self.hidden_size, self.embed_region, self.regionlookup.max_region_indx, 
+            config.embedder, **kwargs
         )
 
         # Transformer
@@ -363,6 +391,7 @@ class SpaceTimeTransformer(nn.Module):
             masking_mode:         Optional[str] = None,
             eval_mask:        Optional[torch.LongTensor] = None,
             num_neuron:       Optional[torch.LongTensor] = None,
+            eid:              Optional[str] = None,
     ) -> torch.FloatTensor:                           # (seq_len, seq_len, hidden_size)
 
         B, T, N = spikes.size() 
@@ -389,8 +418,8 @@ class SpaceTimeTransformer(nn.Module):
             targets_mask = None
 
         if self.mask:
-            targets_mask = targets_mask & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-            targets_mask = targets_mask & space_attn_mask.unsqueeze(1).expand(B,T,N)
+            targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
+            targets_mask = targets_mask.to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N).to(torch.int64)
 
         if self.embed_region:
             region_indx = self.regionlookup(neuron_regions).to(spikes.device)
@@ -402,6 +431,8 @@ class SpaceTimeTransformer(nn.Module):
             spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps  =\
             self.patcher(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, region_indx)
 
+        B, _T, N = spikes.size()
+        
         # Mask tokens
         if self.mask_token:
             spikes, targets_mask = self.masker(spikes)
@@ -418,9 +449,9 @@ class SpaceTimeTransformer(nn.Module):
 
         _, T, _ = x.size() 
 
-        if self.use_prompt:
-            context_mask = F.pad(self.context_mask[:T-1,:T-1], (1,0), value=1)
-            context_mask = torch.cat((torch.ones((1,T)), context_mask), dim=0)
+        if self.use_prompt or self.use_session:
+            context_mask = torch.cat((torch.ones((_T,T-_T)), self.context_mask[:_T,:_T]), dim=1)
+            context_mask = torch.cat((torch.ones((T-_T,T)), context_mask), dim=0)
             context_mask = context_mask.to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
         else:
             context_mask = self.context_mask[:T,:T].to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
@@ -438,7 +469,7 @@ class SpaceTimeTransformer(nn.Module):
             x = layer(x, attn_mask=attn_mask)
         x = self.out_norm(x)
 
-        return x, targets_mask
+        return x, targets_mask, _T
 
 
 
@@ -460,13 +491,14 @@ class STPatch(nn.Module):
         if encoder_pt_path is not None:
             encoder_config = os.path.join(encoder_pt_path, "encoder_config.yaml")
             config["encoder"] = update_config(config.encoder, encoder_config)
-        self.encoder = SpaceTimeTransformer(config.encoder)
+        self.encoder = SpaceTimeTransformer(config.encoder, **kwargs)
 
         # Load encoder weights
         if encoder_pt_path is not None:
             self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
 
         self.use_prompt = config.encoder.embedder.use_prompt
+        self.use_session = config.encoder.embedder.use_session
 
         # Build decoder
         if self.method == "ssl":
@@ -535,6 +567,7 @@ class STPatch(nn.Module):
         spike_augmentation: Optional[bool] = False,
         eval_mask:        Optional[torch.LongTensor] = None,
         num_neuron:       Optional[torch.LongTensor] = None,
+        eid:              Optional[str] = None,
     ) -> STPatchOutput:   
 
         B, T, N = spikes.size()
@@ -570,12 +603,14 @@ class STPatch(nn.Module):
             pad_space_len = (spikes[0,0,:] == self.pad_value).nonzero().min().item() 
 
         # Encode neural data
-        x, targets_mask = self.encoder(
+        x, targets_mask, _T = self.encoder(
             spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode, eval_mask, num_neuron
         )
 
-        if self.use_prompt:
-            x = x[:,1:]
+        _, T, _ = x.size()
+
+        if self.use_prompt or self.use_session:
+            x = x[:,T-_T:]
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
