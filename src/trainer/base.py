@@ -29,6 +29,8 @@ class Trainer():
         self.stitching = kwargs.get("stitching", None)
         self.num_neurons = kwargs.get("num_neurons", None)
 
+        self.model_class = self.config.model.model_class
+
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
         elif self.config.method.model_kwargs.reg:
@@ -200,9 +202,13 @@ class Trainer():
                     loss = outputs.loss
                     eval_loss += loss.item()
                     eval_examples += outputs.n_examples
-                    num_neuron = batch['spikes_data'].shape[2]
+                    if self.model_class in ['NDT1', 'iTransformer']:
+                        num_neuron = batch['spikes_data'].shape[2]
+                    elif self.model_class in ['NDT2', 'STPatch']:
+                        num_neuron = outputs.num_neuron
                     session_results[num_neuron]["gt"].append(outputs.targets.clone())
                     session_results[num_neuron]["preds"].append(outputs.preds.clone())
+                    
             results_list = []
             for idx, num_neuron in enumerate(self.num_neurons):
                 _gt = torch.cat(session_results[num_neuron]["gt"], dim=0)

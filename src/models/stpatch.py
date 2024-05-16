@@ -31,6 +31,7 @@ class STPatchOutput(ModelOutput):
     n_examples: Optional[torch.LongTensor] = None
     preds: Optional[torch.FloatTensor] = None
     targets: Optional[torch.FloatTensor] = None
+    num_neuron: Optional[int] = None
   
 
 # Create buffer of biggest possible context mask 
@@ -137,7 +138,7 @@ class NeuralEmbeddingLayer(nn.Module):
         timestamps:           torch.LongTensor,
         regionstamps:         Optional[torch.LongTensor] = None,
         masking_mode:         Optional[str] = None,
-        eid:              Optional[str] = None,
+        eid:                  Optional[str] = None,
     ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:  
         #   (n_batch, new_n_token, hidden_size) ->
         #   (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token), (n_batch, new_n_token)
@@ -444,7 +445,8 @@ class SpaceTimeTransformer(nn.Module):
             
         # Embed neural data
         x, _space_attn_mask, _time_attn_mask, spacestamps, timestamps = self.embedder(
-            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps, masking_mode
+            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps, 
+            masking_mode, eid
         )
 
         _, T, _ = x.size() 
@@ -570,7 +572,7 @@ class STPatch(nn.Module):
         eid:              Optional[str] = None,
     ) -> STPatchOutput:   
 
-        B, T, N = spikes.size()
+        B, T_, N = spikes.size()
 
          # Augmentation
         if spike_augmentation:
@@ -593,7 +595,7 @@ class STPatch(nn.Module):
 
         # Track padded values to prevent them from being used
         if (spikes[0,:,0] == self.pad_value).sum() == 0:
-            pad_time_len = T
+            pad_time_len = T_
         else:
             pad_time_len = (spikes[0,:,0] == self.pad_value).nonzero().min().item() 
 
@@ -604,7 +606,7 @@ class STPatch(nn.Module):
 
         # Encode neural data
         x, targets_mask, _T = self.encoder(
-            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode, eval_mask, num_neuron
+            spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, spikes_timestamps, spikes_spacestamps, neuron_regions, masking_mode, eval_mask, num_neuron, eid
         )
 
         _, T, _ = x.size()
@@ -614,9 +616,9 @@ class STPatch(nn.Module):
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
-            outputs = self.decoder(x).reshape(B,T,N)[:,:,:pad_space_len]
-            targets = targets.reshape(B,T,N)[:,:,:pad_space_len]
-            targets_mask = targets_mask.reshape(B,T,N)[:,:,:pad_space_len]
+            outputs = self.decoder(x).reshape((B,T_,-1))[:,:,:pad_space_len]
+            targets = targets.reshape((B,T_,-1))[:,:,:pad_space_len]
+            targets_mask = targets_mask.reshape((B,T_,-1))[:,:,:pad_space_len]
             
         elif self.method == "sl":
             x = x.flatten(start_dim=1)  
@@ -635,6 +637,7 @@ class STPatch(nn.Module):
             n_examples=n_examples,
             preds=outputs,
             targets=targets,
+            num_neuron=pad_space_len
         )  
 
     def save_checkpoint(self, save_dir):

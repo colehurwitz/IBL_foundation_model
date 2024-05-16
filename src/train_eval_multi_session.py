@@ -1,4 +1,5 @@
 import argparse
+from math import ceil
 from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
 import argparse
@@ -57,13 +58,13 @@ else:
         }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
+config = update_config("src/configs/multi_sessions_trainer.yaml", config)
 
 num_train_sessions = len(config.data.train_session_eid)
 
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_multi_session_model_{}_method_{}_mask_{}_stitch_{}_{}_sessions".format(config.model.model_class, config.method.model_kwargs.method_name,config.model.encoder.masker.mode, config.model.encoder.stitching, num_train_sessions))
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_multi_session_model_{}_method_{}_mask_{}_stitch_{}_{}_sessions".format(config.model.model_class, config.method.model_kwargs.method_name,args.mask_mode, config.model.encoder.stitching, num_train_sessions))
 
 set_seed(config.seed)
 
@@ -76,7 +77,7 @@ if args.train:
                            "multi_sessions", 
                            "model_{}".format(config.model.model_class), 
                            "method_{}".format(config.method.model_kwargs.method_name), 
-                           "mask_{}".format(config.model.encoder.masker.mode),
+                           "mask_{}".format(args.mask_mode),
                            "stitch_{}".format(config.model.encoder.stitching),
                            "{}_sessions".format(num_train_sessions)
                           )
