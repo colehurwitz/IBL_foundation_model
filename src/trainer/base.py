@@ -206,8 +206,8 @@ class Trainer():
                         num_neuron = batch['spikes_data'].shape[2]
                     elif self.model_class in ['NDT2', 'STPatch']:
                         num_neuron = outputs.num_neuron
-                    session_results[num_neuron]["gt"].append(outputs.targets.clone())
-                    session_results[num_neuron]["preds"].append(outputs.preds.clone())
+                    session_results[num_neuron]["gt"].append(outputs.targets.clone()[:,:,:num_neuron])
+                    session_results[num_neuron]["preds"].append(outputs.preds.clone()[:,:,:num_neuron])
                     
             results_list = []
             for idx, num_neuron in enumerate(self.num_neurons):
