@@ -154,10 +154,10 @@ if args.train:
     pretrain_model_path = f'{base_path}/results/train/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/model_best.pt'
     if num_train_sessions > 1:
         print('Load pretrain model from:', pretrain_model_path)
+        # load weights that can be found in the pretrain model
+        model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
     else:
         print('Train from scratch.')
-    # load weights that can be found in the pretrain model
-    model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
     lr_scheduler = OneCycleLR(
