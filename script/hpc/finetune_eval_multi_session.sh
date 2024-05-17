@@ -36,7 +36,8 @@ python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --eval \
                          --base_path $SCRATCH/IBL_foundation_model \
                          --num_train_sessions $NUM_TRAIN_SESSIONS \
-                         --test_eid $TEST_EID
+                         --test_eid $TEST_EID \
+                         --use_dummy
 
 cd script/hpc
 
