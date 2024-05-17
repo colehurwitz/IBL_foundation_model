@@ -27,7 +27,7 @@ ap.add_argument("--test_eid", type=str, default='51e53aff-1d5d-4182-a684-aba783d
 ap.add_argument("--mask_ratio", type=float, default=0.3)
 ap.add_argument("--mask_mode", type=str, default="all")
 ap.add_argument("--model_name", type=str, default="NDT1")
-ap.add_argument("--prompting", action='store_true')
+ap.add_argument("--prompting", type=str, default="False")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--eval", action='store_true')
 ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
@@ -38,8 +38,9 @@ eid = args.test_eid
 base_path = args.base_path
 model_acroynm = args.model_name.lower()
 num_train_sessions = args.num_train_sessions
+assert num_train_sessions > 0, 'num_train_sessions should be greater than 0.'
 
-if args.prompting:
+if args.prompting == "True":
     if args.model_name == 'NDT1':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
@@ -151,7 +152,10 @@ if args.train:
     model = accelerator.prepare(model)
     # load pretrain model
     pretrain_model_path = f'{base_path}/results/train/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/model_best.pt'
-    print('Load pretrain model from:', pretrain_model_path)
+    if num_train_sessions > 1:
+        print('Load pretrain model from:', pretrain_model_path)
+    else:
+        print('Train from scratch.')
     # load weights that can be found in the pretrain model
     model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
     
@@ -209,16 +213,15 @@ if args.eval:
     forward_pred = True
     inter_region = True
     intra_region = True
-    choice_decoding = True
+    choice_decoding = False
     continuous_decoding = True
     
     print(mask_name)
     
-    if args.prompting:
+    if args.prompting == "True":
         model_config = f"src/configs/{model_acroynm}_stitching_prompting_eval.yaml"
     else:
         model_config = f"src/configs/{model_acroynm}_stitching_eval.yaml"
-    
     
     configs = {
         'model_config': model_config,
@@ -340,7 +343,7 @@ if args.eval:
         configs = {
             'model_config': model_config,
             'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
-            'trainer_config': f'src/configs/trainer_sl_choice_{model_acroynm}.yaml',
+            'trainer_config': f'src/configs/ppwang/trainer_sl_choice_{model_acroynm}.yaml',
             'dataset_path': None,
             'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/choice_decoding',
             'test_size': 0.2,
@@ -351,7 +354,8 @@ if args.eval:
             'freeze_encoder': True,
             'mask_ratio': args.mask_ratio,
             'eid': eid,
-            'num_sessions': 1 
+            'num_sessions': 1 ,
+            'num_train_sessions': num_train_sessions,
         }  
         results = behavior_decoding(**configs)
         print(results)
@@ -363,7 +367,7 @@ if args.eval:
         configs = {
             'model_config': model_config,
             'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
-            'trainer_config': f'src/configs/trainer_sl_continuous_{model_acroynm}.yaml',
+            'trainer_config': f'src/configs/ppwang/trainer_sl_continuous_{model_acroynm}.yaml',
             'dataset_path': None, 
             'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/continuous_decoding',
             'test_size': 0.2,
@@ -374,7 +378,8 @@ if args.eval:
             'freeze_encoder': True,
             'mask_ratio': args.mask_ratio,
             'eid': eid,
-            'num_sessions': 1 
+            'num_sessions': 1,
+            'num_train_sessions': num_train_sessions,
         }  
         results = behavior_decoding(**configs)
         print(results)
