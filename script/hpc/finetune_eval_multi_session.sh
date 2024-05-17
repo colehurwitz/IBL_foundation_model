@@ -15,11 +15,10 @@ MASK_MODE=${2}
 NUM_TRAIN_SESSIONS=${3}
 TEST_EID=${4}
 
-if $MASK_MODE == "all"
-then
-    PROMPTING="True"
+if [ $MASK_MODE == "all" ]; then
+    PROMPTING=True
 else
-    PROMPTING="False"
+    PROMPTING=False
 fi
 
 echo "Model name: $MODEL_NAME, Mask mode: $MASK_MODE, Num train sessions: $NUM_TRAIN_SESSIONS, Test eid: $TEST_EID"
@@ -32,7 +31,7 @@ cd ../../
 python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --mask_mode $MASK_MODE \
                          --model_name $MODEL_NAME \
-                         --prompting $PROMPTING\
+                         --prompting $PROMPTING \
                          --train \
                          --eval \
                          --base_path $SCRATCH/IBL_foundation_model \

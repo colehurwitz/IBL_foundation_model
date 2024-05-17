@@ -697,6 +697,7 @@ def behavior_decoding(**kwargs):
     mask_mode = mask_name.split("_")[1]
     eid = kwargs['eid']
     num_sessions = kwargs['num_sessions']
+    num_train_sessions = kwargs['num_train_sessions']
 
     # set seed
     set_seed(seed)
@@ -709,15 +710,6 @@ def behavior_decoding(**kwargs):
     config.model.encoder.masker.mode = mask_mode
 
     target = config.data.target
-    log_dir = os.path.join(
-            config.dirs.log_dir, "train", 
-            "model_{}".format(config.model.model_class), 
-            "method_sl", mask_name, 
-            f"ratio_{mask_ratio}", 
-            target
-    )
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
 
     accelerator = Accelerator()
 
@@ -732,6 +724,17 @@ def behavior_decoding(**kwargs):
                         eid=eid
                     )
     print(meta_data)
+    log_dir = os.path.join(
+            config.dirs.log_dir, 
+            "train", 
+            "num_session_{}".format(num_train_sessions),
+            "model_{}".format(config.model.model_class), 
+            "method_sl", mask_name, 
+            f"ratio_{mask_ratio}", 
+            target
+    )
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs, **meta_data)
