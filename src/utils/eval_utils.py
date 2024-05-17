@@ -731,7 +731,8 @@ def behavior_decoding(**kwargs):
             "model_{}".format(config.model.model_class), 
             "method_sl", mask_name, 
             f"ratio_{mask_ratio}", 
-            target
+            target,
+            eid
     )
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
