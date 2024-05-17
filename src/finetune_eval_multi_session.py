@@ -213,7 +213,7 @@ if args.eval:
     forward_pred = True
     inter_region = True
     intra_region = True
-    choice_decoding = False
+    choice_decoding = True
     continuous_decoding = True
     
     print(mask_name)
