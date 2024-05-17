@@ -294,7 +294,7 @@ def load_ibl_dataset(cache_dir,
         num_neuron_set = list(num_neuron_set)
         meta_data = {
             "num_neurons": num_neuron_set,
-            "num_sessions": num_sessions,
+            "num_sessions": len(eids_set),
             "eids": eids_set
         }
     elif split_method == 'session_based':

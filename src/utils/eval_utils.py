@@ -712,7 +712,9 @@ def behavior_decoding(**kwargs):
     log_dir = os.path.join(
             config.dirs.log_dir, "train", 
             "model_{}".format(config.model.model_class), 
-            "method_sl", mask_name, f"ratio_{mask_ratio}", target
+            "method_sl", mask_name, 
+            f"ratio_{mask_ratio}", 
+            target
     )
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)

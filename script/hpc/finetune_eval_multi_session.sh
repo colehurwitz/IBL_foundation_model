@@ -13,6 +13,18 @@
 MODEL_NAME=${1}
 MASK_MODE=${2}
 NUM_TRAIN_SESSIONS=${3}
+TEST_EID=${4}
+
+if $MASK_MODE == "all"
+then
+    PROMPTING="True"
+else
+    PROMPTING="False"
+fi
+
+echo "Model name: $MODEL_NAME, Mask mode: $MASK_MODE, Num train sessions: $NUM_TRAIN_SESSIONS, Test eid: $TEST_EID"
+echo "Prompting: $PROMPTING"
+
 conda activate ibl-fm
 
 cd ../../
@@ -20,12 +32,12 @@ cd ../../
 python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --mask_mode $MASK_MODE \
                          --model_name $MODEL_NAME \
-                         --prompting \
+                         --prompting $PROMPTING\
                          --train \
                          --eval \
                          --base_path $SCRATCH/IBL_foundation_model \
                          --num_train_sessions $NUM_TRAIN_SESSIONS \
-                         --test_eid 5dcee0eb-b34d-4652-acc3-d10afc6eae68
+                         --test_eid $TEST_EID
 
 cd script/hpc
 
