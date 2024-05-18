@@ -56,14 +56,14 @@ for eid in eids:
             try:
                 r2_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'r2.npy')
                 r2 = np.load(r2_path)
-                print(f'{eval} success')
             except:
+                print(f'Failed to load: {eid}, {mask}, {eval}')
                 r2 = np.zeros(2)
             try:
                 bps_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'bps.npy')
                 bps = np.load(bps_path)
-                print(f'{eval} success')
             except:
+                print(f'Failed to load: {eid}, {mask}, {eval}')
                 bps = 0
             metrics_dict[eid][mask][eval]['r2_psth'] = np.nanmean(r2.T[0]) 
             metrics_dict[eid][mask][eval]['r2_per_trial'] = np.nanmean(r2.T[1]) 
@@ -74,8 +74,8 @@ for eid in eids:
                 try:
                     acc_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'choice_results.npy')
                     acc = np.load(acc_path, allow_pickle=True).item()['acc']
-                    print('choice_decoding success')
                 except:
+                    print(f'Failed to load: {eid}, {mask}, {eval}')
                     acc = np.zeros(1)
                 metrics_dict[eid][mask][eval]['metric'] = acc
             elif eval == "continuous_decoding":
@@ -84,8 +84,8 @@ for eid in eids:
                     r2 = np.load(
                         r2_path, allow_pickle=True
                     ).item()['rsquared']
-                    print('continuous_decoding success')
                 except:
+                    print(f'Failed to load: {eid}, {mask}, {eval}')
                     r2 = np.zeros(1)
                 metrics_dict[eid][mask][eval]['metric'] = r2
 
