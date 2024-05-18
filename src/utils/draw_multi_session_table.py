@@ -255,7 +255,7 @@ for i, mask in enumerate(mask_methods):
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 7))
 # set the title
-fig.suptitle(f"model: {model}, eid: {eid}")
+fig.suptitle(f"model: {model}, Average across eids")
 mat = bps_mat
 im0 = axes[0].imshow(mat, cmap='Blues_r')
 axes[0].set_title("co-bps")
