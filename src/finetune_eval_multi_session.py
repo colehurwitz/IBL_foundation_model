@@ -29,8 +29,8 @@ ap.add_argument("--mask_ratio", type=float, default=0.3)
 ap.add_argument("--mask_mode", type=str, default="all")
 ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--prompting", type=str, default="False")
-ap.add_argument("--train", action='store_true')
-ap.add_argument("--eval", action='store_true')
+ap.add_argument("--train", type=str, default="True")
+ap.add_argument("--eval", type=str, default="True")
 ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
@@ -73,10 +73,10 @@ if args.use_dummy:
     dummy_thread = threading.Thread(target=dummy_load, args=(stop_dummy_load,))
     dummy_thread.start()
 try:
-    if args.train:
+    if args.train == "True":
         print('Start model training.')
         print('=====================')
-
+        exit()
         train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                             config.dirs.huggingface_org,
                             eid=None,
@@ -200,7 +200,7 @@ try:
 
     #########################
 
-    if args.eval:
+    if args.eval == "True":
         import wandb
         wandb.init(project=config.wandb.project, 
                 entity=config.wandb.entity, 
@@ -360,7 +360,7 @@ try:
                 'mask_name': mask_name,
                 'metric': 'acc',
                 'from_scratch': False,
-                'freeze_encoder': True,
+                'freeze_encoder': False,
                 'mask_ratio': args.mask_ratio,
                 'eid': eid,
                 'num_sessions': 1 ,
@@ -384,7 +384,7 @@ try:
                 'mask_name': mask_name,
                 'metric': 'rsquared',
                 'from_scratch': False,
-                'freeze_encoder': True,
+                'freeze_encoder': False,
                 'mask_ratio': args.mask_ratio,
                 'eid': eid,
                 'num_sessions': 1,
