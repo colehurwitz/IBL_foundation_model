@@ -1089,35 +1089,37 @@ def bits_per_spike(rates, spikes):
 
 def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
               aligned_tbins=[],
-              axes=None, legend=False, neuron_idx='', neuron_region=''):
-    if axes is None:
-        nrows = 1;
-        ncols = len(var_tasklist)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 2 * nrows))
+              axes=None, legend=False, neuron_idx='', neuron_region='', save_plot=False):
+    
+    if save_plot:
+        if axes is None:
+            nrows = 1;
+            ncols = len(var_tasklist)
+            fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 2 * nrows))
 
-    for ci, var in enumerate(var_tasklist):
-        ax = axes[ci]
-        psth_xy = compute_all_psth(X, y, var_name2idx[var])
-        psth_pred_xy = compute_all_psth(X, y_pred, var_name2idx[var])
-        
-        for _i, _x in enumerate(psth_xy.keys()):
-            psth = psth_xy[_x]
-            psth_pred = psth_pred_xy[_x]
-            ax.plot(psth,
-                    color=plt.get_cmap('tab10')(_i),
-                    linewidth=3, alpha=0.3, label=f"{var_value2label[var][tuple(_x)]}")
-            ax.plot(psth_pred,
-                    color=plt.get_cmap('tab10')(_i),
-                    linestyle='--')
-            ax.set_xlabel("Time bin")
-            if ci == 0:
-                ax.set_ylabel("Neural activity")
-            else:
-                ax.sharey(axes[0])
-        _add_baseline(ax, aligned_tbins=aligned_tbins)
-        if legend:
-            ax.legend()
-            ax.set_title(f"{var}")
+        for ci, var in enumerate(var_tasklist):
+            ax = axes[ci]
+            psth_xy = compute_all_psth(X, y, var_name2idx[var])
+            psth_pred_xy = compute_all_psth(X, y_pred, var_name2idx[var])
+            
+            for _i, _x in enumerate(psth_xy.keys()):
+                psth = psth_xy[_x]
+                psth_pred = psth_pred_xy[_x]
+                ax.plot(psth,
+                        color=plt.get_cmap('tab10')(_i),
+                        linewidth=3, alpha=0.3, label=f"{var_value2label[var][tuple(_x)]}")
+                ax.plot(psth_pred,
+                        color=plt.get_cmap('tab10')(_i),
+                        linestyle='--')
+                ax.set_xlabel("Time bin")
+                if ci == 0:
+                    ax.set_ylabel("Neural activity")
+                else:
+                    ax.sharey(axes[0])
+            _add_baseline(ax, aligned_tbins=aligned_tbins)
+            if legend:
+                ax.legend()
+                ax.set_title(f"{var}")
 
     # compute PSTH for task_contingency
     idxs_psth = np.concatenate([var_name2idx[var] for var in var_tasklist])
@@ -1125,22 +1127,17 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
     psth_pred_xy = compute_all_psth(X, y_pred, idxs_psth)
     r2_psth = compute_R2_psth(psth_xy, psth_pred_xy, clip=False)
     r2_single_trial = compute_R2_main(y.reshape(-1, 1), y_pred.reshape(-1, 1), clip=False)[0]
-    '''
-    axes[-1].annotate(f'PSTH R2: {r2_psth:.2f}'+"\n"+f"#conds: {len(psth_xy.keys())}", 
-                        xy=(y.shape[1], 0), 
-                        xytext=(y.shape[1]+20, 0), 
-                        ha='left', 
-                        rotation=90)
-    '''
-    axes[0].set_ylabel(
-        f'Neuron: #{neuron_idx[:4]} \n PSTH R2: {r2_psth:.2f} \n Avg_SingleTrial R2: {r2_single_trial:.2f}')
+    
+    if save_plot:
+        axes[0].set_ylabel(
+            f'Neuron: #{neuron_idx[:4]} \n PSTH R2: {r2_psth:.2f} \n Avg_SingleTrial R2: {r2_single_trial:.2f}')
 
-    for ax in axes:
-        # ax.axis('off')
-        ax.spines[['right', 'top']].set_visible(False)
-        # ax.set_frame_on(False)
-        # ax.tick_params(bottom=False, left=False)
-    plt.tight_layout()
+        for ax in axes:
+            # ax.axis('off')
+            ax.spines[['right', 'top']].set_visible(False)
+            # ax.set_frame_on(False)
+            # ax.tick_params(bottom=False, left=False)
+        plt.tight_layout()
 
     return r2_psth, r2_single_trial
 
@@ -1291,99 +1288,110 @@ This script generates a plot to examine the (single-trial) fitting of a single n
 
 def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, var_behlist,
                     subtract_psth="task", aligned_tbins=[], clusby='y_pred', neuron_idx='', neuron_region='', method='',
-                    save_path='figs'):
-    nrows = 8
-    plt.figure(figsize=(8, 2 * nrows))
+                    save_path='figs', save_plot=False):
+    
+    if save_plot:
+        nrows = 8
+        plt.figure(figsize=(8, 2 * nrows))
+        axes_psth = [plt.subplot(nrows, len(var_tasklist), k + 1) for k in range(len(var_tasklist))]
+        axes_single = [plt.subplot(nrows, 1, k) for k in range(2, 2 + 2 + len(var_behlist) + 2)]
+    else:
+        axes_psth = None
+        axes_single = None
+
 
     ### plot psth
-    axes_psth = [plt.subplot(nrows, len(var_tasklist), k + 1) for k in range(len(var_tasklist))]
     r2_psth, r2_trial = plot_psth(X, y, y_pred,
                                   var_tasklist=var_tasklist,
                                   var_name2idx=var_name2idx,
                                   var_value2label=var_value2label,
                                   aligned_tbins=aligned_tbins,
-                                  axes=axes_psth, legend=True, neuron_idx=neuron_idx, neuron_region=neuron_region)
+                                  axes=axes_psth, legend=True, neuron_idx=neuron_idx, neuron_region=neuron_region,
+                                  save_plot=save_plot)
 
     ### plot the psth-subtracted activity
-    axes_single = [plt.subplot(nrows, 1, k) for k in range(2, 2 + 2 + len(var_behlist) + 2)]
-    plot_single_trial_activity(X, y, y_pred,
-                               var_name2idx,
-                               var_behlist,
-                               var_tasklist, subtract_psth=subtract_psth,
-                               aligned_tbins=aligned_tbins,
-                               clusby=clusby,
-                               axes=axes_single)
-
-    # print((neuron_region, neuron_idx, r2, method))
+    if save_plot:
+        plot_single_trial_activity(X, y, y_pred,
+                                   var_name2idx,
+                                   var_behlist,
+                                   var_tasklist, subtract_psth=subtract_psth,
+                                   aligned_tbins=aligned_tbins,
+                                   clusby=clusby,
+                                   axes=axes_single)
 
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2_trial:.2f}_{method}.png"))
-    plt.tight_layout();
-    # plt.show()
+    
+    if save_plot:
+        plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2_trial:.2f}_{method}.png"))
+        plt.tight_layout();
 
     return r2_psth, r2_trial
     
 
 def viz_single_cell_unaligned(
     gt, pred, neuron_idx, neuron_region, method, save_path, 
-    n_clus=8, n_neighbors=5
+    n_clus=8, n_neighbors=5, save_plot=False
 ):
+    
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
     r2 = 0
     for _ in range(len(gt)):
         r2 += r2_score(gt, pred)
     r2 /= len(gt)
-    
-    y = gt - gt.mean(0)
-    y_pred = pred - pred.mean(0)
-    y_resid = y - y_pred
 
-    clustering = SpectralClustering(n_clusters=n_clus, n_neighbors=n_neighbors,
-                                        affinity='nearest_neighbors',
-                                        assign_labels='discretize',
-                                        random_state=0)
+    if save_plot:
+        y = gt - gt.mean(0)
+        y_pred = pred - pred.mean(0)
+        y_resid = y - y_pred
 
-    clustering = clustering.fit(y_pred)
-    t_sort = np.argsort(clustering.labels_)
-    
-    vmin_perc, vmax_perc = 10, 90 
-    vmax = np.percentile(y_pred, vmax_perc)
-    vmin = np.percentile(y_pred, vmin_perc)
-    
-    toshow = [y, y_pred, y_resid]
-    resid_vmax = np.percentile(toshow, vmax_perc)
-    resid_vmin = np.percentile(toshow, vmin_perc)
-    
-    N = len(y)
-    y_labels = ['obs.', 'pred.', 'resid.']
+        clustering = SpectralClustering(n_clusters=n_clus, n_neighbors=n_neighbors,
+                                            affinity='nearest_neighbors',
+                                            assign_labels='discretize',
+                                            random_state=0)
 
-    fig, axes = plt.subplots(3, 1, figsize=(8, 7))
-    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    im1 = axes[0].imshow(y[t_sort], aspect='auto', cmap='bwr', norm=norm)
-    cbar = plt.colorbar(im1, pad=0.02, shrink=.6)
-    cbar.ax.tick_params(rotation=90)
-    axes[0].set_title(f' R2: {r2:.3f}')
-    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    im2 = axes[1].imshow(y_pred[t_sort], aspect='auto', cmap='bwr', norm=norm)
-    cbar = plt.colorbar(im2, pad=0.02, shrink=.6)
-    cbar.ax.tick_params(rotation=90)
-    norm = colors.TwoSlopeNorm(vmin=resid_vmin, vcenter=0, vmax=resid_vmax)
-    im3 = axes[2].imshow(y_resid[t_sort], aspect='auto', cmap='bwr', norm=norm)
-    cbar = plt.colorbar(im3, pad=0.02, shrink=.6)
-    cbar.ax.tick_params(rotation=90)
-    
-    for i, ax in enumerate(axes):
-        ax.set_ylabel(f"{y_labels[i]}"+f"\n(#trials={N})")
-        ax.yaxis.set_ticks([])
-        ax.yaxis.set_ticklabels([])
-        ax.xaxis.set_ticks([])
-        ax.xaxis.set_ticklabels([])
-        ax.spines[['left','bottom', 'right', 'top']].set_visible(False)
-    
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2:.2f}_{method}.png"))
-    plt.tight_layout();
+        clustering = clustering.fit(y_pred)
+        t_sort = np.argsort(clustering.labels_)
+        
+        vmin_perc, vmax_perc = 10, 90 
+        vmax = np.percentile(y_pred, vmax_perc)
+        vmin = np.percentile(y_pred, vmin_perc)
+        
+        toshow = [y, y_pred, y_resid]
+        resid_vmax = np.percentile(toshow, vmax_perc)
+        resid_vmin = np.percentile(toshow, vmin_perc)
+        
+        N = len(y)
+        y_labels = ['obs.', 'pred.', 'resid.']
+
+        fig, axes = plt.subplots(3, 1, figsize=(8, 7))
+        norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        im1 = axes[0].imshow(y[t_sort], aspect='auto', cmap='bwr', norm=norm)
+        cbar = plt.colorbar(im1, pad=0.02, shrink=.6)
+        cbar.ax.tick_params(rotation=90)
+        axes[0].set_title(f' R2: {r2:.3f}')
+        norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        im2 = axes[1].imshow(y_pred[t_sort], aspect='auto', cmap='bwr', norm=norm)
+        cbar = plt.colorbar(im2, pad=0.02, shrink=.6)
+        cbar.ax.tick_params(rotation=90)
+        norm = colors.TwoSlopeNorm(vmin=resid_vmin, vcenter=0, vmax=resid_vmax)
+        im3 = axes[2].imshow(y_resid[t_sort], aspect='auto', cmap='bwr', norm=norm)
+        cbar = plt.colorbar(im3, pad=0.02, shrink=.6)
+        cbar.ax.tick_params(rotation=90)
+        
+        for i, ax in enumerate(axes):
+            ax.set_ylabel(f"{y_labels[i]}"+f"\n(#trials={N})")
+            ax.yaxis.set_ticks([])
+            ax.yaxis.set_ticklabels([])
+            ax.xaxis.set_ticks([])
+            ax.xaxis.set_ticklabels([])
+            ax.spines[['left','bottom', 'right', 'top']].set_visible(False)
+        
+        plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2:.2f}_{method}.png"))
+        plt.tight_layout()
+
     return r2
 
 
@@ -1484,4 +1492,3 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
-        
