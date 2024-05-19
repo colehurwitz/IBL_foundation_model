@@ -851,7 +851,7 @@ def behavior_decoding(**kwargs):
     print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
     per_mode_res = {}
-    for prompting_mode in ['neuron', 'causal', 'inter-region', 'intra-region', 'temporal']:
+    for prompting_mode in ['neuron', 'causal', 'inter-region', 'intra-region']:
         gt, preds = [], []
         model.eval()
         with torch.no_grad():
