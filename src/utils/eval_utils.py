@@ -850,51 +850,54 @@ def behavior_decoding(**kwargs):
     model.encoder.masker.force_active = False
     print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
-    gt, preds = [], []
-    model.eval()
-    with torch.no_grad():
-        for batch in test_dataloader:
-            batch = move_batch_to_device(batch, accelerator.device)
-            
-            model.encoder.mask = False
-            
-            outputs = model(
-                batch['spikes_data'],
-                time_attn_mask=batch['time_attn_mask'],
-                space_attn_mask=batch['space_attn_mask'],
-                spikes_timestamps=batch['spikes_timestamps'], 
-                spikes_spacestamps=batch['spikes_spacestamps'], 
-                targets = batch['target'],
-                neuron_regions=batch['neuron_regions'],
-                masking_mode = 'neuron' if config.data.target == 'choice' else 'causal',
-                num_neuron=batch['spikes_data'].shape[2],
-                eid=batch['eid'][0]  # each batch consists of data from the same eid
-            )
-            gt.append(outputs.targets.clone())
-            preds.append(outputs.preds.clone())
-    gt = torch.cat(gt, dim=0)
-    preds = torch.cat(preds, dim=0)
+    per_mode_res = {}
+    for prompting_mode in ['neuron', 'causal', 'inter-region', 'intra-region']:
+        gt, preds = [], []
+        model.eval()
+        with torch.no_grad():
+            for batch in test_dataloader:
+                batch = move_batch_to_device(batch, accelerator.device)
+                
+                model.encoder.mask = False
+                
+                outputs = model(
+                    batch['spikes_data'],
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    targets = batch['target'],
+                    neuron_regions=batch['neuron_regions'],
+                    masking_mode = prompting_mode,
+                    num_neuron=batch['spikes_data'].shape[2],
+                    eid=batch['eid'][0]  # each batch consists of data from the same eid
+                )
+                gt.append(outputs.targets.clone())
+                preds.append(outputs.preds.clone())
+        gt = torch.cat(gt, dim=0)
+        preds = torch.cat(preds, dim=0)
 
-    if config.method.model_kwargs.loss == "cross_entropy":
-        preds = torch.nn.functional.softmax(preds, dim=1) 
+        if config.method.model_kwargs.loss == "cross_entropy":
+            preds = torch.nn.functional.softmax(preds, dim=1) 
 
-    if config.method.model_kwargs.clf:
-        results = metrics_list(gt = gt.argmax(1),
-                               pred = preds.argmax(1), 
-                               metrics=[metric], 
-                               device=accelerator.device)
-    elif config.method.model_kwargs.reg:
-        results = metrics_list(gt = gt,
-                               pred = preds,
-                               metrics=[metric],
-                               device=accelerator.device)
-
+        if config.method.model_kwargs.clf:
+            results = metrics_list(gt = gt.argmax(1),
+                                pred = preds.argmax(1), 
+                                metrics=[metric], 
+                                device=accelerator.device)
+        elif config.method.model_kwargs.reg:
+            results = metrics_list(gt = gt,
+                                pred = preds,
+                                metrics=[metric],
+                                device=accelerator.device)
+        per_mode_res[target+'_'+prompting_mode] = results
+        
     if not os.path.exists(kwargs['save_path']):
         os.makedirs(kwargs['save_path'])
-    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), results)
-    
+    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), per_mode_res)
+
     return {
-        f"{target}_{metric}": results[metric],
+        f"{target}_{metric}": per_mode_res,
     }
     
 

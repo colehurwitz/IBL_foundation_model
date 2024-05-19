@@ -73,7 +73,13 @@ for eid in eids:
             if eval == "choice_decoding":                
                 try:
                     acc_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'choice_results.npy')
-                    acc = np.load(acc_path, allow_pickle=True).item()['acc']
+                    _temp = np.load(acc_path, allow_pickle=True).item()
+                    acc_list = {}
+                    for prompt_mode in _temp:
+                        _acc = _temp[prompt_mode]['acc']
+                        acc_list[prompt_mode] = _acc
+                    acc = np.mean(list(acc_list.values()))
+                    print(f'choice decoding, {eid}, {mask}: {acc_list}')
                 except:
                     print(f'Failed to load: {eid}, {mask}, {eval}')
                     acc = np.zeros(1)
@@ -81,9 +87,13 @@ for eid in eids:
             elif eval == "continuous_decoding":
                 try:
                     r2_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'whisker-motion-energy_results.npy')
-                    r2 = np.load(
-                        r2_path, allow_pickle=True
-                    ).item()['rsquared']
+                    r2_list = {}
+                    _temp = np.load(r2_path, allow_pickle=True).item()
+                    for prompt_mode in _temp:
+                        _r2 = _temp[prompt_mode]['rsquared']
+                        r2_list[prompt_mode] = _r2
+                    r2 = np.mean(list(r2_list.values()))
+                    print(f'continuous decoding, {eid}, {mask}: {r2_list}')
                 except:
                     print(f'Failed to load: {eid}, {mask}, {eval}')
                     r2 = np.zeros(1)
