@@ -78,6 +78,7 @@ for eid in eids:
                     for prompt_mode in _temp:
                         _acc = _temp[prompt_mode]['acc']
                         acc_list[prompt_mode] = _acc
+                    # acc = acc_list['choice_neuron']
                     acc = np.mean(list(acc_list.values()))
                     print(f'choice decoding, {eid}, {mask}: {acc_list}')
                 except:
@@ -92,6 +93,7 @@ for eid in eids:
                     for prompt_mode in _temp:
                         _r2 = _temp[prompt_mode]['rsquared']
                         r2_list[prompt_mode] = _r2
+                    # r2 = r2_list['whisker-motion-energy_causal']
                     r2 = np.mean(list(r2_list.values()))
                     print(f'continuous decoding, {eid}, {mask}: {r2_list}')
                 except:

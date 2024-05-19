@@ -76,7 +76,6 @@ try:
     if args.train == "True":
         print('Start model training.')
         print('=====================')
-        exit()
         train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                             config.dirs.huggingface_org,
                             eid=None,
@@ -218,10 +217,10 @@ try:
             
         n_time_steps = 100
         
-        co_smooth = True
-        forward_pred = True
-        inter_region = True
-        intra_region = True
+        co_smooth = False
+        forward_pred = False
+        inter_region = False
+        intra_region = False
         choice_decoding = True
         continuous_decoding = True
         
@@ -360,7 +359,7 @@ try:
                 'mask_name': mask_name,
                 'metric': 'acc',
                 'from_scratch': False,
-                'freeze_encoder': False,
+                'freeze_encoder': True,
                 'mask_ratio': args.mask_ratio,
                 'eid': eid,
                 'num_sessions': 1 ,
@@ -384,7 +383,7 @@ try:
                 'mask_name': mask_name,
                 'metric': 'rsquared',
                 'from_scratch': False,
-                'freeze_encoder': False,
+                'freeze_encoder': True,
                 'mask_ratio': args.mask_ratio,
                 'eid': eid,
                 'num_sessions': 1,
