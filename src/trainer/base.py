@@ -42,7 +42,7 @@ class Trainer():
 
         self.masking_ratio = model.encoder.masker.ratio
         self.masking_mode = model.encoder.masker.mode
-        self.masking_schemes = ['neuron', 'causal']
+        self.masking_schemes = ['neuron', 'causal', 'temporal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
 
