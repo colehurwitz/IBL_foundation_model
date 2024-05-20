@@ -70,7 +70,7 @@ stop_dummy_load = threading.Event()
 if args.use_dummy:
     print("Running dummy load")
     # Run dummy load in a separate thread
-    dummy_thread = threading.Thread(target=dummy_load, args=(stop_dummy_load,))
+    dummy_thread = threading.Thread(target=dummy_load, args=(stop_dummy_load,80000))
     dummy_thread.start()
 try:
     if args.train == "True":
@@ -217,10 +217,10 @@ try:
             
         n_time_steps = 100
         
-        co_smooth = False
-        forward_pred = False
-        inter_region = False
-        intra_region = False
+        co_smooth = True
+        forward_pred = True
+        inter_region = True
+        intra_region = True
         choice_decoding = True
         continuous_decoding = True
         
