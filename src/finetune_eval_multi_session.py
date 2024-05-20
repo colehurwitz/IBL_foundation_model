@@ -364,6 +364,7 @@ try:
                 'eid': eid,
                 'num_sessions': 1 ,
                 'num_train_sessions': num_train_sessions,
+                'use_logreg': True,
             }  
             results = behavior_decoding(**configs)
             print(results)
@@ -388,6 +389,7 @@ try:
                 'eid': eid,
                 'num_sessions': 1,
                 'num_train_sessions': num_train_sessions,
+                'use_logreg': True,
             }  
             results = behavior_decoding(**configs)
             print(results)

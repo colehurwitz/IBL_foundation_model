@@ -26,7 +26,7 @@ NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 import logging
 
 logger = logging.getLogger(__name__)
-
+PROMPTING_MODE=['neuron', 'causal', 'inter-region', 'intra-region']
 
 # --------------------------------------------------------------------------------------------------
 # Model/Dataset Loading and Configuration
@@ -698,6 +698,7 @@ def behavior_decoding(**kwargs):
     eid = kwargs['eid']
     num_sessions = kwargs['num_sessions']
     num_train_sessions = kwargs['num_train_sessions']
+    use_logreg = kwargs['use_logreg']
 
     # set seed
     set_seed(seed)
@@ -739,8 +740,10 @@ def behavior_decoding(**kwargs):
 
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+    if use_logreg:
+        model = torch.load(model_path)['model']
 
-    if not kwargs['from_scratch']:
+    if not kwargs['from_scratch'] and not use_logreg:
         pretrained_model = torch.load(model_path)['model']
         model.encoder = pretrained_model.encoder
         if kwargs['freeze_encoder']:
@@ -787,7 +790,7 @@ def behavior_decoding(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
-        shuffle=False
+        shuffle=True
     )
 
     val_dataloader = make_loader(
@@ -815,83 +818,180 @@ def behavior_decoding(**kwargs):
         load_meta=config.data.load_meta,
         shuffle=False
     )
-
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
-    )
-    lr_scheduler = OneCycleLR(
-                    optimizer=optimizer,
-                    total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                    max_lr=config.optimizer.lr,
-                    pct_start=config.optimizer.warmup_pct,
-                    div_factor=config.optimizer.div_factor,
-                )
-
-    trainer_kwargs = {
-        "log_dir": log_dir,
-        "accelerator": accelerator,
-        "lr_scheduler": lr_scheduler,
-        "config": config,
-    }
-    trainer_ = make_trainer(
-        model=model,
-        train_dataloader=train_dataloader,
-        eval_dataloader=val_dataloader,
-        test_dataloader=test_dataloader,
-        optimizer=optimizer,
-        **trainer_kwargs,
-        **meta_data
-    )
-    
-    trainer_.train()
-
-    model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
-
-    model.encoder.masker.force_active = False
-    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
-
     per_mode_res = {}
-    for prompting_mode in ['neuron', 'causal', 'inter-region', 'intra-region']:
-        gt, preds = [], []
-        model.eval()
-        with torch.no_grad():
-            for batch in test_dataloader:
-                batch = move_batch_to_device(batch, accelerator.device)
-                
-                model.encoder.mask = False
-                
-                outputs = model(
-                    batch['spikes_data'],
-                    time_attn_mask=batch['time_attn_mask'],
-                    space_attn_mask=batch['space_attn_mask'],
-                    spikes_timestamps=batch['spikes_timestamps'], 
-                    spikes_spacestamps=batch['spikes_spacestamps'], 
-                    targets = batch['target'],
-                    neuron_regions=batch['neuron_regions'],
-                    masking_mode = prompting_mode,
-                    num_neuron=batch['spikes_data'].shape[2],
-                    eid=batch['eid'][0]  # each batch consists of data from the same eid
-                )
-                gt.append(outputs.targets.clone())
-                preds.append(outputs.preds.clone())
-        gt = torch.cat(gt, dim=0)
-        preds = torch.cat(preds, dim=0)
+    if not use_logreg:
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
+        )
+        lr_scheduler = OneCycleLR(
+                        optimizer=optimizer,
+                        total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
+                        max_lr=config.optimizer.lr,
+                        pct_start=config.optimizer.warmup_pct,
+                        div_factor=config.optimizer.div_factor,
+                    )
 
-        if config.method.model_kwargs.loss == "cross_entropy":
-            preds = torch.nn.functional.softmax(preds, dim=1) 
-
-        if config.method.model_kwargs.clf:
-            results = metrics_list(gt = gt.argmax(1),
-                                pred = preds.argmax(1), 
-                                metrics=[metric], 
-                                device=accelerator.device)
-        elif config.method.model_kwargs.reg:
-            results = metrics_list(gt = gt,
-                                pred = preds,
-                                metrics=[metric],
-                                device=accelerator.device)
-        per_mode_res[target+'_'+prompting_mode] = results
+        trainer_kwargs = {
+            "log_dir": log_dir,
+            "accelerator": accelerator,
+            "lr_scheduler": lr_scheduler,
+            "config": config,
+        }
+        trainer_ = make_trainer(
+            model=model,
+            train_dataloader=train_dataloader,
+            eval_dataloader=val_dataloader,
+            test_dataloader=test_dataloader,
+            optimizer=optimizer,
+            **trainer_kwargs,
+            **meta_data
+        )
         
+        trainer_.train()
+
+        model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
+
+        model.encoder.masker.force_active = False
+        print("(behave decoding) masking active: ", model.encoder.masker.force_active)
+
+        for prompting_mode in PROMPTING_MODE:
+            gt, preds = [], []
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    
+                    model.encoder.mask = False
+                    
+                    outputs = model(
+                        batch['spikes_data'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'],
+                        masking_mode = prompting_mode,
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                    )
+                    gt.append(outputs.targets.clone())
+                    preds.append(outputs.preds.clone())
+            gt = torch.cat(gt, dim=0)
+            preds = torch.cat(preds, dim=0)
+
+            if config.method.model_kwargs.loss == "cross_entropy":
+                preds = torch.nn.functional.softmax(preds, dim=1) 
+
+            if config.method.model_kwargs.clf:
+                results = metrics_list(gt = gt.argmax(1),
+                                    pred = preds.argmax(1), 
+                                    metrics=[metric], 
+                                    device=accelerator.device)
+            elif config.method.model_kwargs.reg:
+                results = metrics_list(gt = gt,
+                                    pred = preds,
+                                    metrics=[metric],
+                                    device=accelerator.device)
+            per_mode_res[target+'_'+prompting_mode] = results
+            
+    else:
+        train_val_dataset = torch.utils.data.ConcatDataset([train_dataset, val_dataset])
+        train_val_dataloader = make_loader(
+            train_val_dataset,
+            target=config.data.target,
+            batch_size=config.training.train_batch_size,
+            pad_to_right=True,
+            pad_value=-1.,
+            max_time_length=config.data.max_time_length,
+            max_space_length=max_space_length,
+            dataset_name=config.data.dataset_name,
+            load_meta=config.data.load_meta,
+            shuffle=False
+        )
+        for prompting_mode in PROMPTING_MODE:
+            train_y, train_x = [], []
+            model.eval()
+            with torch.no_grad():
+                for batch in train_val_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    
+                    model.encoder.mask = False
+                    
+                    outputs = model(
+                        batch['spikes_data'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'],
+                        masking_mode = prompting_mode,
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                    )
+                    train_y.append(batch['target'].clone())
+                    train_x.append(outputs.preds.clone())
+
+                train_y = torch.cat(train_y, dim=0)
+                train_x = torch.cat(train_x, dim=0)
+
+            test_y, test_x = [], []
+            model.eval()
+            with torch.no_grad():
+                for batch in test_dataloader:
+                    batch = move_batch_to_device(batch, accelerator.device)
+                    
+                    model.encoder.mask = False
+                    
+                    outputs = model(
+                        batch['spikes_data'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'], 
+                        spikes_spacestamps=batch['spikes_spacestamps'], 
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions'],
+                        masking_mode = prompting_mode,
+                        num_neuron=batch['spikes_data'].shape[2],
+                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                    )
+                    test_y.append(batch['target'].clone())
+                    test_x.append(outputs.preds.clone())
+                test_y = torch.cat(test_y, dim=0)
+                test_x = torch.cat(test_x, dim=0)
+            
+            train_y = train_y.cpu().numpy()
+            train_x = train_x.cpu().numpy().reshape(train_x.shape[0], -1)
+            test_y = test_y.cpu().numpy()
+            test_x = test_x.cpu().numpy().reshape(test_x.shape[0], -1)
+
+            from sklearn.model_selection import GridSearchCV
+            from sklearn.linear_model import LogisticRegression, Ridge
+            from sklearn.metrics import accuracy_score, r2_score
+            if target == 'choice':
+                train_y, test_y = train_y.argmax(1).flatten(), test_y.argmax(1).flatten()
+                grid={"C": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4], "penalty":["l2"]}
+                logreg=LogisticRegression(random_state=seed)
+                logreg_cv=GridSearchCV(logreg, grid, cv=4)
+                logreg_cv.fit(train_x, train_y)
+                test_pred = logreg_cv.predict(test_x)
+                acc = accuracy_score(test_y, test_pred)
+                print(f"accuracy: {acc}, metric: {metric}")
+                per_mode_res[target+'_'+prompting_mode] = {"acc": acc}
+            elif target == 'whisker-motion-energy':
+                grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
+                reg=Ridge(random_state=seed)
+                reg_cv=GridSearchCV(reg, grid, cv=4)
+                reg_cv.fit(train_x, train_y)
+                test_pred = reg_cv.predict(test_x)
+                r2 = r2_score(test_y.flatten(), test_pred.flatten())
+                print(f"r2: {r2}, metric: {metric}")
+                per_mode_res[target+'_'+prompting_mode] = {"rsquared": r2}
+
+            else:
+                raise NotImplementedError('target not implemented')
+            
     if not os.path.exists(kwargs['save_path']):
         os.makedirs(kwargs['save_path'])
     np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), per_mode_res)
@@ -900,8 +1000,6 @@ def behavior_decoding(**kwargs):
         f"{target}_{metric}": per_mode_res,
     }
     
-
-
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
     B_path = kwargs['B_path'],
