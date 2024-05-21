@@ -775,6 +775,9 @@ def behavior_decoding(**kwargs):
         print(os.path.join('data', 'trials_mask', f'{eid}.npy'))
         trial_filter = np.load(os.path.join('data', 'trials_mask', f'{eid}.npy'), allow_pickle=True).item()
         train_filter,val_filter, test_filter = trial_filter['train'], trial_filter['val'], trial_filter['test']
+        assert len(train_filter) == len(train_dataset), f"eid {eid} train filter length mismatch, expected {len(train_dataset)}, got {len(train_filter)}"
+        assert len(val_filter) == len(val_dataset), f"eid {eid} val filter length mismatch, expected {len(val_dataset)}, got {len(val_filter)}"
+        assert len(test_filter) == len(test_dataset), f"eid {eid} test filter length mismatch, expected {len(test_dataset)}, got {len(test_filter)}"
         train_filter_idx = np.where(train_filter==1)[0]
         val_filter_idx = np.where(val_filter==1)[0]
         test_filter_idx = np.where(test_filter==1)[0]
