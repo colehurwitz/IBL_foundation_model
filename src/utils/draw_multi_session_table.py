@@ -399,7 +399,7 @@ for i, task in enumerate(eval_methods):
     ax.set_ylim(ylim[i])
     ax.set_xlabel(f'{temp_name} Mask')
     if i == 0:
-        ax.set_ylabel('All mask + Prompt')
+        ax.set_ylabel('MtM (Prompt)')
     # ax.set_ylabel('All mask + Prompt')
     ax.set_title(TASK2NAME[task])
     # set grid
@@ -427,6 +427,7 @@ for i, task in enumerate(finetune_methods):
     ax.grid()
     ax.set_aspect('equal', adjustable='datalim')
     # ax.legend()
-# plt.tight_layout(pad=0.70, w_pad=-0.2)
-plt.tight_layout()
-plt.savefig(f'{output_dir}/scatter.eps', format='eps')
+plt.tight_layout(pad=0.70)
+# plt.tight_layout()
+# plt.savefig(f'{output_dir}/scatter.eps', format='eps')
+plt.savefig(f'{output_dir}/scatter.png')
