@@ -366,6 +366,7 @@ plt.rc('legend', fontsize=SMALL_SIZE)
 plt.rc('figure', titlesize=3)
 # scatter plot of different eids
 fig = plt.figure(figsize=(24, 4))
+plt.subplots_adjust(left=0.1, right=0.9, top=0.8, bottom=0.15, wspace=0.3, hspace=0.4)
 
 nrows = 1
 ncols = 6
@@ -425,4 +426,4 @@ for i, task in enumerate(finetune_methods):
     ax.grid()
     # ax.legend()
 plt.tight_layout()
-plt.savefig(f'{output_dir}/scatter.png')
+plt.savefig(f'{output_dir}/scatter.pdf')
