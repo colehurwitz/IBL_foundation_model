@@ -355,7 +355,7 @@ plt.close()
 
 plt.rc("figure", dpi=100)
 SMALL_SIZE = 10
-BIGGER_SIZE = 15
+BIGGER_SIZE = 20
 plt.rc('font', size=BIGGER_SIZE)
 plt.rc('axes', titlesize=BIGGER_SIZE)
 plt.rc('axes', labelsize=BIGGER_SIZE)
@@ -366,7 +366,7 @@ plt.rc('legend', fontsize=SMALL_SIZE)
 plt.rc('figure', titlesize=3)
 # scatter plot of different eids
 fig = plt.figure(figsize=(24, 4))
-plt.subplots_adjust(left=0.1, right=0.9, top=0.8, bottom=0.15, wspace=0.3, hspace=0.4)
+# plt.subplots_adjust(left=0.1, right=0.9, top=0.8, bottom=0.15, wspace=0.3, hspace=0.4)
 
 nrows = 1
 ncols = 6
@@ -404,6 +404,7 @@ for i, task in enumerate(eval_methods):
     ax.set_title(TASK2NAME[task])
     # set grid
     ax.grid()
+    ax.set_aspect('equal', adjustable='datalim')
     # ax.legend()
 
 for i, task in enumerate(finetune_methods):
@@ -424,6 +425,8 @@ for i, task in enumerate(finetune_methods):
     # ax.set_ylabel('all mask + prompt')
     ax.set_title(TASK2NAME[task])
     ax.grid()
+    ax.set_aspect('equal', adjustable='datalim')
     # ax.legend()
-plt.tight_layout(pad=0.70, w_pad=-0.2)
+# plt.tight_layout(pad=0.70, w_pad=-0.2)
+plt.tight_layout()
 plt.savefig(f'{output_dir}/scatter.eps', format='eps')
