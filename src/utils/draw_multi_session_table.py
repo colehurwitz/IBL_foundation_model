@@ -24,6 +24,8 @@ finetune_methods = ['choice_decoding', 'continuous_decoding']
 behavior_decoders = ['linear', 'reduced-rank', 'mlp']
 behavior_decoders = []
 
+TASK2NAME = {'co_smooth': 'Co-Smooth', 'forward_pred':'Forward Prediction', 'intra_region':'Intra-Region', 'inter_region':'Inter-Region','choice_decoding':'Choice', 'continuous_decoding':'Whisker Motion Energy'}
+
 if model == "NDT2":
     mask_methods += ['mask_random_token']
 
@@ -328,9 +330,9 @@ for i, ax in enumerate(axes):
     if model == "NDT2":
         ax.set_yticks(np.arange(N), labels=['neuron mask','causal mask', 'intra-region mask', 'inter-region mask', 'temporal mask', 'neuron+temporal+causal mask', 'all mask', 'random token mask'])
     else:
-        ax.set_yticks(np.arange(N), labels=['temporal mask', 'all mask + prompt'])
+        ax.set_yticks(np.arange(N), labels=['Temporal Mask', 'All mask + Prompt'])
     if i < len(axes)-1:
-        ax.set_xticks(np.arange(K), labels=['co-smooth','forward pred', 'intra-region', 'inter-region'])
+        ax.set_xticks(np.arange(K), labels=['Co-Smooth','Forward Prediction', 'Intra-Region', 'Inter-Region'])
     else:
         ax.set_xticks(np.arange(M), labels=['choice', 'whisker motion energy'])
         ax.set_yticks(np.arange(N+P), 
@@ -350,6 +352,18 @@ os.makedirs(output_dir, exist_ok=True)
 plt.savefig(f'{output_dir}/avg_eid_metrics.png')
 plt.close()
 
+
+plt.rc("figure", dpi=100)
+SMALL_SIZE = 10
+BIGGER_SIZE = 15
+plt.rc('font', size=BIGGER_SIZE)
+plt.rc('axes', titlesize=BIGGER_SIZE)
+plt.rc('axes', labelsize=BIGGER_SIZE)
+plt.rc('axes', linewidth=1)
+plt.rc('xtick', labelsize=BIGGER_SIZE)
+plt.rc('ytick', labelsize=BIGGER_SIZE)
+plt.rc('legend', fontsize=SMALL_SIZE)
+plt.rc('figure', titlesize=3)
 # scatter plot of different eids
 fig = plt.figure(figsize=(24, 4))
 
@@ -360,7 +374,7 @@ xlim = [[-.1, 1.3], [-.2, .5], [-1, 1], [-.3, 1], [.5, 1], [-1, 1]]
 ylim = [[0, 2], [0, 1], [0, 2], [0, 2], [0.4, 1], [-1, 1]]
 
 if model == 'NDT1':
-    temp_name = 'temporal'
+    temp_name = 'Temporal'
 else:
     temp_name = 'random_token'
 linear_line = np.linspace(-10, 10, 1000)
@@ -371,10 +385,10 @@ for i, task in enumerate(eval_methods):
     for eid in eids:
         x = metrics_dict[eid]['mask_temporal'][task]['bps']
         y = metrics_dict[eid]['mask_all_prompt'][task]['bps']
-        ax.scatter(x, y, c = 'b')
+        ax.scatter(x, y,s=50,c='dodgerblue')
         x_list.append(x)
         y_list.append(y)
-    ax.plot(linear_line,linear_line, 'k--')
+    ax.plot(linear_line,linear_line, c='k', ls='--', lw=2)
     # adjust xlim and ylim
     xlim[i] = [min(x_list) - 0.1, max(x_list) + 0.1]
     ylim[i] = [min(y_list) - 0.1, max(y_list) + 0.1]
@@ -382,9 +396,13 @@ for i, task in enumerate(eval_methods):
         ylim[i] = [min(y_list) - 0.3, max(y_list) + 0.1]
     ax.set_xlim(xlim[i])
     ax.set_ylim(ylim[i])
-    ax.set_xlabel(f'{temp_name} mask')
-    ax.set_ylabel('all mask + prompt')
-    ax.set_title(task)
+    ax.set_xlabel(f'{temp_name} Mask')
+    if i == 0:
+        ax.set_ylabel('All mask + Prompt')
+    # ax.set_ylabel('All mask + Prompt')
+    ax.set_title(TASK2NAME[task])
+    # set grid
+    ax.grid()
     # ax.legend()
 
 for i, task in enumerate(finetune_methods):
@@ -393,17 +411,18 @@ for i, task in enumerate(finetune_methods):
     for eid in eids:
         x = metrics_dict[eid]['mask_temporal'][task]['metric']
         y = metrics_dict[eid]['mask_all_prompt'][task]['metric']
-        ax.scatter(x, y, c = 'b')
+        ax.scatter(x, y,s=50,c='dodgerblue')
         x_list.append(x)
         y_list.append(y)
-    ax.plot(linear_line,linear_line, 'k--')
+    ax.plot(linear_line,linear_line, c='k', ls='--', lw=2)
     xlim[i+len(eval_methods)] = [min(x_list) - 0.1, max(x_list) + 0.1]
     ylim[i+len(eval_methods)] = [min(y_list) - 0.1, max(y_list) + 0.1]
     ax.set_xlim(xlim[i+len(eval_methods)])
     ax.set_ylim(ylim[i+len(eval_methods)])
     ax.set_xlabel(f'{temp_name} mask')
-    ax.set_ylabel('all mask + prompt')
-    ax.set_title(task)
+    # ax.set_ylabel('all mask + prompt')
+    ax.set_title(TASK2NAME[task])
+    ax.grid()
     # ax.legend()
 plt.tight_layout()
 plt.savefig(f'{output_dir}/scatter.png')
