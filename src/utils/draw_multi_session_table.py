@@ -425,5 +425,5 @@ for i, task in enumerate(finetune_methods):
     ax.set_title(TASK2NAME[task])
     ax.grid()
     # ax.legend()
-plt.tight_layout()
-plt.savefig(f'{output_dir}/scatter.pdf')
+plt.tight_layout(pad=0.70, w_pad=-0.2)
+plt.savefig(f'{output_dir}/scatter.eps', format='eps')
