@@ -350,4 +350,60 @@ os.makedirs(output_dir, exist_ok=True)
 plt.savefig(f'{output_dir}/avg_eid_metrics.png')
 plt.close()
 
-print('done')
+# scatter plot of different eids
+fig = plt.figure(figsize=(24, 4))
+
+nrows = 1
+ncols = 6
+
+xlim = [[-.1, 1.3], [-.2, .5], [-1, 1], [-.3, 1], [.5, 1], [-1, 1]]
+ylim = [[0, 2], [0, 1], [0, 2], [0, 2], [0.4, 1], [-1, 1]]
+
+if model == 'NDT1':
+    temp_name = 'temporal'
+else:
+    temp_name = 'random_token'
+linear_line = np.linspace(-10, 10, 1000)
+
+for i, task in enumerate(eval_methods):
+    ax = fig.add_subplot(nrows, ncols, i+1)
+    x_list, y_list = [], []
+    for eid in eids:
+        x = metrics_dict[eid]['mask_temporal'][task]['bps']
+        y = metrics_dict[eid]['mask_all_prompt'][task]['bps']
+        ax.scatter(x, y, c = 'b')
+        x_list.append(x)
+        y_list.append(y)
+    ax.plot(linear_line,linear_line, 'k--')
+    # adjust xlim and ylim
+    xlim[i] = [min(x_list) - 0.1, max(x_list) + 0.1]
+    ylim[i] = [min(y_list) - 0.1, max(y_list) + 0.1]
+    if task == 'intra_region':
+        ylim[i] = [min(y_list) - 0.3, max(y_list) + 0.1]
+    ax.set_xlim(xlim[i])
+    ax.set_ylim(ylim[i])
+    ax.set_xlabel(f'{temp_name} mask')
+    ax.set_ylabel('all mask + prompt')
+    ax.set_title(task)
+    # ax.legend()
+
+for i, task in enumerate(finetune_methods):
+    ax = fig.add_subplot(nrows, ncols, i+1+len(eval_methods))
+    x_list, y_list = [], []
+    for eid in eids:
+        x = metrics_dict[eid]['mask_temporal'][task]['metric']
+        y = metrics_dict[eid]['mask_all_prompt'][task]['metric']
+        ax.scatter(x, y, c = 'b')
+        x_list.append(x)
+        y_list.append(y)
+    ax.plot(linear_line,linear_line, 'k--')
+    xlim[i+len(eval_methods)] = [min(x_list) - 0.1, max(x_list) + 0.1]
+    ylim[i+len(eval_methods)] = [min(y_list) - 0.1, max(y_list) + 0.1]
+    ax.set_xlim(xlim[i+len(eval_methods)])
+    ax.set_ylim(ylim[i+len(eval_methods)])
+    ax.set_xlabel(f'{temp_name} mask')
+    ax.set_ylabel('all mask + prompt')
+    ax.set_title(task)
+    # ax.legend()
+plt.tight_layout()
+plt.savefig(f'{output_dir}/scatter.png')
