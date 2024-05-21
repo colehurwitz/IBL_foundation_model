@@ -365,6 +365,7 @@ try:
                 'num_sessions': 1 ,
                 'num_train_sessions': num_train_sessions,
                 'use_logreg': True,
+                'use_trial_filter': True,
             }  
             results = behavior_decoding(**configs)
             print(results)
@@ -390,6 +391,7 @@ try:
                 'num_sessions': 1,
                 'num_train_sessions': num_train_sessions,
                 'use_logreg': True,
+                'use_trial_filter': True
             }  
             results = behavior_decoding(**configs)
             print(results)

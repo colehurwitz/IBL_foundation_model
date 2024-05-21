@@ -699,6 +699,7 @@ def behavior_decoding(**kwargs):
     num_sessions = kwargs['num_sessions']
     num_train_sessions = kwargs['num_train_sessions']
     use_logreg = kwargs['use_logreg']
+    use_trial_filter = kwargs['use_trial_filter']
 
     # set seed
     set_seed(seed)
@@ -768,6 +769,19 @@ def behavior_decoding(**kwargs):
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
+
+    if use_trial_filter:
+        # load the trial filter
+        print(os.path.join('data', 'trials_mask', f'{eid}.npy'))
+        trial_filter = np.load(os.path.join('data', 'trials_mask', f'{eid}.npy'), allow_pickle=True).item()
+        train_filter,val_filter, test_filter = trial_filter['train'], trial_filter['val'], trial_filter['test']
+        train_filter_idx = np.where(train_filter==1)[0]
+        val_filter_idx = np.where(val_filter==1)[0]
+        test_filter_idx = np.where(test_filter==1)[0]
+        train_dataset = train_dataset.select(train_filter_idx)
+        val_dataset = val_dataset.select(val_filter_idx)
+        test_dataset = test_dataset.select(test_filter_idx)
+        print(f"Filtered trials: train {len(train_dataset)}, val {len(val_dataset)}, test {len(test_dataset)}")
 
     n_neurons = len(train_dataset['cluster_regions'][0])
 
