@@ -86,7 +86,7 @@ def eval_multi_session_model(
     metric_lst, test_pred_lst, test_y_lst = [], [], []
     for idx, (train, test) in enumerate(zip(train_lst, test_lst)):
         metric, test_pred, test_y = eval_model(
-            train, test, model, target=target, 
+            train, test, model, target='reg', 
             model_class=model_class, training_type='multi-sess',
             session_idx=idx
         )

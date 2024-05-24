@@ -8,16 +8,16 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
   project: single-session
   run_name: 671c7ea7
 
 # Logging directories
 dirs:
-  checkpoint_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: /expanse/lustre/scratch/yzhang39/temp_project/results  # save tensorboard logs
-  dataset_cache_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints/datasets_cache  # save dataset cache
+  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: results  # save tensorboard logs
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 200
+  num_epochs: 30
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 704   # max_space_length has to be a multiple of space patch size
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   sort_by_region: false
@@ -113,7 +113,7 @@ method:
 optimizer:
   gradient_accumulation_steps: 1
   lr: 5.e-4
-  wd: 1
+  wd: 0.1
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
   gamma: 0.95     # step

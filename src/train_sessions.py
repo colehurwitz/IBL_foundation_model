@@ -2,7 +2,7 @@ from datasets import load_dataset, load_from_disk, concatenate_datasets, load_da
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
 from accelerate import Accelerator
 from loader.make_loader import make_loader
-from utils.utils import set_seed, dummy_load
+from utils.utils import set_seed
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
@@ -12,31 +12,38 @@ import torch
 import numpy as np
 import os
 from trainer.make import make_trainer
-import threading
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1_stitching.yaml"
+    "model": "include:src/configs/ndt1.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1_stitching.yaml", config)
+config = update_config("src/configs/ndt1.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
+
+# make log dir
+log_dir = os.path.join(config.dirs.log_dir, "train", "multi_sessions", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.encoder.masker.mode))
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# wandb
+if config.wandb.use:
+    import wandb
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode))
 
 # set seed for reproducibility
 set_seed(config.seed)
 
 # download dataset from huggingface
 eid = None
-train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+train_dataset, val_dataset, test_dataset = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                            config.dirs.huggingface_org,
                            eid=eid,
                            num_sessions=config.data.num_sessions,
                            split_method=config.data.split_method,
                            test_session_eid=config.data.test_session_eid,
-                           batch_size=config.training.train_batch_size,
-                           use_re=config.data.use_re,
                            seed=config.seed)
 if config.data.use_aligned_test:
     # aligned dataset
@@ -51,22 +58,7 @@ if config.data.use_aligned_test:
         train_dataset, test_dataset = split_both_dataset(aligned_dataset=aligned_dataset,
                                                          unaligned_dataset=train_dataset,
                                                          seed=config.seed)
-num_sessions = len(meta_data["eids"])
-# make log dir
-log_dir = os.path.join(config.dirs.log_dir, 
-                       "train", 
-                       "num_session_{}".format(num_sessions), 
-                       "model_{}".format(config.model.model_class), 
-                       "method_{}".format(config.method.model_kwargs.method_name), 
-                       "mask_{}".format(config.encoder.masker.mode),
-                       "stitch_{}".format(config.encoder.stitching))
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
 
-# wandb
-if config.wandb.use:
-    import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_num_session_{}_method_{}_mask_{}_stitch_{}".format(config.model.model_class, num_sessions,config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching))
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset, 
@@ -80,7 +72,6 @@ train_dataloader = make_loader(train_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
-                         stitching=config.encoder.stitching,
                          shuffle=True)
 
 val_dataloader = make_loader(val_dataset, 
@@ -94,7 +85,6 @@ val_dataloader = make_loader(val_dataset,
                          dataset_name=config.data.dataset_name,
                          sort_by_depth=config.data.sort_by_depth,
                          sort_by_region=config.data.sort_by_region,
-                         stitching=config.encoder.stitching,
                          shuffle=False)
 
 # Initialize the accelerator
@@ -102,10 +92,8 @@ accelerator = Accelerator()
 
 # load model
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
-
-config = update_config(config, meta_data)
 model_class = NAME2MODEL[config.model.model_class]
-model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+model = model_class(config.model, **config.method.model_kwargs)
 model = accelerator.prepare(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
@@ -122,31 +110,14 @@ trainer_kwargs = {
     "accelerator": accelerator,
     "lr_scheduler": lr_scheduler,
     "config": config,
-    "stitching": config.encoder.stitching,
 }
 trainer = make_trainer(
     model=model,
     train_dataloader=train_dataloader,
     eval_dataloader=val_dataloader,
     optimizer=optimizer,
-    **trainer_kwargs,
-    **meta_data
+    **trainer_kwargs
 )
-# Shared variable to signal the dummy load to stop
-stop_dummy_load = threading.Event()
-if config.training.dummy:
-    # This is for HPC GPU usage, to avoid the GPU being idle
-    print("Running dummy load")
-    # Run dummy load in a separate thread
-    dummy_thread = threading.Thread(target=dummy_load, args=(stop_dummy_load,))
-    dummy_thread.start()
-    try:
-        # train loop
-        trainer.train()
-    finally:
-        # Signal the dummy load to stop and wait for the thread to finish
-        stop_dummy_load.set()
-        dummy_thread.join()
-else:
-    # train loop
-    trainer.train()
+
+# train loop
+trainer.train()

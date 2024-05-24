@@ -28,16 +28,15 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000
+  num_epochs: 300
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 10  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
   save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
-  dummy: true  # Use dummy data
 
 
 # Model configuration. 
@@ -74,9 +73,8 @@ data:
 
   load_meta: true
 
-  num_sessions: 40
-  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
-  test_session_eid: [] 
+  num_sessions: 10
+  test_session_eid: [] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
   split_method: predefined # random_split/session_based/predefined
 
@@ -87,8 +85,6 @@ data:
   brain_region: all
 
   spike_augmentation: false
-
-  use_re: true
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:

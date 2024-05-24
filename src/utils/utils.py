@@ -7,15 +7,6 @@ from utils.metric_utils import r2_score
 from sklearn.metrics import r2_score as r2_score_sklearn
 from sklearn.cluster import SpectralClustering
 from sklearn.metrics import accuracy_score
-import time
-
-def dummy_load(stop_event, dummy_size=90000, check_interval=5, device="cuda"):
-    # Start dummy load after 2 hours, adjust the sleep interval as needed
-    # time.sleep(7200)
-    x = torch.rand(dummy_size, dummy_size).cuda()
-    while not stop_event.is_set():
-        x.cuda()
-        time.sleep(check_interval)  # Adjust the sleep interval as needed
 
 def set_seed(seed):
     # set seed for reproducibility
@@ -100,22 +91,15 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
     return fig
 
 # metrics list, return different metrics results
-def metrics_list(gt, pred, metrics=["r2", "rsquared", "mse", "mae", "acc"], device="cpu"):
+def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
     results = {}
     if "r2" in metrics:
         r2_list = []
         for i in range(gt.shape[0]):
-            r2s = [r2_score(y_true=gt[i].T[k], y_pred=pred[i].T[k], device=device) for k in range(len(gt[i].T))]
-            r2_list.append(np.ma.masked_invalid(r2s).mean())
-        r2 = np.mean(r2_list)
-        results["r2"] = r2
-    if "rsquared" in metrics:
-        r2_list = []
-        for i in range(gt.shape[0]):
-            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device) 
+            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device)
             r2_list.append(r2)
         r2 = np.mean(r2_list)
-        results["rsquared"] = r2
+        results["r2"] = r2
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)
         results["mse"] = mse

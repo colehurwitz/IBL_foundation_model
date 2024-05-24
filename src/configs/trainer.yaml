@@ -1,23 +1,23 @@
 seed: 42
 
 savestring: test
-wandb_project: ibl-ndt2-100
+wandb_project: iTransformer
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: true
-  entity: null
-  project: ibl-ndt2-100
-  run_name: 671c7ea7
+  use: false
+  entity: wdk0082
+  project: iTransformer
+  run_name: all-all-test2
 
 # Logging directories
 dirs:
-  checkpoint_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: /expanse/lustre/scratch/yzhang39/temp_project/results  # save tensorboard logs
-  dataset_cache_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints/datasets_cache  # save dataset cache
+  # checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: checkpoints/models/iTransformer/test # save models
+  dataset_cache_dir: data/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
@@ -28,12 +28,12 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000 
-  train_batch_size: 16
-  test_batch_size: 16  
+  num_epochs: 20
+  train_batch_size: 32
+  test_batch_size: 500  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
+  save_plot_every_n_epochs: 20  # Plot the model output every n epochs
   save_every: 100  # Save checkpoint
   eval_every: null  # Eval model
 
@@ -42,7 +42,7 @@ training:
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
 model: 
-  model_class: null   # Any registered model class name. 
+  model_class: iTransformer   # Any registered model class name.
 
 # Data configuration.
 data:
@@ -63,8 +63,8 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 704   # max_space_length has to be a multiple of space patch size
-  patching: true # patching the neurons
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  patching: false # patching the neurons
   sort_by_depth: false
   sort_by_region: false
   brain_region: all
@@ -112,7 +112,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 5.e-4
+  lr: 1.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

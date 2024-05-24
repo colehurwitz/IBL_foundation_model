@@ -1,13 +1,13 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
-from loader.make_loader import make_loader
-from utils.dataset_utils import load_ibl_dataset
-from utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
+from src.loader.make_loader import make_loader
+from src.utils.dataset_utils import split_both_dataset
+from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
-from utils.config_utils import config_from_kwargs, update_config
-from models.ndt1 import NDT1
-from models.stpatch import STPatch
-from models.itransformer import iTransformer
+from src.utils.config_utils import config_from_kwargs, update_config
+from src.models.ndt1 import NDT1
+from src.models.stpatch import STPatch
+from src.models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -18,7 +18,7 @@ import numpy as np
 from sklearn.cluster import SpectralClustering
 import matplotlib.colors as colors
 import os
-from trainer.make import make_trainer
+from src.trainer.make import make_trainer
 from pathlib import Path
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
@@ -26,7 +26,7 @@ NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 import logging
 
 logger = logging.getLogger(__name__)
-PROMPTING_MODE=['neuron', 'causal', 'inter-region', 'intra-region']
+
 
 # --------------------------------------------------------------------------------------------------
 # Model/Dataset Loading and Configuration
@@ -36,14 +36,12 @@ def load_model_data_local(**kwargs):
     model_config = kwargs['model_config']
     trainer_config = kwargs['trainer_config']
     model_path = kwargs['model_path']
-    dataset_path = kwargs['dataset_path']
-    test_size = kwargs['test_size']
+    # dataset_path = kwargs['dataset_path']
+    # test_size = kwargs['test_size']
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
-    mask_mode = mask_name.split("_")[1]
-    eid = kwargs['eid']
-    stitching = kwargs['stitching']
-    num_sessions = kwargs['num_sessions']
+    # ? mask_mode = mask_name.split("_")[1]
+    mask_mode = mask_name # local
 
     # set seed
     set_seed(seed)
@@ -52,63 +50,45 @@ def load_model_data_local(**kwargs):
     config = config_from_kwargs({"model": f"include:{model_config}"})
     config = update_config(model_config, config)
     config = update_config(trainer_config, config)
-    config.model.encoder.masker.mode = mask_mode
 
     accelerator = Accelerator()
 
-    _,_,_, meta_data = load_ibl_dataset(
-                            cache_dir=config.dirs.dataset_cache_dir,
-                            user_or_org_name=config.dirs.huggingface_org,
-                            num_sessions=1,
-                            split_method="predefined",
-                            test_session_eid=[],
-                            batch_size=config.training.train_batch_size,
-                            seed=seed,
-                            eid=eid
-                        )
-    print(meta_data)
-
     model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
-    model = torch.load(model_path)['model']
+    model = model_class(config.model, **config.method.model_kwargs)
 
-    model.encoder.masker.mode = mask_mode
-    model.encoder.masker.force_active = False
+    if config.model.model_class == 'iTransformer':
+        # it's already loaded when initializing the model
+        model.masker.force_active = False
+    else:
+        model = torch.load(model_path)['model']
+        model.encoder.masker.mode = mask_mode
+        model.encoder.masker.force_active = False
 
-    print("(eval) masking mode: ", model.encoder.masker.mode)
-    print("(eval) masking ratio: ", model.encoder.masker.ratio)
-    print("(eval) masking active: ", model.encoder.masker.force_active)
-    if 'causal' in mask_name:
-        model.encoder.context_forward = 0
-        print("(behave decoding) context forward: ", model.encoder.context_forward)
-    
+        print("(eval) masking mode: ", model.encoder.masker.mode)
+        print("(eval) masking ratio: ", model.encoder.masker.ratio)
+        print("(eval) masking active: ", model.encoder.masker.force_active)
+        if 'causal' in mask_name:
+            model.encoder.context_forward = 0
+            print("(behave decoding) context forward: ", model.encoder.context_forward)
+
     model = accelerator.prepare(model)
+    print(model)
 
     # load the dataset
-    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
 
-    n_neurons = len(dataset['cluster_regions'][0])
-
-    if config.model.model_class in ["NDT1", "iTransformer"]:
-        max_space_length = n_neurons  
-    elif config.model.model_class == "STPatch":
-        max_space_length = config.model.encoder.embedder.n_neurons
-    else:
-        max_space_length = config.data.max_space_length
-
-    print('encoder max space length:', max_space_length)
-
+    # TODO: update the loader to adapt other models (e.g., patching for NDT2)
     dataloader = make_loader(
         dataset,
         target=config.data.target,
-        batch_size=len(dataset),
+        batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=max_space_length,
+        max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
-        shuffle=False,
+        shuffle=False
     )
 
     # check the shape of the dataset
@@ -131,6 +111,7 @@ def co_smoothing_eval(
         test_dataloader,
         test_dataset,
         n=1,
+        hook=None,
         **kwargs
 ):
     assert n == 1, 'only support n=1 now'
@@ -142,13 +123,9 @@ def co_smoothing_eval(
     mode = kwargs['mode']
     is_aligned = kwargs['is_aligned']
     target_regions = kwargs['target_regions']
-    n_jobs = kwargs['n_jobs']
 
     # hack to accommodate NDT2 - fix later 
-    if sum(batch['space_attn_mask'][0] == 0) == 0:
-        tot_num_neurons = batch['space_attn_mask'].size()[-1]
-    else:
-        tot_num_neurons = (batch['space_attn_mask'][0] == 0).nonzero().min().item() 
+    tot_num_neurons = batch['spikes_data'].size()[-1]
     uuids_list = np.array(test_dataset['cluster_uuids'][0])[:tot_num_neurons]
     region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
 
@@ -192,95 +169,85 @@ def co_smoothing_eval(
         var_tasklist = ['block', 'choice', 'reward']
         var_behlist = []
 
+    for batch in test_dataloader:
+        break
+
     if mode == 'per_neuron':
-        
+
+        if hook is not None:
+            hook.clear()
+            hook.register_hooks(model)
+
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        attn_weights = []
         # loop through all the neurons
-        counter = 0
-        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
-            if counter >= tot_num_neurons:
-                break
-            gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
-            time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
+        for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
                     batch = move_batch_to_device(batch, accelerator.device)
-                    gt_spike_data = batch['spikes_data'].clone()
-                    for i in range(n_jobs):
-                        counter += 1
-                        if counter <= tot_num_neurons:
-                            mask_result = heldout_mask(
-                                batch['spikes_data'].clone(),
-                                mode='manual',
-                                heldout_idxs=np.array([n_i+i])
-                            )
-                            mask_spikes_lst.append(mask_result['spikes'])
-                            eval_mask_lst.append(mask_result['eval_mask'])
-                            gt_spikes_lst.append(gt_spike_data)
-                            time_attn_mask_lst.append(batch['time_attn_mask'])
-                            space_attn_mask_lst.append(batch['space_attn_mask'])
-                            spikes_timestamps_lst.append(batch['spikes_timestamps'])
-                            spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
-                            targets_lst.append(batch['target'])
-                            neuron_regions_lst.append(batch['neuron_regions'])
-                        else:
-                            break
-
-                    masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        torch.cat(mask_spikes_lst, 0),
-                        time_attn_mask=torch.cat(time_attn_mask_lst, 0),
-                        space_attn_mask=torch.cat(space_attn_mask_lst, 0),
-                        spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
-                        spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
-                        targets = torch.cat(targets_lst, 0),
-                        neuron_regions=np.stack(neuron_regions_lst),
-                        eval_mask=torch.cat(eval_mask_lst, 0),
-                        masking_mode = masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                    mask_result = heldout_mask(
+                        batch['spikes_data'],
+                        mode='manual',
+                        heldout_idxs=np.array([n_i])
                     )
+                    outputs = model(
+                        mask_result['spikes'],
+                        time_attn_mask=batch['time_attn_mask'],
+                        space_attn_mask=batch['space_attn_mask'],
+                        spikes_timestamps=batch['spikes_timestamps'],
+                        spikes_spacestamps=batch['spikes_spacestamps'],
+                        targets = batch['target'],
+                        neuron_regions=batch['neuron_regions']
+                    )
+
+                    # store the attention weights
+                    attn_weights.append(hook.attention_weights)
+                    hook.clear()
+            # print(hook.attention_weights.shape)
+            # print(attn_weights)
+
             outputs.preds = torch.exp(outputs.preds)
     
-            gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
-            tot_num_trials = len(batch['spikes_data'])
 
             # compute co-bps
-            for i in range(n_jobs):
-                if n_i+i < tot_num_neurons:
-                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
-                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
+            gt_held_out = gt_spikes[:, :, [n_i]]
+            pred_held_out = pred_spikes[:, :, [n_i]]
+
+            bps = bits_per_spike(pred_held_out, gt_held_out)
+            if np.isinf(bps):
+                bps = np.nan
+            bps_result_list[n_i] = bps
+
+            # compute R2
+            ys = gt_spikes  # [#trials, #timesteps, #neurons]
+            y_preds = pred_spikes  # [#trials, #timesteps, #neurons]
+
+            idxs = mask_result['heldout_idxs']
         
-                    bps = bits_per_spike(pred_held_out, gt_held_out)
-                    if np.isinf(bps):
-                        bps = np.nan
-                    bps_result_list[n_i+i] = bps
-        
-                    # compute R2
-                    if is_aligned:
-                        X = behavior_set  # [#trials, #timesteps, #variables]
-                        _r2_psth, _r2_trial = viz_single_cell(X, gt_held_out.squeeze(), pred_held_out.squeeze(),
-                                                              var_name2idx, var_tasklist, var_value2label, var_behlist,
-                                                              subtract_psth=kwargs['subtract'],
-                                                              aligned_tbins=kwargs['onset_alignment'],
-                                                              neuron_idx=uuids_list[n_i+i][:4],
-                                                              neuron_region=region_list[n_i+i],
-                                                              method=method_name, save_path=kwargs['save_path'])
-                        r2_result_list[n_i+i] = np.array([_r2_psth, _r2_trial])
-                    else:
-                        r2 = viz_single_cell_unaligned(
-                            gt_held_out.squeeze(), pred_held_out.squeeze(), 
-                            neuron_idx=uuids_list[n_i+i][:4],
-                            neuron_region=region_list[n_i+i],
-                            method=method_name, save_path=kwargs['save_path']
-                        )
-                        r2_result_list[n_i+i] = r2
+            for i in range(idxs.shape[0]):
+                if is_aligned:
+                    X = behavior_set  # [#trials, #timesteps, #variables]
+                    _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
+                                                          var_name2idx, var_tasklist, var_value2label, var_behlist,
+                                                          subtract_psth=kwargs['subtract'],
+                                                          aligned_tbins=kwargs['onset_alignment'],
+                                                          neuron_idx=uuids_list[idxs[i]][:4],
+                                                          neuron_region=region_list[idxs[i]],
+                                                          method=method_name, save_path=kwargs['save_path'])
+                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                 else:
-                    break
+                    r2 = viz_single_cell_unaligned(
+                        ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
+                        neuron_idx=uuids_list[idxs[i]][:4],
+                        neuron_region=region_list[idxs[i]],
+                        method=method_name, save_path=kwargs['save_path']
+                    )
+                    r2_result_list[idxs[i]] = r2
+
+        np.save(os.path.join(kwargs['save_path'], f'attn_weights.npy'), attn_weights)
 
     elif mode == 'forward_pred':
 
@@ -299,18 +266,13 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     batch = move_batch_to_device(batch, accelerator.device)
-                    gt_spike_data = batch['spikes_data'].clone()
                     mask_result = heldout_mask(
-                        batch['spikes_data'].clone(),
+                        batch['spikes_data'],
                         mode=mode,
                         heldout_idxs=hd,
                         target_regions=target_regions,
                         neuron_regions=region_list
                     )                
-                    
-                    masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
-                    
                     outputs = model(
                         mask_result['spikes'],
                         time_attn_mask=batch['time_attn_mask'],
@@ -318,18 +280,14 @@ def co_smoothing_eval(
                         spikes_timestamps=batch['spikes_timestamps'], 
                         spikes_spacestamps=batch['spikes_spacestamps'], 
                         targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        neuron_regions=batch['neuron_regions']
                     )
             outputs.preds = torch.exp(outputs.preds)
         
-            gt_spikes = gt_spike_data.detach().cpu().numpy()
+            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
     
-            target_neuron_idxs = np.arange(tot_num_neurons)
+            target_neuron_idxs = np.arange(gt_spikes.shape[-1])
             target_time_idxs = held_out_list[0]
 
             # compute co-bps
@@ -369,196 +327,95 @@ def co_smoothing_eval(
                     )
                     r2_result_list[idxs[i]] = r2
 
-    elif mode == 'inter_region':
+    elif mode in ['inter_region', 'intra_region']:
 
         if 'all' in target_regions:
             target_regions = list(np.unique(region_list))
             
         held_out_list = kwargs['held_out_list']
 
-        assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
+        if mode == 'inter_region':
+            assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
+        elif mode == 'intra_region':
+            assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for region in tqdm(target_regions, desc='region'):
             print(region)
             hd = np.argwhere(region_list==region).flatten() 
             held_out_list = np.arange(len(hd))
-            held_out_list = [held_out_list]   
-            hd = np.array([held_out_list]).flatten()
 
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    gt_spike_data = batch['spikes_data'].clone()
-                    mask_result = heldout_mask(
-                        batch['spikes_data'].clone(),
-                        mode=mode,
-                        heldout_idxs=hd,
-                        target_regions=[region],
-                        neuron_regions=region_list
-                    )              
-
-                    masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-            outputs.preds = torch.exp(outputs.preds)
-        
-            gt_spikes = gt_spike_data.detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
+            if mode == 'inter_region':
+                held_out_list = [held_out_list]
     
-            target_neuron_idxs = mask_result['heldout_idxs']
-            target_time_idxs = np.arange(gt_spikes.shape[1])
-
-            # compute co-bps
-            gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-            pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-    
-            for n_i in range(len(target_neuron_idxs)): 
-                bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
-                if np.isinf(bps):
-                    bps = np.nan
-                bps_result_list[target_neuron_idxs[n_i]] = bps
-
-            # compute R2
-            ys = gt_spikes[:, target_time_idxs]
-            y_preds = pred_spikes[:, target_time_idxs]
-    
-            # choose the neuron to plot
-            idxs = target_neuron_idxs
-            for i in range(idxs.shape[0]):
-                if is_aligned:
-                    X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
-                    _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
-                                                          var_name2idx, var_tasklist, var_value2label, var_behlist,
-                                                          subtract_psth=kwargs['subtract'],
-                                                          aligned_tbins=[],
-                                                          neuron_idx=uuids_list[idxs[i]][:4],
-                                                          neuron_region=region_list[idxs[i]],
-                                                          method=method_name, save_path=kwargs['save_path']);
-                    r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
-                else:
-                    r2 = viz_single_cell_unaligned(
-                        ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
-                        neuron_idx=uuids_list[idxs[i]][:4],
-                        neuron_region=region_list[idxs[i]],
-                        method=method_name, save_path=kwargs['save_path']
-                    )
-                    r2_result_list[idxs[i]] = r2
-                        
-    elif mode == 'intra_region':
-
-        if 'all' in target_regions:
-            target_regions = list(np.unique(region_list))
-            
-        held_out_list = kwargs['held_out_list']
-        assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
-
-        bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
-        for region in tqdm(target_regions, desc='region'):
-            print(region)
-            target_neuron_idxs = np.argwhere(region_list==region).flatten() 
-            held_out_list = list(range(0, len(target_neuron_idxs)+n_jobs, n_jobs))
-
             for hd_idx in held_out_list:
-                
-                if hd_idx >= len(target_neuron_idxs):
-                    break
-
-                gt_spikes_lst, mask_spikes_lst, eval_mask_lst, heldout_idxs_lst = [], [], [], []
-                time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
+               
+                hd = np.array([hd_idx]).flatten()
     
                 model.eval()
                 with torch.no_grad():
                     for batch in test_dataloader:
                         batch = move_batch_to_device(batch, accelerator.device)
-                        gt_spike_data = batch['spikes_data'].clone()
-                        for i in range(n_jobs):
-                            if hd_idx+i < len(target_neuron_idxs):
-                                mask_result = heldout_mask(
-                                    batch['spikes_data'].clone(),
-                                    mode=mode,
-                                    heldout_idxs=np.array([hd_idx+i]).flatten(),
-                                    target_regions=[region],
-                                    neuron_regions=region_list
-                                )   
-                                mask_spikes_lst.append(mask_result['spikes'])
-                                eval_mask_lst.append(mask_result['eval_mask'])
-                                heldout_idxs_lst.append(mask_result['heldout_idxs'])
-                                gt_spikes_lst.append(gt_spike_data)
-                                time_attn_mask_lst.append(batch['time_attn_mask'])
-                                space_attn_mask_lst.append(batch['space_attn_mask'])
-                                spikes_timestamps_lst.append(batch['spikes_timestamps'])
-                                spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
-                                targets_lst.append(batch['target'])
-                                neuron_regions_lst.append(batch['neuron_regions'])
-                            else:
-                                break
-
-                        masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
-                        model.encoder.mask = False
-                        
+                        mask_result = heldout_mask(
+                            batch['spikes_data'],
+                            mode=mode,
+                            heldout_idxs=hd,
+                            target_regions=[region],
+                            neuron_regions=region_list
+                        )                
                         outputs = model(
-                            torch.cat(mask_spikes_lst, 0),
-                            time_attn_mask=torch.cat(time_attn_mask_lst, 0),
-                            space_attn_mask=torch.cat(space_attn_mask_lst, 0),
-                            spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
-                            spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
-                            targets = torch.cat(targets_lst, 0),
-                            neuron_regions=np.stack(neuron_regions_lst),
-                            eval_mask=torch.cat(eval_mask_lst, 0),
-                            masking_mode=masking_mode,
-                            num_neuron=batch['spikes_data'].shape[2],
-                            eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            mask_result['spikes'],
+                            time_attn_mask=batch['time_attn_mask'],
+                            space_attn_mask=batch['space_attn_mask'],
+                            spikes_timestamps=batch['spikes_timestamps'], 
+                            spikes_spacestamps=batch['spikes_spacestamps'], 
+                            targets = batch['target'],
+                            neuron_regions=batch['neuron_regions']
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
-                gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
+                gt_spikes = batch['spikes_data'].detach().cpu().numpy()
                 pred_spikes = outputs.preds.detach().cpu().numpy()
-                tot_num_trials = len(batch['spikes_data'])
-
-                heldout_idxs = np.stack(heldout_idxs_lst).flatten()
-                
-                for i in range(len(heldout_idxs)):
-                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
-                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
+        
+                target_neuron_idxs = mask_result['heldout_idxs']
+                target_time_idxs = np.arange(gt_spikes.shape[1])
     
-                    bps = bits_per_spike(pred_held_out, gt_held_out)
+                # compute co-bps
+                gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+                pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
+        
+                for n_i in range(len(target_neuron_idxs)): 
+                    bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                     if np.isinf(bps):
                         bps = np.nan
-                    bps_result_list[heldout_idxs[i]] = bps
-
+                    bps_result_list[target_neuron_idxs[n_i]] = bps
+    
+                # compute R2
+                ys = gt_spikes[:, target_time_idxs]
+                y_preds = pred_spikes[:, target_time_idxs]
+        
+                # choose the neuron to plot
+                idxs = target_neuron_idxs
+        
+                for i in range(idxs.shape[0]):
                     if is_aligned:
-                        X = behavior_set  # [#trials, #timesteps, #variables]
-                        _r2_psth, _r2_trial = viz_single_cell(X, gt_held_out.squeeze(), pred_held_out.squeeze(),
+                        X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
+                        _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
                                                               var_name2idx, var_tasklist, var_value2label, var_behlist,
                                                               subtract_psth=kwargs['subtract'],
                                                               aligned_tbins=[],
-                                                              neuron_idx=uuids_list[heldout_idxs[i]][:4],
-                                                              neuron_region=region_list[heldout_idxs[i]],
+                                                              neuron_idx=uuids_list[idxs[i]][:4],
+                                                              neuron_region=region_list[idxs[i]],
                                                               method=method_name, save_path=kwargs['save_path']);
-                        r2_result_list[heldout_idxs[i]] = np.array([_r2_psth, _r2_trial])
+                        r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
-                            gt_held_out.squeeze(), pred_held_out.squeeze(),
-                            neuron_idx=uuids_list[heldout_idxs[i]][:4],
-                            neuron_region=region_list[heldout_idxs[i]],
+                            ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
+                            neuron_idx=uuids_list[idxs[i]][:4],
+                            neuron_region=region_list[idxs[i]],
                             method=method_name, save_path=kwargs['save_path']
                         )
-                        r2_result_list[heldout_idxs[i]] = r2
+                        r2_result_list[idxs[i]] = r2
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -695,11 +552,6 @@ def behavior_decoding(**kwargs):
     metric = kwargs['metric']
     mask_ratio = kwargs['mask_ratio']
     mask_mode = mask_name.split("_")[1]
-    eid = kwargs['eid']
-    num_sessions = kwargs['num_sessions']
-    num_train_sessions = kwargs['num_train_sessions']
-    use_logreg = kwargs['use_logreg']
-    use_trial_filter = kwargs['use_trial_filter']
 
     # set seed
     set_seed(seed)
@@ -712,39 +564,20 @@ def behavior_decoding(**kwargs):
     config.model.encoder.masker.mode = mask_mode
 
     target = config.data.target
-
-    accelerator = Accelerator()
-
-    _,_,_, meta_data = load_ibl_dataset(
-                        cache_dir=config.dirs.dataset_cache_dir,
-                        user_or_org_name=config.dirs.huggingface_org,
-                        num_sessions=1,
-                        split_method="predefined",
-                        test_session_eid=[],
-                        batch_size=config.training.train_batch_size,
-                        seed=seed,
-                        eid=eid
-                    )
-    print(meta_data)
     log_dir = os.path.join(
-            config.dirs.log_dir, 
-            "train", 
-            "num_session_{}".format(num_train_sessions),
+            config.dirs.log_dir, "train", 
             "model_{}".format(config.model.model_class), 
-            "method_sl", mask_name, 
-            f"ratio_{mask_ratio}", 
-            target,
-            eid
+            "method_sl", mask_name, f"ratio_{mask_ratio}", target
     )
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
-    if use_logreg:
-        model = torch.load(model_path)['model']
+    accelerator = Accelerator()
 
-    if not kwargs['from_scratch'] and not use_logreg:
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs)
+
+    if not kwargs['from_scratch']:
         pretrained_model = torch.load(model_path)['model']
         model.encoder = pretrained_model.encoder
         if kwargs['freeze_encoder']:
@@ -753,7 +586,6 @@ def behavior_decoding(**kwargs):
 
     model.encoder.masker.mode = mask_mode
     model.encoder.masker.ratio = mask_ratio
-    model.encoder.masker.force_active = False
 
     print("(behave decoding) masking mode: ", model.encoder.masker.mode)
     print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
@@ -765,37 +597,10 @@ def behavior_decoding(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
-
-    if use_trial_filter:
-        # load the trial filter
-        print(os.path.join('data', 'trials_mask', f'{eid}.npy'))
-        trial_filter = np.load(os.path.join('data', 'trials_mask', f'{eid}.npy'), allow_pickle=True).item()
-        train_filter,val_filter, test_filter = trial_filter['train'], trial_filter['val'], trial_filter['test']
-        assert len(train_filter) == len(train_dataset), f"eid {eid} train filter length mismatch, expected {len(train_dataset)}, got {len(train_filter)}"
-        assert len(val_filter) == len(val_dataset), f"eid {eid} val filter length mismatch, expected {len(val_dataset)}, got {len(val_filter)}"
-        assert len(test_filter) == len(test_dataset), f"eid {eid} test filter length mismatch, expected {len(test_dataset)}, got {len(test_filter)}"
-        train_filter_idx = np.where(train_filter==1)[0]
-        val_filter_idx = np.where(val_filter==1)[0]
-        test_filter_idx = np.where(test_filter==1)[0]
-        train_dataset = train_dataset.select(train_filter_idx)
-        val_dataset = val_dataset.select(val_filter_idx)
-        test_dataset = test_dataset.select(test_filter_idx)
-        print(f"Filtered trials: train {len(train_dataset)}, val {len(val_dataset)}, test {len(test_dataset)}")
-
-    n_neurons = len(train_dataset['cluster_regions'][0])
-
-    if config.model.model_class in ["NDT1", "iTransformer"]:
-        max_space_length = n_neurons  
-    elif config.model.model_class == "STPatch":
-        max_space_length = config.model.encoder.embedder.n_neurons
-    else:
-        max_space_length = config.data.max_space_length
-
-    print('encoder max space length:', max_space_length)
 
     train_dataloader = make_loader(
         train_dataset,
@@ -804,10 +609,10 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=max_space_length,
+        max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
-        shuffle=True
+        shuffle=False
     )
 
     val_dataloader = make_loader(
@@ -817,7 +622,7 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=max_space_length,
+        max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
@@ -830,193 +635,88 @@ def behavior_decoding(**kwargs):
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
-        max_space_length=max_space_length,
+        max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         shuffle=False
     )
-    per_mode_res = {}
-    if not use_logreg:
-        optimizer = torch.optim.AdamW(
-            model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
-        )
-        lr_scheduler = OneCycleLR(
-                        optimizer=optimizer,
-                        total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                        max_lr=config.optimizer.lr,
-                        pct_start=config.optimizer.warmup_pct,
-                        div_factor=config.optimizer.div_factor,
-                    )
 
-        trainer_kwargs = {
-            "log_dir": log_dir,
-            "accelerator": accelerator,
-            "lr_scheduler": lr_scheduler,
-            "config": config,
-        }
-        trainer_ = make_trainer(
-            model=model,
-            train_dataloader=train_dataloader,
-            eval_dataloader=val_dataloader,
-            test_dataloader=test_dataloader,
-            optimizer=optimizer,
-            **trainer_kwargs,
-            **meta_data
-        )
-        
-        trainer_.train()
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
+    )
+    lr_scheduler = OneCycleLR(
+                    optimizer=optimizer,
+                    total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
+                    max_lr=config.optimizer.lr,
+                    pct_start=config.optimizer.warmup_pct,
+                    div_factor=config.optimizer.div_factor,
+                )
 
-        model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
+    trainer_kwargs = {
+        "log_dir": log_dir,
+        "accelerator": accelerator,
+        "lr_scheduler": lr_scheduler,
+        "config": config,
+    }
+    trainer_ = make_trainer(
+        model=model,
+        train_dataloader=train_dataloader,
+        eval_dataloader=val_dataloader,
+        test_dataloader=test_dataloader,
+        optimizer=optimizer,
+        **trainer_kwargs
+    )
+    
+    trainer_.train()
 
-        model.encoder.masker.force_active = False
-        print("(behave decoding) masking active: ", model.encoder.masker.force_active)
+    model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
 
-        for prompting_mode in PROMPTING_MODE:
-            gt, preds = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    gt.append(outputs.targets.clone())
-                    preds.append(outputs.preds.clone())
-            gt = torch.cat(gt, dim=0)
-            preds = torch.cat(preds, dim=0)
+    model.encoder.masker.force_active = False
+    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
 
-            if config.method.model_kwargs.loss == "cross_entropy":
-                preds = torch.nn.functional.softmax(preds, dim=1) 
+    gt, preds = [], []
+    model.eval()
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            outputs = model(
+                batch['spikes_data'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions']
+            )
+            gt.append(outputs.targets.clone())
+            preds.append(outputs.preds.clone())
+    gt = torch.cat(gt, dim=0)
+    preds = torch.cat(preds, dim=0)
 
-            if config.method.model_kwargs.clf:
-                results = metrics_list(gt = gt.argmax(1),
-                                    pred = preds.argmax(1), 
-                                    metrics=[metric], 
-                                    device=accelerator.device)
-            elif config.method.model_kwargs.reg:
-                results = metrics_list(gt = gt,
-                                    pred = preds,
-                                    metrics=[metric],
-                                    device=accelerator.device)
-            per_mode_res[target+'_'+prompting_mode] = results
-            
-    else:
-        train_val_dataset = torch.utils.data.ConcatDataset([train_dataset, val_dataset])
-        train_val_dataloader = make_loader(
-            train_val_dataset,
-            target=config.data.target,
-            batch_size=config.training.train_batch_size,
-            pad_to_right=True,
-            pad_value=-1.,
-            max_time_length=config.data.max_time_length,
-            max_space_length=max_space_length,
-            dataset_name=config.data.dataset_name,
-            load_meta=config.data.load_meta,
-            shuffle=False
-        )
-        for prompting_mode in PROMPTING_MODE:
-            train_y, train_x = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in train_val_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    train_y.append(batch['target'].clone())
-                    train_x.append(outputs.preds.clone())
+    if config.method.model_kwargs.loss == "cross_entropy":
+        preds = torch.nn.functional.softmax(preds, dim=1) 
 
-                train_y = torch.cat(train_y, dim=0)
-                train_x = torch.cat(train_x, dim=0)
+    if config.method.model_kwargs.clf:
+        results = metrics_list(gt = gt.argmax(1),
+                               pred = preds.argmax(1), 
+                               metrics=[metric], 
+                               device=accelerator.device)
+    elif config.method.model_kwargs.reg:
+        results = metrics_list(gt = gt,
+                               pred = preds,
+                               metrics=[metric],
+                               device=accelerator.device)
 
-            test_y, test_x = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    test_y.append(batch['target'].clone())
-                    test_x.append(outputs.preds.clone())
-                test_y = torch.cat(test_y, dim=0)
-                test_x = torch.cat(test_x, dim=0)
-            
-            train_y = train_y.cpu().numpy()
-            train_x = train_x.cpu().numpy().reshape(train_x.shape[0], -1)
-            test_y = test_y.cpu().numpy()
-            test_x = test_x.cpu().numpy().reshape(test_x.shape[0], -1)
-
-            from sklearn.model_selection import GridSearchCV
-            from sklearn.linear_model import LogisticRegression, Ridge
-            from sklearn.metrics import accuracy_score, r2_score
-            if target == 'choice':
-                train_y, test_y = train_y.argmax(1).flatten(), test_y.argmax(1).flatten()
-                grid={"C": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4], "penalty":["l2"]}
-                logreg=LogisticRegression(random_state=seed)
-                logreg_cv=GridSearchCV(logreg, grid, cv=4)
-                logreg_cv.fit(train_x, train_y)
-                test_pred = logreg_cv.predict(test_x)
-                acc = accuracy_score(test_y, test_pred)
-                print(f"accuracy: {acc}, metric: {metric}")
-                per_mode_res[target+'_'+prompting_mode] = {"acc": acc}
-            elif target == 'whisker-motion-energy':
-                grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
-                reg=Ridge(random_state=seed)
-                reg_cv=GridSearchCV(reg, grid, cv=4)
-                reg_cv.fit(train_x, train_y)
-                test_pred = reg_cv.predict(test_x)
-                r2 = r2_score(test_y.flatten(), test_pred.flatten())
-                print(f"r2: {r2}, metric: {metric}")
-                per_mode_res[target+'_'+prompting_mode] = {"rsquared": r2}
-
-            else:
-                raise NotImplementedError('target not implemented')
-            
     if not os.path.exists(kwargs['save_path']):
         os.makedirs(kwargs['save_path'])
-    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), per_mode_res)
-
+    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), results)
+    
     return {
-        f"{target}_{metric}": per_mode_res,
+        f"{target}_{metric}": results[metric],
     }
     
+
+
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
     B_path = kwargs['B_path'],
@@ -1066,7 +766,7 @@ def heldout_mask(
         target_regions=None,            # list for region mode
         neuron_regions=None,            # list for region mode
 ):
-    mask = torch.ones(spike_data.shape).to(torch.int64).to(spike_data.device)
+    mask = torch.ones(spike_data.shape).to(spike_data.device)
     
     if mode == 'manual':
         hd = heldout_idxs
@@ -1108,7 +808,7 @@ def heldout_mask(
 
     spike_data_masked = spike_data * mask
 
-    return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": 1-mask}
+    return {"spikes": spike_data_masked, "heldout_idxs": hd}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1207,37 +907,34 @@ def bits_per_spike(rates, spikes):
 
 def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
               aligned_tbins=[],
-              axes=None, legend=False, neuron_idx='', neuron_region='', save_plot=False):
-    
-    if save_plot:
-        if axes is None:
-            nrows = 1;
-            ncols = len(var_tasklist)
-            fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 2 * nrows))
+              axes=None, legend=False, neuron_idx='', neuron_region=''):
+    if axes is None:
+        nrows = 1;
+        ncols = len(var_tasklist)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 2 * nrows))
 
-        for ci, var in enumerate(var_tasklist):
-            ax = axes[ci]
-            psth_xy = compute_all_psth(X, y, var_name2idx[var])
-            psth_pred_xy = compute_all_psth(X, y_pred, var_name2idx[var])
-            
-            for _i, _x in enumerate(psth_xy.keys()):
-                psth = psth_xy[_x]
-                psth_pred = psth_pred_xy[_x]
-                ax.plot(psth,
-                        color=plt.get_cmap('tab10')(_i),
-                        linewidth=3, alpha=0.3, label=f"{var_value2label[var][tuple(_x)]}")
-                ax.plot(psth_pred,
-                        color=plt.get_cmap('tab10')(_i),
-                        linestyle='--')
-                ax.set_xlabel("Time bin")
-                if ci == 0:
-                    ax.set_ylabel("Neural activity")
-                else:
-                    ax.sharey(axes[0])
-            _add_baseline(ax, aligned_tbins=aligned_tbins)
-            if legend:
-                ax.legend()
-                ax.set_title(f"{var}")
+    for ci, var in enumerate(var_tasklist):
+        ax = axes[ci]
+        psth_xy = compute_all_psth(X, y, var_name2idx[var])
+        psth_pred_xy = compute_all_psth(X, y_pred, var_name2idx[var])
+        for _i, _x in enumerate(psth_xy.keys()):
+            psth = psth_xy[_x]
+            psth_pred = psth_pred_xy[_x]
+            ax.plot(psth,
+                    color=plt.get_cmap('tab10')(_i),
+                    linewidth=3, alpha=0.3, label=f"{var_value2label[var][tuple(_x)]}")
+            ax.plot(psth_pred,
+                    color=plt.get_cmap('tab10')(_i),
+                    linestyle='--')
+            ax.set_xlabel("Time bin")
+            if ci == 0:
+                ax.set_ylabel("Neural activity")
+            else:
+                ax.sharey(axes[0])
+        _add_baseline(ax, aligned_tbins=aligned_tbins)
+        if legend:
+            ax.legend()
+            ax.set_title(f"{var}")
 
     # compute PSTH for task_contingency
     idxs_psth = np.concatenate([var_name2idx[var] for var in var_tasklist])
@@ -1245,17 +942,22 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
     psth_pred_xy = compute_all_psth(X, y_pred, idxs_psth)
     r2_psth = compute_R2_psth(psth_xy, psth_pred_xy, clip=False)
     r2_single_trial = compute_R2_main(y.reshape(-1, 1), y_pred.reshape(-1, 1), clip=False)[0]
-    
-    if save_plot:
-        axes[0].set_ylabel(
-            f'Neuron: #{neuron_idx[:4]} \n PSTH R2: {r2_psth:.2f} \n Avg_SingleTrial R2: {r2_single_trial:.2f}')
+    '''
+    axes[-1].annotate(f'PSTH R2: {r2_psth:.2f}'+"\n"+f"#conds: {len(psth_xy.keys())}", 
+                        xy=(y.shape[1], 0), 
+                        xytext=(y.shape[1]+20, 0), 
+                        ha='left', 
+                        rotation=90)
+    '''
+    axes[0].set_ylabel(
+        f'Neuron: #{neuron_idx[:4]} \n PSTH R2: {r2_psth:.2f} \n Avg_SingleTrial R2: {r2_single_trial:.2f}')
 
-        for ax in axes:
-            # ax.axis('off')
-            ax.spines[['right', 'top']].set_visible(False)
-            # ax.set_frame_on(False)
-            # ax.tick_params(bottom=False, left=False)
-        plt.tight_layout()
+    for ax in axes:
+        # ax.axis('off')
+        ax.spines[['right', 'top']].set_visible(False)
+        # ax.set_frame_on(False)
+        # ax.tick_params(bottom=False, left=False)
+    plt.tight_layout()
 
     return r2_psth, r2_single_trial
 
@@ -1406,110 +1108,99 @@ This script generates a plot to examine the (single-trial) fitting of a single n
 
 def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, var_behlist,
                     subtract_psth="task", aligned_tbins=[], clusby='y_pred', neuron_idx='', neuron_region='', method='',
-                    save_path='figs', save_plot=False):
-    
-    if save_plot:
-        nrows = 8
-        plt.figure(figsize=(8, 2 * nrows))
-        axes_psth = [plt.subplot(nrows, len(var_tasklist), k + 1) for k in range(len(var_tasklist))]
-        axes_single = [plt.subplot(nrows, 1, k) for k in range(2, 2 + 2 + len(var_behlist) + 2)]
-    else:
-        axes_psth = None
-        axes_single = None
-
+                    save_path='figs'):
+    nrows = 8
+    plt.figure(figsize=(8, 2 * nrows))
 
     ### plot psth
+    axes_psth = [plt.subplot(nrows, len(var_tasklist), k + 1) for k in range(len(var_tasklist))]
     r2_psth, r2_trial = plot_psth(X, y, y_pred,
                                   var_tasklist=var_tasklist,
                                   var_name2idx=var_name2idx,
                                   var_value2label=var_value2label,
                                   aligned_tbins=aligned_tbins,
-                                  axes=axes_psth, legend=True, neuron_idx=neuron_idx, neuron_region=neuron_region,
-                                  save_plot=save_plot)
+                                  axes=axes_psth, legend=True, neuron_idx=neuron_idx, neuron_region=neuron_region)
 
     ### plot the psth-subtracted activity
-    if save_plot:
-        plot_single_trial_activity(X, y, y_pred,
-                                   var_name2idx,
-                                   var_behlist,
-                                   var_tasklist, subtract_psth=subtract_psth,
-                                   aligned_tbins=aligned_tbins,
-                                   clusby=clusby,
-                                   axes=axes_single)
+    axes_single = [plt.subplot(nrows, 1, k) for k in range(2, 2 + 2 + len(var_behlist) + 2)]
+    plot_single_trial_activity(X, y, y_pred,
+                               var_name2idx,
+                               var_behlist,
+                               var_tasklist, subtract_psth=subtract_psth,
+                               aligned_tbins=aligned_tbins,
+                               clusby=clusby,
+                               axes=axes_single)
+
+    # print((neuron_region, neuron_idx, r2, method))
 
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    
-    if save_plot:
-        plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2_trial:.2f}_{method}.png"))
-        plt.tight_layout();
+    plt.savefig(os.path.join(save_path, f'{neuron_region}_{neuron_idx}_{r2_trial:.2f}_{method}.png'))
+    plt.tight_layout();
+    # plt.show()
 
     return r2_psth, r2_trial
     
 
 def viz_single_cell_unaligned(
     gt, pred, neuron_idx, neuron_region, method, save_path, 
-    n_clus=8, n_neighbors=5, save_plot=False
+    n_clus=8, n_neighbors=5
 ):
-    
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-
     r2 = 0
     for _ in range(len(gt)):
         r2 += r2_score(gt, pred)
     r2 /= len(gt)
+    
+    y = gt - gt.mean(0)
+    y_pred = pred - pred.mean(0)
+    y_resid = y - y_pred
 
-    if save_plot:
-        y = gt - gt.mean(0)
-        y_pred = pred - pred.mean(0)
-        y_resid = y - y_pred
+    clustering = SpectralClustering(n_clusters=n_clus, n_neighbors=n_neighbors,
+                                        affinity='nearest_neighbors',
+                                        assign_labels='discretize',
+                                        random_state=0)
 
-        clustering = SpectralClustering(n_clusters=n_clus, n_neighbors=n_neighbors,
-                                            affinity='nearest_neighbors',
-                                            assign_labels='discretize',
-                                            random_state=0)
+    clustering = clustering.fit(y_pred)
+    t_sort = np.argsort(clustering.labels_)
+    
+    vmin_perc, vmax_perc = 10, 90 
+    vmax = np.percentile(y_pred, vmax_perc)
+    vmin = np.percentile(y_pred, vmin_perc)
+    
+    toshow = [y, y_pred, y_resid]
+    resid_vmax = np.percentile(toshow, vmax_perc)
+    resid_vmin = np.percentile(toshow, vmin_perc)
+    
+    N = len(y)
+    y_labels = ['obs.', 'pred.', 'resid.']
 
-        clustering = clustering.fit(y_pred)
-        t_sort = np.argsort(clustering.labels_)
-        
-        vmin_perc, vmax_perc = 10, 90 
-        vmax = np.percentile(y_pred, vmax_perc)
-        vmin = np.percentile(y_pred, vmin_perc)
-        
-        toshow = [y, y_pred, y_resid]
-        resid_vmax = np.percentile(toshow, vmax_perc)
-        resid_vmin = np.percentile(toshow, vmin_perc)
-        
-        N = len(y)
-        y_labels = ['obs.', 'pred.', 'resid.']
-
-        fig, axes = plt.subplots(3, 1, figsize=(8, 7))
-        norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-        im1 = axes[0].imshow(y[t_sort], aspect='auto', cmap='bwr', norm=norm)
-        cbar = plt.colorbar(im1, pad=0.02, shrink=.6)
-        cbar.ax.tick_params(rotation=90)
-        axes[0].set_title(f' R2: {r2:.3f}')
-        norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-        im2 = axes[1].imshow(y_pred[t_sort], aspect='auto', cmap='bwr', norm=norm)
-        cbar = plt.colorbar(im2, pad=0.02, shrink=.6)
-        cbar.ax.tick_params(rotation=90)
-        norm = colors.TwoSlopeNorm(vmin=resid_vmin, vcenter=0, vmax=resid_vmax)
-        im3 = axes[2].imshow(y_resid[t_sort], aspect='auto', cmap='bwr', norm=norm)
-        cbar = plt.colorbar(im3, pad=0.02, shrink=.6)
-        cbar.ax.tick_params(rotation=90)
-        
-        for i, ax in enumerate(axes):
-            ax.set_ylabel(f"{y_labels[i]}"+f"\n(#trials={N})")
-            ax.yaxis.set_ticks([])
-            ax.yaxis.set_ticklabels([])
-            ax.xaxis.set_ticks([])
-            ax.xaxis.set_ticklabels([])
-            ax.spines[['left','bottom', 'right', 'top']].set_visible(False)
-        
-        plt.savefig(os.path.join(save_path, f"{neuron_region.replace('/', '-')}_{neuron_idx}_{r2:.2f}_{method}.png"))
-        plt.tight_layout()
-
+    fig, axes = plt.subplots(3, 1, figsize=(8, 7))
+    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    im1 = axes[0].imshow(y[t_sort], aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im1, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    axes[0].set_title(f' R2: {r2:.3f}')
+    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    im2 = axes[1].imshow(y_pred[t_sort], aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im2, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    norm = colors.TwoSlopeNorm(vmin=resid_vmin, vcenter=0, vmax=resid_vmax)
+    im3 = axes[2].imshow(y_resid[t_sort], aspect='auto', cmap='bwr', norm=norm)
+    cbar = plt.colorbar(im3, pad=0.02, shrink=.6)
+    cbar.ax.tick_params(rotation=90)
+    
+    for i, ax in enumerate(axes):
+        ax.set_ylabel(f"{y_labels[i]}"+f"\n(#trials={N})")
+        ax.yaxis.set_ticks([])
+        ax.yaxis.set_ticklabels([])
+        ax.xaxis.set_ticks([])
+        ax.xaxis.set_ticklabels([])
+        ax.spines[['left','bottom', 'right', 'top']].set_visible(False)
+    
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    plt.savefig(os.path.join(save_path, f'{neuron_region}_{neuron_idx}_{r2:.2f}_{method}.png'))
+    plt.tight_layout();
     return r2
 
 
@@ -1610,3 +1301,6 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+        
+def hook_fn(module, input, output):
+    print("Hook called for module:", module)
