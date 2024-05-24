@@ -1,9 +1,6 @@
 import torch
 import numpy as np
 from utils.dataset_utils import get_binned_spikes_from_sparse
-from torch.utils.data.sampler import Sampler
-from typing import List, Optional, Tuple, Dict
-from torch.utils.data import Dataset
 
 def _pad_seq_right_to_n(
     seq: np.ndarray,
@@ -117,137 +114,6 @@ def _pad_spike_seq(
     return seq, pad_length
 
 
-
-def get_length_grouped_indices(lengths, batch_size, shuffle=True, mega_batch_mult=None, generator=None):
-    # Default for mega_batch_mult: 50 or the number to get 4 megabatches, whichever is smaller.
-    if mega_batch_mult is None:
-        mega_batch_mult = min(len(lengths) // (batch_size * 4), 50)
-        # Just in case, for tiny datasets
-        if mega_batch_mult == 0:
-            mega_batch_mult = 1
-
-    # We need to use torch for the random part as a distributed sampler will set the random seed for torch.
-    if shuffle:
-        indices = torch.randperm(len(lengths), generator=generator)
-    else:
-        indices = torch.arange(len(lengths))
-    megabatch_size = mega_batch_mult * batch_size
-    megabatches = [indices[i : i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
-    megabatches = [list(sorted(megabatch, key=lambda i: lengths[i], reverse=True)) for megabatch in megabatches]
-
-    # The rest is to get the biggest batch first.
-    # Since each megabatch is sorted by descending length, the longest element is the first
-    megabatch_maximums = [lengths[megabatch[0]] for megabatch in megabatches]
-    max_idx = torch.argmax(torch.tensor(megabatch_maximums)).item()
-    # Switch to put the longest element in first position
-    megabatches[0][0], megabatches[max_idx][0] = megabatches[max_idx][0], megabatches[0][0]
-
-    return sum(megabatches, [])
-
-
-
-def get_length_grouped_indices_stitched(lengths, batch_size, generator=None):
-    # sort indices by length
-    sorted_indices = np.argsort(lengths)
-    # random indices in same length group
-    group_indicies = []
-    group_lengths = []
-    group = []
-    for i, idx in enumerate(sorted_indices):
-        if i == 0:
-            group.append(idx)
-            group_lengths.append(lengths[idx])
-        elif lengths[idx] == group_lengths[-1]:
-            group.append(idx)
-        else:
-            group_indicies.append(group)
-            group = [idx]
-            group_lengths.append(lengths[idx])
-    group_indicies.append(group)
-    group_indicies = sum(group_indicies,[])
-    # makke group_indice a multiple of batch_size
-    batch_group_indicies = []
-    for i in range(0, len(group_indicies), batch_size):
-        batch_group_indicies.append(group_indicies[i:i+batch_size])
-    if generator is not None:
-        generator.shuffle(batch_group_indicies)
-    else:
-        np.random.shuffle(batch_group_indicies)
-    batch_group_indicies = sum(batch_group_indicies, [])
-    batch_group_indicies = [int(i) for i in batch_group_indicies]
-    return batch_group_indicies
-
-
-class LengthGroupedSampler(Sampler):
-    r"""
-    Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
-    keeping a bit of randomness.
-    """
-
-    def __init__(
-        self,
-        dataset: Dataset,
-        batch_size: int,
-        lengths: Optional[List[int]] = None,
-        shuffle: Optional[bool] = True,
-        model_input_name: Optional[str] = None,
-    ):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.model_input_name = model_input_name if model_input_name is not None else "input_ids"
-        if lengths is None:
-            if not isinstance(dataset[0], dict) or self.model_input_name not in dataset[0]:
-                raise ValueError(
-                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
-                    f"'{self.model_input_name}' key."
-                )
-            lengths = [len(feature[self.model_input_name]) for feature in dataset]
-        self.lengths = lengths
-        self.shuffle = shuffle
-
-    def __len__(self):
-        return len(self.lengths)
-
-    def __iter__(self):
-        indices = get_length_grouped_indices(self.lengths, self.batch_size, self.shuffle)
-        return iter(indices)
-
-
-
-class LengthStitchGroupedSampler(Sampler):
-    r"""
-    Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
-    keeping a bit of randomness.
-    """
-
-    def __init__(
-        self,
-        dataset: Dataset,
-        batch_size: int,
-        lengths: Optional[List[int]] = None,
-        model_input_name: Optional[str] = None,
-    ):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.model_input_name = model_input_name if model_input_name is not None else "input_ids"
-        if lengths is None:
-            if not isinstance(dataset[0], dict) or model_input_name not in dataset[0]:
-                raise ValueError(
-                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
-                    f"'{self.model_input_name}' key."
-                )
-            lengths = [len(feature[self.model_input_name]) for feature in dataset]
-        self.lengths = lengths
-
-    def __len__(self):
-        return len(self.lengths)
-
-    def __iter__(self):
-        indices = get_length_grouped_indices_stitched(self.lengths, self.batch_size)
-        return iter(indices)
-
-
-
 class BaseDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -264,7 +130,6 @@ class BaseDataset(torch.utils.data.Dataset):
         load_meta = False,
         brain_region = 'all',
         dataset_name = "ibl",
-        stitching = False,
     ) -> None:
         self.dataset = dataset
         self.target = target
@@ -279,7 +144,6 @@ class BaseDataset(torch.utils.data.Dataset):
         self.brain_region = brain_region
         self.load_meta = load_meta
         self.dataset_name = dataset_name
-        self.stitching = stitching
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -369,37 +233,33 @@ class BaseDataset(torch.utils.data.Dataset):
                 pad_time_length = num_time_steps - self.max_time_length
                 binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data, self.max_time_length, self.pad_value)
 
-        if not self.stitching:
-            # pad along space dimension
-            if num_neurons > self.max_space_length:
-                binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
-                neuron_depths = neuron_depths[:self.max_space_length]
-                neuron_regions = neuron_regions[:self.max_space_length]
-            else: 
-                if self.pad_to_right:
-                    pad_space_length = self.max_space_length - num_neurons
-                    binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
-                    # binned_spikes_data = _wrap_pad_neuron_up_to_n(binned_spikes_data, self.max_space_length).T
-                    neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
-                    neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
-                else:
-                    pad_space_length = num_neurons - self.max_space_length
-                    binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
-                    neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
-                    neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
-                binned_spikes_data = binned_spikes_data.T
-            spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
-            space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
-        else:
-            spikes_spacestamps = np.arange(num_neurons).astype(np.int64)
-            space_attn_mask = _attention_mask(num_neurons, 0).astype(np.int64)
+        # pad along space dimension
+        if num_neurons > self.max_space_length:
+            binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
+            neuron_depths = neuron_depths[:self.max_space_length]
+            neuron_regions = neuron_regions[:self.max_space_length]
+        else: 
+            if self.pad_to_right:
+                pad_space_length = self.max_space_length - num_neurons
+                binned_spikes_data = _pad_seq_right_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                # binned_spikes_data = _wrap_pad_neuron_up_to_n(binned_spikes_data, self.max_space_length).T
+                neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
+                neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
+            else:
+                pad_space_length = num_neurons - self.max_space_length
+                binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
+                neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
+                neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
+            binned_spikes_data = binned_spikes_data.T
                 
         spikes_timestamps = np.arange(self.max_time_length).astype(np.int64)
+        spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
         
         # add attention mask
         time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
+        space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
-        
+
         return {
             "spikes_data": binned_spikes_data,
             "time_attn_mask": time_attn_mask,
@@ -409,16 +269,15 @@ class BaseDataset(torch.utils.data.Dataset):
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
             "neuron_regions": list(neuron_regions),
-            "eid": data['eid']
         }
-    
+
     def __len__(self):
         if "ibl" in self.dataset_name:
             return len(self.dataset)
         else:
             # get the length of the first tuple in the dataset
             return len(self.dataset[0])
-    
+
     def __getitem__(self, idx):
         if "ibl" in self.dataset_name:
             return self._preprocess_ibl_data(self.dataset[idx])

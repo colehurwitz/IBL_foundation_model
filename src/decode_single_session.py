@@ -36,12 +36,12 @@ CONFIGS
 """
 
 kwargs = {
-    "model": "include:src/configs/decoder.yaml"
+    "model": "include:configs/decoder.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/decoder.yaml", config)
-config = update_config("src/configs/decoder_trainer.yaml", config)
+config = update_config("configs/decoder.yaml", config)
+config = update_config("configs/decoder_trainer.yaml", config)
 
 # Need user inputs: choice of dataset & behavior
 ap = argparse.ArgumentParser()
@@ -126,10 +126,10 @@ else:
     # -------------------------
     
     search_space['optimizer']['lr'] = tune.grid_search([1e-2, 1e-3])
-    search_space['optimizer']['weight_decay'] = tune.grid_search([1, 1e-1, 1e-2, 1e-3])
+    search_space['optimizer']['weight_decay'] = tune.grid_search([0, 1e-1, 1e-2, 1e-3, 1e-4])
     
     if model_class == "reduced-rank":
-        search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10, 15])
+        search_space['reduced_rank']['temporal_rank'] = tune.grid_search([2, 5, 10, 15, 20])
         search_space['tuner']['num_epochs'] = 500
         search_space['training']['num_epochs'] = 800
     elif model_class == "lstm":
@@ -152,8 +152,6 @@ else:
     
     best_result = results.get_best_result(metric=config.tuner.metric, mode=config.tuner.mode)
     best_config = best_result.config['train_loop_config']
-
-    print(best_config)
     
     # -- Model training 
     # -----------------

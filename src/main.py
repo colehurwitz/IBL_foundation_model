@@ -12,24 +12,27 @@ import torch
 import numpy as np
 import os
 from trainer.make import make_trainer
+from utils.hooks_utils import AttentionHook
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1.yaml"
+    "model": "include:src/configs/itransformer.yaml"
 }
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/trainer.yaml", config)
 
 # make log dir
-log_dir = os.path.join(config.dirs.log_dir, "train", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name), "mask_{}".format(config.model.encoder.masker.mode))
+log_dir = os.path.join(config.dirs.log_dir)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
 # wandb
 if config.wandb.use:
     import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="train_model_{}_method_{}_mask_{}".format(config.model.model_class, config.method.model_kwargs.method_name, config.model.encoder.masker.mode))
+
+    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config,
+               name=config.wandb.run_name)
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -40,15 +43,15 @@ if "ibl" in config.data.dataset_name:
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
-    
-    try:
-       bin_size = train_dataset["binsize"][0]
-    except:
-       bin_size = train_dataset["bin_size"][0]
 
-    if config.data.include_behav:
+    try:
+        bin_size = train_dataset["binsize"][0]
+    except:
+        bin_size = train_dataset["bin_size"][0]
+
+    '''if config.data.include_behav:
         dataset = load_from_disk(os.path.join(config.dirs.behav_dir))
-        #dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
+        # dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
         _dataset = dataset.train_test_split(test_size=0.2, seed=config.seed)['train']
         dataset = _dataset.train_test_split(test_size=0.1, seed=config.seed)
         try:
@@ -58,10 +61,11 @@ if "ibl" in config.data.dataset_name:
 
         train_dataset = dataset["train"]
         val_dataset = dataset["test"]
-        test_dataset = _dataset["test"]
+        test_dataset = _dataset["test"]'''
 
     if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
-        config["model"]["encoder"]["neuron_regions"] = list(set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
+        config["model"]["encoder"]["neuron_regions"] = list(
+            set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
 
     print(dataset.column_names)
     print(f"bin_size: {bin_size}")
@@ -72,47 +76,47 @@ else:
     bin_size = None
 
 # make the dataloader
-train_dataloader = make_loader(train_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.train_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=True)
+train_dataloader = make_loader(train_dataset,
+                               target=config.data.target,
+                               load_meta=config.data.load_meta,
+                               batch_size=config.training.train_batch_size,
+                               pad_to_right=True,
+                               pad_value=-1.,
+                               bin_size=bin_size,
+                               max_time_length=config.data.max_time_length,
+                               max_space_length=config.data.max_space_length,
+                               dataset_name=config.data.dataset_name,
+                               sort_by_depth=config.data.sort_by_depth,
+                               sort_by_region=config.data.sort_by_region,
+                               shuffle=True)
 
-val_dataloader = make_loader(val_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.test_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=False)
+val_dataloader = make_loader(val_dataset,
+                             target=config.data.target,
+                             load_meta=config.data.load_meta,
+                             batch_size=config.training.test_batch_size,
+                             pad_to_right=True,
+                             pad_value=-1.,
+                             bin_size=bin_size,
+                             max_time_length=config.data.max_time_length,
+                             max_space_length=config.data.max_space_length,
+                             dataset_name=config.data.dataset_name,
+                             sort_by_depth=config.data.sort_by_depth,
+                             sort_by_region=config.data.sort_by_region,
+                             shuffle=False)
 
-test_dataloader = make_loader(test_dataset, 
-                         target=config.data.target,
-                         load_meta=config.data.load_meta,
-                         batch_size=config.training.test_batch_size, 
-                         pad_to_right=True, 
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         dataset_name=config.data.dataset_name,
-                         sort_by_depth=config.data.sort_by_depth,
-                         sort_by_region=config.data.sort_by_region,
-                         shuffle=False)
+test_dataloader = make_loader(test_dataset,
+                              target=config.data.target,
+                              load_meta=config.data.load_meta,
+                              batch_size=config.training.test_batch_size,
+                              pad_to_right=True,
+                              pad_value=-1.,
+                              bin_size=bin_size,
+                              max_time_length=config.data.max_time_length,
+                              max_space_length=config.data.max_space_length,
+                              dataset_name=config.data.dataset_name,
+                              sort_by_depth=config.data.sort_by_depth,
+                              sort_by_region=config.data.sort_by_region,
+                              shuffle=False)
 
 # Initialize the accelerator
 accelerator = Accelerator()
@@ -123,14 +127,18 @@ model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
 model = accelerator.prepare(model)
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
+print(model)
+print(config.model)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd,
+                              eps=config.optimizer.eps)
 lr_scheduler = OneCycleLR(
-                optimizer=optimizer,
-                total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                max_lr=config.optimizer.lr,
-                pct_start=config.optimizer.warmup_pct,
-                div_factor=config.optimizer.div_factor,
-            )
+    optimizer=optimizer,
+    total_steps=config.training.num_epochs * len(train_dataloader) // config.optimizer.gradient_accumulation_steps,
+    max_lr=config.optimizer.lr,
+    pct_start=config.optimizer.warmup_pct,
+    div_factor=config.optimizer.div_factor,
+)
 
 trainer_kwargs = {
     "log_dir": log_dir,
@@ -147,6 +155,7 @@ trainer_ = make_trainer(
     **trainer_kwargs
 )
 
+
+
 # train loop
 trainer_.train()
-

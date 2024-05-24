@@ -6,8 +6,6 @@ mask_name = 'mask_all'
 model_name = 'NDT1'
 n_time_steps = 100
 
-eid = '671c7ea7-6726-4fbe-adeb-f89c2c8e489b'
-
 co_smooth = True
 forward_pred = True
 inter_region = True
@@ -28,9 +26,6 @@ configs = {
     'test_size': 0.2,
     'seed': 42,
     'mask_name': mask_name,
-    'eid': eid,
-    'stitching': False,
-    'num_sessions': 1 
 }  
 
 # init wandb
@@ -51,8 +46,7 @@ if co_smooth:
         'mode': 'per_neuron',
         'n_time_steps': n_time_steps,    
         'is_aligned': True,
-        'target_regions': None,
-        'n_jobs': 8
+        'target_regions': None
     }
 
     results = co_smoothing_eval(model, 
@@ -76,8 +70,7 @@ if forward_pred:
         'n_time_steps': n_time_steps,    
         'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
         'is_aligned': True,
-        'target_regions': None,
-        'n_jobs': 8
+        'target_regions': None
     }
 
     results = co_smoothing_eval(model, 
@@ -101,8 +94,7 @@ if inter_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all'],
-        'n_jobs': 8
+        'target_regions': ['all']
     }
 
     results = co_smoothing_eval(model, 
@@ -126,8 +118,7 @@ if intra_region:
         'n_time_steps': n_time_steps,    
         'held_out_list': None,
         'is_aligned': True,
-        'target_regions': ['all'],
-        'n_jobs': 8
+        'target_regions': ['all']
     }
 
     results = co_smoothing_eval(model, 
@@ -152,10 +143,8 @@ if choice_decoding:
         'mask_name': mask_name,
         'metric': 'acc',
         'from_scratch': False,
-        'freeze_encoder': True,
-        'mask_ratio': 0.1,
-        'eid': eid,
-        'num_sessions': 1 
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)
     print(results)
@@ -175,10 +164,8 @@ if continuous_decoding:
         'mask_name': mask_name,
         'metric': 'r2',
         'from_scratch': False,
-        'freeze_encoder': True,
-        'mask_ratio': 0.1,
-        'eid': eid,
-        'num_sessions': 1 
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
     }  
     results = behavior_decoding(**configs)
     print(results)

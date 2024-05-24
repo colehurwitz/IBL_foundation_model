@@ -26,9 +26,7 @@ log_dir = os.path.join(config.dirs.log_dir,
                        "single_session",
                        "model_{}".format(config.model.model_class), 
                        "method_{}".format(config.method.model_kwargs.method_name), 
-                       "mask_{}".format(config.encoder.masker.mode),
-                       "finetune_{}".format(config.training.finetune))
-
+                       "mask_{}".format(config.encoder.masker.mode))
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
@@ -38,7 +36,7 @@ if config.wandb.use:
     wandb.init(project=config.wandb.project, 
                entity=config.wandb.entity, 
                config=config, 
-               name="train_model_{}_method_{}_mask_{}_finetune_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.encoder.stitching, config.training.finetune))
+               name="train_model_{}_method_{}_mask_{}_finetune_{}".format(config.model.model_class, config.method.model_kwargs.method_name,config.encoder.masker.mode, config.training.finetune))
 
 # set seed for reproducibility
 set_seed(config.seed)
@@ -84,11 +82,9 @@ accelerator = Accelerator()
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
 model_class = NAME2MODEL[config.model.model_class]
 model = model_class(config.model, **config.method.model_kwargs)
-lr_multiplier = 1.
 if config.training.finetune:
     print('Loading pretrained model')
     model = torch.load(config.dirs.pretrained_model_path)['model']
-    lr_multiplier = lr_multiplier / 10.
 model = accelerator.prepare(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), 
@@ -98,7 +94,7 @@ optimizer = torch.optim.AdamW(model.parameters(),
 lr_scheduler = OneCycleLR(
                 optimizer=optimizer,
                 total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                max_lr=config.optimizer.lr * lr_multiplier,
+                max_lr=config.optimizer.lr,
                 pct_start=config.optimizer.warmup_pct,
                 div_factor=config.optimizer.div_factor,
             )
