@@ -1,6 +1,7 @@
 import torch
 import numpy as np
-from utils.dataset_utils import get_binned_spikes_from_sparse
+from src.utils.dataset_utils import get_binned_spikes_from_sparse
+from torch.utils.data.sampler import Sampler
 
 def _pad_seq_right_to_n(
     seq: np.ndarray,

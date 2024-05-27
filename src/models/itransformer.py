@@ -367,10 +367,12 @@ class iTransformer(nn.Module):
             targets_lengths: Optional[torch.LongTensor] = None,  # (bs)
             neuron_regions: Optional[np.ndarray] = None,  # (bs, n_channels)
             masking_mode: Optional[str] = None,
-            spike_augmentation: Optional[bool] = False,
+            spike_augmentation: Optional[bool] = False,  # not used
+            num_neuron=None,  # not used
+            eid=None,  # not used
     ) -> iTransformerOutput:
 
-
+        # Can hard-set the masking mode during inference. Not used in iTransformer now.
         if masking_mode is not None:
             self.masker.mode = masking_mode
 

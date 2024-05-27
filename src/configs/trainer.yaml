@@ -11,7 +11,7 @@ wandb:
   use: false
   entity: wdk0082
   project: iTransformer
-  run_name: all-all-test2
+  run_name: test
 
 # Logging directories
 dirs:

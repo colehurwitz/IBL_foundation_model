@@ -2,7 +2,7 @@ model_class: iTransformer
 
 
 encoder:
-  from_pt: checkpoints/models/iTransformer/all_neuron30_h512_bs16/best
+  from_pt: null
 
   masker: 
     force_active: True
@@ -40,7 +40,7 @@ encoder:
   attn_mix_ratio: [0.25, 0.25, 0.5] # inter : intra : all, should add up to 1 (mix_sample)
 
 decoder:
-  from_pt: checkpoints/models/iTransformer/all_neuron30_h512_bs16/best
+  from_pt: null
   mlp_decoder: true
   activation: relu
   use_cls: false

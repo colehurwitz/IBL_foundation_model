@@ -12,7 +12,6 @@ import torch
 import numpy as np
 import os
 from trainer.make import make_trainer
-from utils.hooks_utils import AttentionHook
 
 # load config
 kwargs = {
