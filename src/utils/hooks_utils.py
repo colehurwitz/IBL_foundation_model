@@ -48,15 +48,15 @@ class AttentionWeightsHook:
 
 class TransformerLayerOutputHook:
     def __init__(self):
-        self.layer_outputs = {}
+        self.layer_results = {}
         self.module_id_to_name = {}
 
     def _hook(self, module, input, output):
         layer_output = output[0].detach().cpu().numpy()
         module_name = self.module_id_to_name[id(module)]
-        if module_name not in self.layer_outputs:
-            self.layer_outputs[module_name] = []
-        self.layer_outputs[module_name].append(layer_output)
+        if module_name not in self.layer_results:
+            self.layer_results[module_name] = []
+        self.layer_results[module_name].append(layer_output)
 
     def register_hooks(self, model):
         for name, module in model.named_modules():
@@ -66,7 +66,7 @@ class TransformerLayerOutputHook:
                 print(f'Hook registered for {name}')
 
     def clear(self):
-        self.layer_outputs = {}
+        self.layer_results = {}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -75,15 +75,15 @@ class TransformerLayerOutputHook:
 
 class TransformerLayerInputHook:
     def __init__(self):
-        self.layer_inputs = {}
+        self.layer_results = {}
         self.module_id_to_name = {}
 
     def _hook(self, module, input, output):
         layer_input = input[0].detach().cpu().numpy()
         module_name = self.module_id_to_name[id(module)]
-        if module_name not in self.layer_inputs:
-            self.layer_inputs[module_name] = []
-        self.layer_inputs[module_name].append(layer_input)
+        if module_name not in self.layer_results:
+            self.layer_results[module_name] = []
+        self.layer_results[module_name].append(layer_input)
 
     def register_hooks(self, model):
         for name, module in model.named_modules():
@@ -93,7 +93,7 @@ class TransformerLayerInputHook:
                 print(f'Hook registered for {name}')
 
     def clear(self):
-        self.layer_inputs = {}
+        self.layer_results = {}
 
 
 

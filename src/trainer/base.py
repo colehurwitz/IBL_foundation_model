@@ -26,15 +26,22 @@ class Trainer():
         self.accelerator = kwargs.get("accelerator", None)
         self.lr_scheduler = kwargs.get("lr_scheduler", None)
         self.config = kwargs.get("config", None)
+        self.num_neurons = kwargs.get("num_neurons", None)
 
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
         else:
             self.metric = 'r2'
                 
-        self.active_neurons = None
+        self.session_active_neurons = []
 
-        self.masking_mode = model.masker.mode
+        if self.config.model.model_class == 'iTransformer':
+            self.masking_ratio = model.masker.ratio
+            self.masking_mode = model.masker.mode
+        else:
+            self.masking_ratio = model.encoder.masker.ratio
+            self.masking_mode = model.encoder.masker.mode
+
         self.masking_schemes = ['neuron', 'temporal', 'causal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
@@ -55,14 +62,17 @@ class Trainer():
 
             if eval_epoch_results:
                 if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
+                    best_eval_loss = eval_epoch_results['eval_loss']
+                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
                     best_eval_trial_avg_metric = eval_epoch_results[f'eval_trial_avg_{self.metric}']
                     print(f"epoch: {epoch} best eval trial avg {self.metric}: {best_eval_trial_avg_metric}")
                     # save model
                     self.save_model(name="best", epoch=epoch)
                     if self.config.method.model_kwargs.method_name == 'ssl':
                         gt_pred_fig = self.plot_epoch(
-                            gt=eval_epoch_results['eval_gt'], 
-                            preds=eval_epoch_results['eval_preds'], epoch=epoch
+                            gt=eval_epoch_results['eval_gt'][0],
+                            preds=eval_epoch_results['eval_preds'][0], epoch=epoch,
+                            active_neurons=self.session_active_neurons[0][:5]
                         )
                         if self.config.wandb.use:
                             wandb.log({"best_epoch": epoch,
@@ -75,9 +85,6 @@ class Trainer():
                             gt_pred_fig['plot_r2'].savefig(
                                 os.path.join(self.log_dir, f"best_r2_fig_{epoch}.png")
                             )
-                if eval_epoch_results['eval_loss'] < best_eval_loss:
-                    best_eval_loss = eval_epoch_results['eval_loss']
-                    print(f"epoch: {epoch} best eval loss: {best_eval_loss}")
                 print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']} {self.metric}: {eval_epoch_results[f'eval_trial_avg_{self.metric}']}")
 
             # save model by epoch
@@ -90,7 +97,8 @@ class Trainer():
                     gt_pred_fig = self.plot_epoch(
                         gt=eval_epoch_results['eval_gt'], 
                         preds=eval_epoch_results['eval_preds'], 
-                        epoch=epoch
+                        epoch=epoch,
+                        active_neurons=self.session_active_neurons[0][:5]
                     )
                     if self.config.wandb.use:
                         wandb.log({
@@ -125,6 +133,7 @@ class Trainer():
         train_examples = 0
         self.model.train()
         for batch in tqdm(self.train_dataloader):
+            # TODO: different ratio for different schemes, in iTransformer
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
             else:
@@ -184,23 +193,23 @@ class Trainer():
         elif self.config.method.model_kwargs.loss == "cross_entropy":
             preds = torch.nn.functional.softmax(preds, dim=1)
             
-        if self.active_neurons is None:
-            self.active_neurons = np.argsort(gt.cpu().numpy().sum((0,1)))[::-1][:5].tolist()
+        # use the most active 50 neurons to select model (by r2)
+        active_neurons = np.argsort(gt.cpu().numpy().sum((0, 1)))[::-1][:50].tolist()
 
         if self.config.method.model_kwargs.method_name == 'ssl':
-            results = metrics_list(gt = gt.mean(0)[..., self.active_neurons].T,
-                                   pred = preds.mean(0)[..., self.active_neurons].T, 
+            results = metrics_list(gt=gt[..., active_neurons].transpose(-1, 0),
+                                   pred=preds[..., active_neurons].transpose(-1, 0),
                                    metrics=["r2"], 
                                    device=self.accelerator.device)
         elif self.config.method.model_kwargs.method_name == 'sl':
             if self.config.method.model_kwargs.clf:
-                results = metrics_list(gt = gt.argmax(1),
-                                       pred = preds.argmax(1), 
+                results = metrics_list(gt=gt.argmax(1),
+                                       pred=preds.argmax(1),
                                        metrics=[self.metric], 
                                        device=self.accelerator.device)
             elif self.config.method.model_kwargs.reg:
-                results = metrics_list(gt = gt,
-                                       pred = preds,
+                results = metrics_list(gt=gt,
+                                       pred=preds,
                                        metrics=[self.metric],
                                        device=self.accelerator.device)
 
@@ -210,16 +219,16 @@ class Trainer():
             "eval_gt": gt,
             "eval_preds": preds,
         }
-    
-    def plot_epoch(self, gt, preds, epoch):
-        gt_pred_fig = plot_gt_pred(gt = gt.mean(0).T.cpu().numpy(),
-                     pred = preds.mean(0).T.detach().cpu().numpy(),
-                     epoch = epoch)
-        
-        r2_fig = plot_neurons_r2(gt = gt.mean(0),
-                pred = preds.mean(0),
-                neuron_idx=self.active_neurons,
-                epoch = epoch)
+
+    def plot_epoch(self, gt, preds, epoch, active_neurons):
+        gt_pred_fig = plot_gt_pred(gt=gt.mean(0).T.cpu().numpy(),
+                                   pred=preds.mean(0).T.detach().cpu().numpy(),
+                                   epoch=epoch)
+
+        r2_fig = plot_neurons_r2(gt=gt.mean(0),
+                                 pred=preds.mean(0),
+                                 neuron_idx=active_neurons,
+                                 epoch=epoch)
         return {
             "plot_gt_pred": gt_pred_fig,
             "plot_r2": r2_fig

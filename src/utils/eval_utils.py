@@ -57,7 +57,7 @@ def load_model_data_local(**kwargs):
     model = model_class(config.model, **config.method.model_kwargs)
 
     if config.model.model_class == 'iTransformer':
-        # it's already loaded when initializing the model
+        # it's already loaded when initializing the model. Only thing needed is to set mask to false.
         model.masker.force_active = False
     else:
         model = torch.load(model_path)['model']
@@ -77,7 +77,6 @@ def load_model_data_local(**kwargs):
     # load the dataset
     dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
 
-    # TODO: update the loader to adapt other models (e.g., patching for NDT2)
     dataloader = make_loader(
         dataset,
         target=config.data.target,
@@ -133,8 +132,7 @@ def transformer_probe_test(
                 neuron_regions=batch['neuron_regions']
             )
 
-    probe_results = hook.layer_inputs
-    # probe_results = hook.layer_outputs
+    probe_results = hook.layer_results
     hook.clear()
 
     return probe_results
@@ -230,6 +228,7 @@ def co_smoothing_eval(
     target_regions = kwargs['target_regions']
 
     # hack to accommodate NDT2 - fix later
+    # TODO: what's the hack here?
     tot_num_neurons = batch['spikes_data'].size()[-1]
     uuids_list = np.array(test_dataset['cluster_uuids'][0])[:tot_num_neurons]
     region_list = np.array(test_dataset['cluster_regions'])[0][:tot_num_neurons]
@@ -285,8 +284,9 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     batch = move_batch_to_device(batch, accelerator.device)
+                    gt_spike_data = batch['spikes_data'].clone()
                     mask_result = heldout_mask(
-                        batch['spikes_data'],
+                        batch['spikes_data'].clone(),
                         mode='manual',
                         heldout_idxs=np.array([n_i])
                     )
@@ -302,8 +302,9 @@ def co_smoothing_eval(
 
             outputs.preds = torch.exp(outputs.preds)
 
-            gt_spikes = batch['spikes_data'].detach().cpu().numpy()
+            gt_spikes = gt_spike_data.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().numpy()
+            tot_num_trials = len(batch['spikes_data'])
 
             # compute co-bps
             gt_held_out = gt_spikes[:, :, [n_i]]
@@ -340,6 +341,7 @@ def co_smoothing_eval(
                     )
                     r2_result_list[idxs[i]] = r2
 
+    # TODO: only Co-Smooth is updated for iTransformer now. Update others if needed.
     elif mode == 'forward_pred':
 
         held_out_list = kwargs['held_out_list']
