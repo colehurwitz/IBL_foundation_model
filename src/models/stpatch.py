@@ -616,9 +616,9 @@ class STPatch(nn.Module):
 
         # Transform neural embeddings into rates/logits
         if self.method == "ssl":
-            outputs = self.decoder(x).reshape((B,T_,-1))[:,:,:pad_space_len]
-            targets = targets.reshape((B,T_,-1))[:,:,:pad_space_len]
-            targets_mask = targets_mask.reshape((B,T_,-1))[:,:,:pad_space_len]
+            outputs = self.decoder(x).reshape((B,T_,-1))
+            targets = targets.reshape((B,T_,-1))
+            targets_mask = targets_mask.reshape((B,T_,-1))
             
         elif self.method == "sl":
             x = x.flatten(start_dim=1)  
@@ -626,8 +626,8 @@ class STPatch(nn.Module):
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
-            loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
-            n_examples = targets_mask.sum()
+            loss = (self.loss_fn(outputs[:,:,:pad_space_len], targets[:,:,:pad_space_len]) * targets_mask[:,:,:pad_space_len]).sum()
+            n_examples = targets_mask[:,:,:pad_space_len].sum()
         elif self.method == "sl":
             loss = self.loss_fn(outputs, targets).sum()
             n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
