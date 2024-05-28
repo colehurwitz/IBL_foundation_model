@@ -1,16 +1,16 @@
 seed: 42
 
 savestring: test
-wandb_project: iTransformer
+wandb_project: iTransformer_multi
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: True
   entity: wdk0082
-  project: iTransformer
+  project: iTransformer_multi
   run_name: test
 
 # Logging directories

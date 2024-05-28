@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.sparse import csr_array
-from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict, load_from_disk
+from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets, DatasetDict, load_from_disk
+from src.utils.config_utils import DictConfig
 import h5py
 import os
 import torch
@@ -314,4 +315,27 @@ def split_both_dataset(
     })
 
     return new_aligned_dataset, new_unaligned_dataset
+
+def multi_session_dataset_iTransformer(
+    eids_path: str,
+    config: DictConfig
+):
+    with open(eids_path, "r") as file:
+        lines = file.readlines()
+        eid_list = [line.strip() for line in lines]
+
+    dataset_train_list = []
+    dataset_val_list = []
+    dataset_test_list = []
+    for eid in eid_list:
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+        dataset_train_list.append(dataset['train'])
+        dataset_val_list.append(dataset['val'])
+        dataset_test_list.append(dataset['test'])
+
+    dataset_train = concatenate_datasets(dataset_train_list)
+    dataset_val = concatenate_datasets(dataset_val_list)
+    dataset_test = concatenate_datasets(dataset_test_list)
+
+    return dataset_train, dataset_val, dataset_test
             
