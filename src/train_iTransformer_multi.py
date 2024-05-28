@@ -6,7 +6,7 @@ from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
-from models.itransformer import iTransformer
+from models.itransformer_multi import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
 import numpy as np
@@ -40,7 +40,7 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
-train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config)
+train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config, n_eids=1)
 try:
     bin_size = train_dataset["binsize"][0]
 except:

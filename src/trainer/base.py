@@ -27,13 +27,13 @@ class Trainer():
         self.lr_scheduler = kwargs.get("lr_scheduler", None)
         self.config = kwargs.get("config", None)
         self.num_neurons = kwargs.get("num_neurons", None)
+        self.active_neurons_idx = None
 
         if self.config.method.model_kwargs.clf:
             self.metric = 'acc'
         else:
             self.metric = 'r2'
-                
-        self.session_active_neurons = []
+
 
         if self.config.model.model_class == 'iTransformer':
             self.masking_ratio = model.masker.ratio
@@ -70,9 +70,9 @@ class Trainer():
                     self.save_model(name="best", epoch=epoch)
                     if self.config.method.model_kwargs.method_name == 'ssl':
                         gt_pred_fig = self.plot_epoch(
-                            gt=eval_epoch_results['eval_gt'][0],
-                            preds=eval_epoch_results['eval_preds'][0], epoch=epoch,
-                            active_neurons=self.session_active_neurons[0][:5]
+                            gt=eval_epoch_results['eval_gt'],
+                            preds=eval_epoch_results['eval_preds'], epoch=epoch,
+                            active_neurons=self.active_neurons_idx
                         )
                         if self.config.wandb.use:
                             wandb.log({"best_epoch": epoch,
@@ -98,7 +98,7 @@ class Trainer():
                         gt=eval_epoch_results['eval_gt'], 
                         preds=eval_epoch_results['eval_preds'], 
                         epoch=epoch,
-                        active_neurons=self.session_active_neurons[0][:5]
+                        active_neurons=self.active_neurons_idx
                     )
                     if self.config.wandb.use:
                         wandb.log({
@@ -194,16 +194,19 @@ class Trainer():
             preds = torch.nn.functional.softmax(preds, dim=1)
             
         # use the most active 50 neurons to select model (by r2)
-        active_neurons = np.argsort(gt.cpu().numpy().sum((0, 1)))[::-1][:50].tolist()
+        # neurons in each trial will be different
+        _tmp_ac = gt.detach().cpu().numpy().mean(1)  # (bs, n_neurons)
+        self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :50].copy()
+        _bs = np.arange(gt.shape[0])[:, None].copy()
 
         if self.config.method.model_kwargs.method_name == 'ssl':
-            results = metrics_list(gt=gt[..., active_neurons].transpose(-1, 0),
-                                   pred=preds[..., active_neurons].transpose(-1, 0),
+            results = metrics_list(gt=gt[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
+                                   pred=preds[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
                                    metrics=["r2"], 
                                    device=self.accelerator.device)
         elif self.config.method.model_kwargs.method_name == 'sl':
             if self.config.method.model_kwargs.clf:
-                results = metrics_list(gt=gt.argmax(1),
+                results = metrics_list(gt=gt.argmax(1),  # TODO: change this (probably)
                                        pred=preds.argmax(1),
                                        metrics=[self.metric], 
                                        device=self.accelerator.device)
@@ -220,13 +223,17 @@ class Trainer():
             "eval_preds": preds,
         }
 
-    def plot_epoch(self, gt, preds, epoch, active_neurons):
-        gt_pred_fig = plot_gt_pred(gt=gt.mean(0).T.cpu().numpy(),
-                                   pred=preds.mean(0).T.detach().cpu().numpy(),
+    def plot_epoch(self, gt, preds, epoch, active_neurons):  # (bs, seq_len, n_neurons)
+
+        trial_idx = random.randint(0, gt.shape[0])  # random trial to plot
+        active_neurons = active_neurons[trial_idx, :5].tolist()  # plot the top 5 active neurons in selected trials
+
+        gt_pred_fig = plot_gt_pred(gt=gt[trial_idx].T.cpu().numpy(),
+                                   pred=preds[trial_idx].T.detach().cpu().numpy(),
                                    epoch=epoch)
 
-        r2_fig = plot_neurons_r2(gt=gt.mean(0),
-                                 pred=preds.mean(0),
+        r2_fig = plot_neurons_r2(gt=gt[trial_idx],
+                                 pred=preds[trial_idx],
                                  neuron_idx=active_neurons,
                                  epoch=epoch)
         return {

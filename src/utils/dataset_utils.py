@@ -318,11 +318,15 @@ def split_both_dataset(
 
 def multi_session_dataset_iTransformer(
     eids_path: str,
-    config: DictConfig
+    config: DictConfig,
+    n_eids=None
 ):
     with open(eids_path, "r") as file:
         lines = file.readlines()
         eid_list = [line.strip() for line in lines]
+
+    if n_eids is not None:
+        eid_list = eid_list[:n_eids]
 
     dataset_train_list = []
     dataset_val_list = []

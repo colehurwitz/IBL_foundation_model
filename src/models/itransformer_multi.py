@@ -182,7 +182,7 @@ class iTransformerEncoder(nn.Module):
         self.embed_region = config.embed_region
         if self.embed_region:
             self.region_embeddings = nn.Sequential(
-                nn.Embedding(len(self.region_dict), config.hidden_size),
+                nn.Embedding(len(self.region_dict)+1, config.hidden_size),  # +1 for nan
                 nn.LayerNorm(config.hidden_size),
             )
 
@@ -361,7 +361,7 @@ class iTransformer(nn.Module):
     def forward(
             self,
             spikes: torch.FloatTensor,  # (bs, seq_len, n_channels)
-            time_attn_mask: torch.LongTensor,  # (bs, seq_len)
+            time_attn_mask: torch.LongTensor,  # (bs, seq_len), won't be used in attention for iTransformer
             space_attn_mask: torch.LongTensor,  # (bs, n_channels)
             spikes_timestamps: torch.LongTensor,  # (bs, seq_len)
             spikes_spacestamps: Optional[torch.LongTensor] = None,  # (bs, n_channels)
@@ -398,6 +398,9 @@ class iTransformer(nn.Module):
         attn_mode = self.encoder.attn_mode
         n_heads = self.encoder.n_heads
 
+        # experiment on 1.the order of heads and batch, 2.(solved!)the orientation of the attn mask. ***********
+        pad_mask = space_attn_mask.unsqueeze(1).repeat_interleave(n_heads, dim=0).to(torch.bool).to(spikes.device)  # (bs*n_heads, 1, n_channels)
+
         attn_mask_inter = create_attn_mask(neuron_regions_np, "inter-region").to(spikes.device)
         attn_mask_intra = create_attn_mask(neuron_regions_np, "intra-region").to(spikes.device)
         attn_mask_none = torch.zeros(attn_mask_inter.shape, dtype=torch.bool).to(spikes.device)
@@ -407,38 +410,37 @@ class iTransformer(nn.Module):
             mode_list = ['inter-region', 'intra-region', 'all']
             attn_mode = np.random.choice(mode_list, p=p)
 
-        if attn_mode == "mix_multihead": # TODO: what is the order of head and batch?
+        if attn_mode == "mix_multihead":  # TODO: what is the order of head and batch? This mode is not fixed yet.
             h_n = self.encoder.attn_mix_n
             attn_mask = torch.cat((attn_mask_inter.repeat(h_n[0], 1, 1), attn_mask_intra.repeat(h_n[1], 1, 1),
                                    attn_mask_none.repeat(h_n[2], 1, 1)), dim=0)
-            attn_mask = attn_mask.repeat(spikes.size(0), 1, 1)
+            attn_mask = attn_mask.repeat(spikes.size(0), 1, 1) | ~pad_mask  # this is probably wrong
 
         elif attn_mode == "mix_sequence":
             m_list = self.encoder.attn_mix_sequence
             mask_list = []
             for i, mask_mode in enumerate(m_list):
                 if mask_mode == "inter-region":
-                    mask_list.append(attn_mask_inter.repeat(n_heads * spikes.size(0), 1, 1))
+                    mask_list.append(attn_mask_inter.repeat(n_heads * spikes.size(0), 1, 1) | ~pad_mask)
                 elif mask_mode == "intra-region":
-                    mask_list.append(attn_mask_intra.repeat(n_heads * spikes.size(0), 1, 1))
+                    mask_list.append(attn_mask_intra.repeat(n_heads * spikes.size(0), 1, 1) | ~pad_mask)
                 elif mask_mode == "all":
-                    mask_list.append(attn_mask_none.repeat(n_heads * spikes.size(0), 1, 1))
+                    mask_list.append(attn_mask_none.repeat(n_heads * spikes.size(0), 1, 1) | ~pad_mask)
             attn_mask = mask_list
 
 
         elif attn_mode == "inter-region":
-            attn_mask = attn_mask_inter.repeat(n_heads*spikes.size(0), 1, 1)
+            attn_mask = attn_mask_inter.repeat(n_heads*spikes.size(0), 1, 1) | ~pad_mask
         elif attn_mode == "intra-region":
-            attn_mask = attn_mask_intra.repeat(n_heads*spikes.size(0), 1, 1)
+            attn_mask = attn_mask_intra.repeat(n_heads*spikes.size(0), 1, 1) | ~pad_mask
         elif attn_mode == "all":
-            attn_mask = attn_mask_none.repeat(n_heads*spikes.size(0), 1, 1)
+            attn_mask = attn_mask_none.repeat(n_heads*spikes.size(0), 1, 1) | ~pad_mask
         elif attn_mode == "inter-region-switch":
             # the targets_mask is already what we want
             attn_mask = attn_mask_none
-            attn_mask = attn_mask | targets_mask[0, 0, :].repeat(attn_mask.shape[0], 1).transpose(0, 1)
+            attn_mask = attn_mask | targets_mask[0, 0, :].repeat(attn_mask.shape[0], 1).transpose(0, 1)  # might be some problem with the orientation here
             attn_mask = attn_mask & ~(torch.eye(attn_mask.shape[0]).to(torch.bool)).to(device=attn_mask.device)
-            attn_mask = attn_mask.repeat(n_heads*spikes.size(0), 1, 1)
-
+            attn_mask = attn_mask.repeat(n_heads*spikes.size(0), 1, 1) | ~pad_mask
 
         x = self.encoder(spikes, spikes_timestamps, spikes_spacestamps,
                          neuron_regions=neuron_regions, attention_mask=attn_mask)  # (batch, n_channels, hidden_size)
@@ -456,8 +458,8 @@ class iTransformer(nn.Module):
         if self.method == "ssl":
             preds = preds.transpose(1, 2)  # (bs, seq_len, n_channels)
             # Include padding in mask
-            targets_mask = targets_mask & time_attn_mask.unsqueeze(2)
-            # Compute the loss only over masked timesteps that are not padded
+            targets_mask = targets_mask & time_attn_mask.unsqueeze(2) & space_attn_mask.unsqueeze(1)
+            # Compute the loss only over masked timesteps/spacestamps that are not padded
             loss = (self.loss_fn(preds, targets) * targets_mask).sum()
             n_examples = targets_mask.sum()
             return iTransformerOutput(
@@ -470,6 +472,7 @@ class iTransformer(nn.Module):
             )
 
         # ASK: This is weird? What is this?
+        # TODO: This need to be fixed for space padding.
         elif self.method == "dyn_behaviour":
             # Include padding in mask
             targets_mask = time_attn_mask
@@ -485,7 +488,7 @@ class iTransformer(nn.Module):
             )
 
         elif self.method == "stat_behaviour":
-            targets_mask = targets_mask & time_attn_mask.unsqueeze(2)
+            targets_mask = targets_mask & time_attn_mask.unsqueeze(2) & space_attn_mask.unsqueeze(1)
             if self.loss_name == "xent":
                 loss = self.loss_fn(preds, targets.long().squeeze(1)).sum()
             elif self.loss_name == "mse":
@@ -531,8 +534,9 @@ def create_attn_mask(
     attn_mask_np = (regions[:, np.newaxis] == regions)
     attn_mask = torch.tensor(attn_mask_np, dtype=torch.bool)
 
+    # make sure each token can at least attend to itself
     if mode == "inter-region":
-        return attn_mask
+        return attn_mask & ~(torch.eye(attn_mask.shape[0]).to(torch.bool)).to(device=attn_mask.device)
     elif mode == "intra-region":
         return ~attn_mask
     else:
@@ -554,6 +558,9 @@ class iRegionDict:
         self.brain_regions = np.unique(truncated_regions)
         self.region_to_index = {region: index for index, region in enumerate(self.brain_regions)}
         self.index_to_region = {index: region for index, region in enumerate(self.brain_regions)}
+        # special case for nan (padding) TODO: better way to handle this?
+        self.region_to_index['nan'] = len(self.brain_regions)
+        self.index_to_region[len(self.brain_regions)] = 'nan'
 
     def __len__(self):
         return len(self.brain_regions)
