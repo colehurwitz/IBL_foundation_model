@@ -12,11 +12,14 @@ import torch
 import numpy as np
 import os
 from trainer.make import make_trainer
+from src.utils.dataset_utils import multi_session_dataset_iTransformer
 
 # load config
 kwargs = {
     "model": "include:src/configs/itransformer_multi.yaml"
 }
+
+EID_PATH = 'data/target_eids.txt'
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/trainer_iTransformer_multi.yaml", config)
@@ -37,29 +40,13 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
-if "ibl" in config.data.dataset_name:
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    train_dataset = dataset["train"]
-    val_dataset = dataset["val"]
-    test_dataset = dataset["test"]
-
-    try:
-        bin_size = train_dataset["binsize"][0]
-    except:
-        bin_size = train_dataset["bin_size"][0]
-
-    # this won't be used in iTransformer_multi
-    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
-        config["model"]["encoder"]["neuron_regions"] = list(
-            set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a))
-
-    print(dataset.column_names)
-    print(f"bin_size: {bin_size}")
-
-else:
-    train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
-    test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
-    bin_size = None
+train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config)
+try:
+    bin_size = train_dataset["binsize"][0]
+except:
+    bin_size = train_dataset["bin_size"][0]
+print(train_dataset.column_names)
+print(f"bin_size: {bin_size}")
 
 # make the dataloader
 train_dataloader = make_loader(train_dataset,
