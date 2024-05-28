@@ -199,6 +199,8 @@ class Trainer():
         self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :50].copy()
         _bs = np.arange(gt.shape[0])[:, None].copy()
 
+
+        # TODO: model selection might be not rigorous (right) now
         if self.config.method.model_kwargs.method_name == 'ssl':
             results = metrics_list(gt=gt[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
                                    pred=preds[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
