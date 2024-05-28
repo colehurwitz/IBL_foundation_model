@@ -1,4 +1,4 @@
-model_class: iTransformer_multi
+model_class: iTransformer
 
 
 encoder:
@@ -6,7 +6,7 @@ encoder:
 
   masker: 
     force_active: True
-    mode: neuron        # masking mode
+    mode: temporal        # masking mode
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
@@ -25,16 +25,16 @@ encoder:
     dropout: 0.2
     max_n_bins: 100
 
-  hidden_size: 128
+  hidden_size: 16
   activation: relu          
   bias: true
   dropout: 0.4
   n_heads: 8
-  n_layers: 5
-  max_n_channels: 668        # 0 to skip channel embeddings
+  n_layers: 2
+  max_n_channels: 0        # 0 to skip channel embeddings
   embed_region: true
   neuron_regions: null       # set this to the list of all regions in the dataset before initialisation
-  attn_mode: mix_sequence       # all, inter-region, inter-region-switch, intra-region, mix_sequence, mix_multihead, mix_sample
+  attn_mode: all       # all, inter-region, inter-region-switch, intra-region, mix_sequence, mix_multihead, mix_sample
   attn_mix_n: [2, 2, 4]        # inter-region, intra-region, all, should add up to n_heads (mix_multihead)
   attn_mix_seq: ['intra-region', 'intra-region','inter-region', 'intra-region', 'intra-region'] # sequence of residual block (mix_sequence)
   attn_mix_ratio: [0.25, 0.25, 0.5] # inter : intra : all, should add up to 1 (mix_sample)

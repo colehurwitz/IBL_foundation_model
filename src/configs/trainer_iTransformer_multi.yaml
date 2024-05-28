@@ -8,7 +8,7 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: True
+  use: false
   entity: wdk0082
   project: iTransformer_multi
   run_name: test
@@ -42,7 +42,7 @@ training:
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
 model: 
-  model_class: iTransformer_multi   # Any registered model class name.
+  model_class: iTransformer   # Any registered model class name.
 
 # Data configuration.
 data:
@@ -63,7 +63,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 1000   # max_space_length has to be a multiple of space patch size
   patching: false # patching the neurons
   sort_by_depth: false
   sort_by_region: false
