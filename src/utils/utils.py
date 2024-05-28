@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from utils.metric_utils import r2_score
+from src.utils.metric_utils import r2_score
 from sklearn.metrics import r2_score as r2_score_sklearn
 from sklearn.cluster import SpectralClustering
 from sklearn.metrics import accuracy_score
