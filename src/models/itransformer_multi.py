@@ -209,7 +209,6 @@ class iTransformerEncoder(nn.Module):
         )
 
 
-
     def forward(
             self,
             spikes: torch.LongTensor,  # (bs, seq_len, n_channels)
@@ -245,9 +244,7 @@ class iTransformerEncoder(nn.Module):
             tokens = torch.cat((self.cls_embed(torch.zeros_like(tokens[:, :1, 0]).to(torch.int64)), tokens),
                                dim=1)  # (batch, 1+n_channels, hidden_size)
 
-        # import matplotlib.pyplot as plt
-        # plt.imshow(attention_mask[0].cpu().numpy())
-        # plt.show()
+        # Add a row and a column for the cls token in attention mask
         if self.use_cls:
             # TODO: need to edit the mask for the cls token
             pass
@@ -398,12 +395,15 @@ class iTransformer(nn.Module):
         attn_mode = self.encoder.attn_mode
         n_heads = self.encoder.n_heads
 
+        if self.use_cls:
+            space_attn_mask = torch.cat((torch.ones((space_attn_mask.size(0), 1), dtype=torch.bool), space_attn_mask), dim=1)
+
         # experiment on 1.the order of heads and batch, 2.(solved!)the orientation of the attn mask. ***********
         pad_mask = space_attn_mask.unsqueeze(1).repeat_interleave(n_heads, dim=0).to(torch.bool).to(spikes.device)  # (bs*n_heads, 1, n_channels)
 
-        attn_mask_inter = create_attn_mask(neuron_regions_np, "inter-region").to(spikes.device)
-        attn_mask_intra = create_attn_mask(neuron_regions_np, "intra-region").to(spikes.device)
-        attn_mask_none = torch.zeros(attn_mask_inter.shape, dtype=torch.bool).to(spikes.device)
+        attn_mask_inter = create_attn_mask(neuron_regions_np, "inter-region", use_cls=self.use_cls).to(spikes.device)
+        attn_mask_intra = create_attn_mask(neuron_regions_np, "intra-region", use_cls=self.use_cls).to(spikes.device)
+        attn_mask_none = create_attn_mask(neuron_regions_np, "all", use_cls=self.use_cls).to(spikes.device)
 
         if attn_mode == "mix_sample":
             p = self.encoder.attn_mix_ratio
@@ -452,7 +452,7 @@ class iTransformer(nn.Module):
             else:
                 x = x[:, 0, :]  # keep only cls token for decoding
 
-        # Predict rates/ctc-logits from embeddedings
+        # Predict rates/ctc-logits from embeddings
         preds = self.decoder(x)  # (bs, n_channels, seq_len) / (bs, seq_len*vocab_size) / (bs, seq_len) / (bs, n_labels)
 
         if self.method == "ssl":
@@ -528,11 +528,16 @@ class iTransformer(nn.Module):
 def create_attn_mask(
         neuron_regions: np.ndarray,  # (bs, n_channels)
         mode: str,
+        use_cls=False,
 ):
-    regions = neuron_regions[0, :]  # all batches are the same
+    regions = neuron_regions[0, :]  # Assume all batches are the same. TODO: fix this for multi-session.
 
     attn_mask_np = (regions[:, np.newaxis] == regions)
     attn_mask = torch.tensor(attn_mask_np, dtype=torch.bool)
+
+    if use_cls:
+        attn_mask = torch.cat((torch.zeros((1, attn_mask.shape[1]), dtype=torch.bool), attn_mask), dim=0)
+        attn_mask = torch.cat((torch.zeros((attn_mask.shape[0], 1), dtype=torch.bool), attn_mask), dim=1)
 
     # make sure each token can at least attend to itself
     if mode == "inter-region":
