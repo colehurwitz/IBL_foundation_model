@@ -193,10 +193,10 @@ class Trainer():
         elif self.config.method.model_kwargs.loss == "cross_entropy":
             preds = torch.nn.functional.softmax(preds, dim=1)
             
-        # use the most active 50 neurons to select model (by r2)
+        # use the most active 100 neurons to select model (r2)
         # neurons in each trial will be different
         _tmp_ac = gt.detach().cpu().numpy().mean(1)  # (bs, n_neurons)
-        self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :50].copy()
+        self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :100].copy()
         _bs = np.arange(gt.shape[0])[:, None].copy()
 
 
@@ -218,6 +218,8 @@ class Trainer():
                                        metrics=[self.metric],
                                        device=self.accelerator.device)
 
+        # debug
+        # print('average r2 of top 100 neurons in all trials: ', results[self.metric])
         return {
             "eval_loss": eval_loss/eval_examples,
             f"eval_trial_avg_{self.metric}": results[self.metric],
