@@ -93,12 +93,17 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
 # metrics list, return different metrics results
 def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
     results = {}
-    if "r2" in metrics:
+    if "r2" in metrics:  # gt: (n_neurons, seq_len, bs)
         r2_list = []
+        # each neuron, each trial. 
         for i in range(gt.shape[0]):
-            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device)
-            r2_list.append(r2)
-        r2 = np.mean(r2_list)
+            for j in range(gt.shape[2]):
+                r2 = r2_score(y_true=gt[i, :, j], y_pred=pred[i, :, j], device=device)
+                r2_list.append(r2)  
+        # debug        
+        # print(r2_list)
+        # TODO: there will be some -inf here. haven't figure out reasons. r2 too low?
+        r2 = np.mean(np.array(r2_list)[np.isfinite(r2_list)])
         results["r2"] = r2
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)

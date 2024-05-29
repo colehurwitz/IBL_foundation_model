@@ -333,9 +333,62 @@ def multi_session_dataset_iTransformer(
     dataset_test_list = []
     for eid in eid_list:
         print(f"### Loading: {eid} ###")
-        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir, download_mode="force_redownload")
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
         dataset_train_list.append(dataset['train'])
         dataset_val_list.append(dataset['val'])
+        dataset_test_list.append(dataset['test'])
+        
+    dataset_train = concatenate_datasets(dataset_train_list)
+    dataset_val = concatenate_datasets(dataset_val_list)
+    dataset_test = concatenate_datasets(dataset_test_list)
+
+    return dataset_train, dataset_val, dataset_test
+
+def multi_session_zs_dataset_iTransformer(
+    eids_path: str,  # should be a folder contain the split eids.
+    config: DictConfig,
+    n_eids_train=None
+):
+    train_path = os.path.join(eids_path, 'train_eids.txt')
+    val_path = os.path.join(eids_path, 'val_eids.txt')
+    test_path = os.path.join(eids_path, 'test_eids.txt')
+    
+    with open(train_path, "r") as file:
+        lines = file.readlines()
+        train_eid_list = [line.strip() for line in lines]
+
+        # not use all of them during training. will be too much
+        if n_eids_train is not None:
+            train_eid_list = train_eid_list[:n_eids_train]
+
+    with open(val_path, "r") as file:
+        lines = file.readlines()
+        val_eid_list = [line.strip() for line in lines]
+
+    with open(test_path, "r") as file:
+        lines = file.readlines()
+        test_eid_list = [line.strip() for line in lines]
+
+    dataset_train_list = []
+    dataset_val_list = []
+    dataset_test_list = []
+
+    print("############## Loading: Training set ##############")
+    for eid in train_eid_list:
+        print(f"### Loading: {eid} ###")
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+        dataset_train_list.append(dataset['train'])
+
+    print("############## Loading: Validation set ##############")
+    for eid in val_eid_list:
+        print(f"### Loading: {eid} ###")
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+        dataset_val_list.append(dataset['val'])
+
+    print("############## Loading: Test set ##############")
+    for eid in test_eid_list:
+        print(f"### Loading: {eid} ###")
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
         dataset_test_list.append(dataset['test'])
         
     dataset_train = concatenate_datasets(dataset_train_list)
