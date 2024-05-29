@@ -47,6 +47,7 @@ config = update_config("configs/decoder_trainer.yaml", config)
 ap = argparse.ArgumentParser()
 ap.add_argument("--target", type=str)
 ap.add_argument("--method", type=str)
+ap.add_argument("--n_workers", type=int, default=1)
 args = ap.parse_args()
 
 # wandb
@@ -135,7 +136,7 @@ else:
 
 results = tune_decoder(
     train_func, search_space, use_gpu=config.tuner.use_gpu, max_epochs=config.tuner.num_epochs, 
-    num_samples=config.tuner.num_samples, num_workers=config.tuner.num_workers
+    num_samples=config.tuner.num_samples, num_workers=args.n_workers
 )
 
 best_result = results.get_best_result(metric=config.tuner.metric, mode=config.tuner.mode)

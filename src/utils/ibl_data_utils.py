@@ -121,7 +121,7 @@ def merge_probes(spikes_list, clusters_list):
 
 
 def load_trials_and_mask(
-        one, eid, min_rt=0.02, max_rt=2., nan_exclude='default', min_trial_len=None,
+        one, eid, min_rt=0.08, max_rt=2., nan_exclude='default', min_trial_len=None,
         max_trial_len=None, exclude_unbiased=False, exclude_nochoice=True, sess_loader=None):
     """
     Function to load all trials for a given session and create a mask to exclude all trials that have a reaction time
@@ -653,6 +653,7 @@ def load_anytime_behaviors(one, eid, n_workers=os.cpu_count()):
         'wheel-position', 'wheel-velocity', 'wheel-speed',
         'left-whisker-motion-energy', 'right-whisker-motion-energy',
         'left-pupil-diameter', 'right-pupil-diameter',
+        #'lightning-pose-left-pupil-diameter',
         # These behaviors are of bad quality - skip them for now
         # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
         # 'right-camera-left-paw-speed', 'right-camera-right-paw-speed',
@@ -691,6 +692,7 @@ def bin_behaviors(
         'wheel-position', 'wheel-velocity', 'wheel-speed',
         'left-whisker-motion-energy', 'right-whisker-motion-energy',
         'left-pupil-diameter', 'right-pupil-diameter',
+        #'lightning-pose-left-pupil-diameter',
         # These behaviors are of bad quality - skip them for now
         # 'left-camera-left-paw-speed', 'left-camera-right-paw-speed', 
         # 'right-camera-left-paw-speed', 'right-camera-right-paw-speed',
@@ -757,7 +759,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         clusters_list.append(tmp_clusters)
     spikes, clusters = merge_probes(spikes_list, clusters_list)
 
-    trials_df, trials_mask = load_trials_and_mask(one=one, eid=eid)
+    trials_df, trials_mask = load_trials_and_mask(one=one, eid=eid, max_trial_len=10.0)
         
     behave_dict = load_anytime_behaviors(one, eid, n_workers=n_workers)
     
@@ -778,8 +780,7 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
         'good_clusters': list((clusters['label'] >= 1).astype(int)),
         'cluster_depths': list(clusters['depths']),
         'uuids':  list(clusters['uuids']),
-        # We don't need details about the cluster QC. Only include if good units for now.
-        # 'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
+        'cluster_qc': {k: np.asarray(v) for k, v in clusters.to_dict('list').items()},
         # 'cluster_df': clusters
     }
 
@@ -793,7 +794,14 @@ def prepare_data(one, eid, bwm_df, params, n_workers=os.cpu_count()):
 
 def align_spike_behavior(binned_spikes, binned_behaviors, trials_mask=None):
 
-    beh_names = ['choice', 'wheel-speed', 'left-whisker-motion-energy']
+    beh_names = ['choice', 'reward', 'block', 
+                 'wheel-speed',
+                'left-whisker-motion-energy', 
+                #'right-whisker-motion-energy',
+                'left-pupil-diameter', 
+                #'right-pupil-diameter',
+                #'lightning-pose-left-pupil-diameter', 
+                ]
 
     target_mask = [1] * len(binned_spikes)
     for beh_name in beh_names:

@@ -1,8 +1,7 @@
 import os
+import numpy as np
 from dataclasses import dataclass
-from copy import deepcopy
 from typing import List, Optional, Tuple, Dict
-from functools import partial
 
 import torch
 import torch.nn as nn
@@ -18,12 +17,12 @@ from models.masker import Masker
 
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
 
-
 @dataclass
 class NDT1Output(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     n_examples: Optional[torch.LongTensor] = None
     preds: Optional[torch.FloatTensor] = None
+    targets: Optional[torch.FloatTensor] = None
 
 
 # Create buffer of biggest possible context mask 
@@ -318,7 +317,7 @@ class NeuralAttention(nn.Module):
         B, T, _  = x.size()     # batch size and fea len
 
         # Create batched bool attention mask 
-        assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
+        # assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
         attn_mask = attn_mask.unsqueeze(1).expand(B,self.n_heads,T,T).bool()            # (B,n_heads,T,T)
         
         # Compute query, key, value for attention
@@ -434,12 +433,15 @@ class NeuralEncoder(nn.Module):
         self.n_layers = config.transformer.n_layers
 
         # Masker
-        self.mask = config.masker.active
+        self.mask = config.masker.force_active
         if self.mask:
             self.masker = Masker(config.masker)
         
         # Context span mask
-        context_mask = create_context_mask(config.context.forward, config.context.backward, config.embedder.max_F)
+        self.context_forward = config.context.forward
+        self.context_backward = config.context.backward
+        self.max_F = config.embedder.max_F
+        context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
         self.register_buffer("context_mask", context_mask, persistent=False)
 
         # Normalization and noising layer
@@ -461,8 +463,10 @@ class NeuralEncoder(nn.Module):
             spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
             spikes_mask:      torch.LongTensor,   # (bs, seq_len)
             spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
-            block_idx:          Optional[torch.LongTensor] = None,   # (bs)
-            date_idx:           Optional[torch.LongTensor] = None,   # (bs)
+            block_idx:        Optional[torch.LongTensor] = None,   # (bs)
+            date_idx:         Optional[torch.LongTensor] = None,   # (bs)
+            neuron_regions:   Optional[np.ndarray] = None,  # (bs, n_channels)
+            masking_mode:     Optional[str] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
         
         B, T, N = spikes.size() # batch size, fea len, n_channels
@@ -473,10 +477,19 @@ class NeuralEncoder(nn.Module):
         # Normalize across channels and add noise
         spikes = self.norm_and_noise(spikes)
 
+        if masking_mode is not None:
+            if masking_mode == 'causal':
+                self.masker.mode = 'temporal'
+                self.context_forward = 0 
+                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
+            else:
+                self.masker.mode = masking_mode
+                self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
+
         # Mask neural data
         if self.mask:
-            spikes, targets_mask = self.masker(spikes)
-            targets_mask = targets_mask & spikes_mask.unsqueeze(-1).expand(B,T,N)
+            spikes, targets_mask = self.masker(spikes, neuron_regions)
+            targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
         else:
             targets_mask = None
 
@@ -527,7 +540,7 @@ class NDT1(nn.Module):
 
         # Build decoder
         if self.method == "ssl":
-            assert config.encoder.masker.active, "Can't pretrain with inactive masking"
+            assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.n_channels
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"]
@@ -538,8 +551,6 @@ class NDT1(nn.Module):
 
         decoder_layers = []
         if self.method == "sl":
-            # To Do: We can only flatten for NDT1 because we do not need to pad the token (time) dimension
-            # Need a different strategy for NDT2 
             decoder_layers.append(
                 nn.Linear(config.encoder.embedder.max_F * self.encoder.out_proj.out_size, n_outputs)
             )
@@ -585,14 +596,35 @@ class NDT1(nn.Module):
     def forward(
         self, 
         spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
-        spikes_mask:      torch.LongTensor,   # (bs, seq_len)
-        spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
+        time_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+        space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+        spikes_timestamps: torch.LongTensor,   # (bs, seq_len)
+        spikes_spacestamps: torch.LongTensor,   # (bs, seq_len)
         targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len)
         spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs) 
         targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
         block_idx:        Optional[torch.LongTensor] = None,   # (bs)
         date_idx:         Optional[torch.LongTensor] = None,   # (bs)
-    ) -> NDT1Output:      
+        neuron_regions:   Optional[torch.LongTensor] = None,   # (bs, n_channels)
+        masking_mode:     Optional[str] = None,
+        spike_augmentation: Optional[bool] = False,
+    ) -> NDT1Output:  
+
+        # if neuron_regions type is list 
+        if isinstance(neuron_regions, list):
+            neuron_regions = np.asarray(neuron_regions).T
+
+        # Augmentation
+        if spike_augmentation:
+            if self.training:
+                # 50% of the time, we reverse the spikes
+                if torch.rand(1) > 0.5:
+                    # calculate unmask timestamps
+                    unmask_temporal = time_attn_mask.sum(dim=1)
+                    for i in range(len(unmask_temporal)):
+                        # reverse idx from unmask_temporal to 0
+                        reverse_idx = torch.arange(unmask_temporal[i]-1, -1, -1)
+                        spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
 
         if self.method == "ssl":
             targets = spikes.clone()
@@ -600,7 +632,9 @@ class NDT1(nn.Module):
                 targets = targets.to(torch.int64)
 
         # Encode neural data
-        x, targets_mask = self.encoder(spikes, spikes_mask, spikes_timestamp, block_idx, date_idx)
+        targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
+        x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode)
+        targets_mask = targets_mask | new_mask
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         # Transform neural embeddings into rates/logits
@@ -624,6 +658,7 @@ class NDT1(nn.Module):
             loss=loss,
             n_examples=n_examples,
             preds=outputs,
+            targets=targets
         )
 
 

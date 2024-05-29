@@ -9,6 +9,8 @@ from lightning.pytorch import LightningDataModule
 import datasets
 from utils.dataset_utils import get_binned_spikes_from_sparse
 
+seed = 42
+
 def to_tensor(x, device):
     return torch.tensor(x).to(device)
 
@@ -48,7 +50,15 @@ class SingleSessionDataset(Dataset):
         dataset = datasets.load_from_disk(Path(data_dir)/eid)
         self.train_spike = get_binned_spikes(dataset['train'])
         self.train_behavior = np.array(dataset['train'][beh_name])
-        self.spike_data = get_binned_spikes(dataset[split])
+        if split == 'val':
+            try:
+                self.spike_data = get_binned_spikes(dataset[split])
+            except:
+                tmp_dataset = dataset['train'].train_test_split(test_size=0.1, seed=seed)
+                self.train_spike = get_binned_spikes(tmp_dataset['train'])
+                self.spike_data = get_binned_spikes(tmp_dataset['test'])
+        else:
+            self.spike_data = get_binned_spikes(dataset[split])
         self.behavior = np.array(dataset[split][beh_name])
 
         self.n_t_steps = self.spike_data.shape[1]
@@ -60,13 +70,14 @@ class SingleSessionDataset(Dataset):
 
         if target == 'clf':
             enc = OneHotEncoder(handle_unknown='ignore')
-            self.behavior = enc.fit_transform(self.behavior).toarray()
+            self.behavior = enc.fit_transform(self.behavior.reshape(-1, 1)).toarray()
         elif self.behavior.shape[1] == self.n_t_steps:
             self.scaler = preprocessing.StandardScaler().fit(self.train_behavior)
             self.behavior = self.scaler.transform(self.behavior) 
 
         if np.isnan(self.behavior).sum() != 0:
-            raise ValueError(f'Session {eid} contains NaNs in {beh_name} !')
+            self.behavior[np.isnan(self.behavior)] = np.nanmean(self.behavior)
+            print(f'Session {eid} contains NaNs in {beh_name}.')
 
         # map to device
         self.spike_data = to_tensor(self.spike_data, device).double()

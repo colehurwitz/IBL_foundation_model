@@ -1,198 +1,173 @@
-from datasets import load_dataset, load_from_disk, concatenate_datasets
-from accelerate import Accelerator
-from loader.make_loader import make_loader, make_ndt2_loader
-from utils.utils import set_seed,move_batch_to_device, viz_single_cell
-from utils.config_utils import config_from_kwargs, update_config
-from utils.dataset_utils import get_data_from_h5
-from models.ndt1 import NDT1
-from models.ndt2 import NDT2
-import torch
-import numpy as np
-import os
-from trainer.make import make_trainer
+from utils.eval_utils import load_model_data_local, co_smoothing_eval, behavior_decoding
+import warnings
+warnings.simplefilter("ignore")
 
-# load config
-kwargs = {
-    "model": "include:src/configs/ndt2.yaml"
-}
+mask_name = 'mask_all'
+model_name = 'NDT1'
+n_time_steps = 100
 
-config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt2.yaml", config)
-config = update_config("src/configs/trainer.yaml", config)
+co_smooth = True
+forward_pred = True
+inter_region = True
+intra_region = True
+choice_decoding = True
+continuous_decoding = True
 
-# make log dir
-log_dir = os.path.join(config.dirs.log_dir, "eval", "model_{}".format(config.model.model_class), "method_{}".format(config.method.model_kwargs.method_name))
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+print(mask_name)
 
-# wandb
-if config.wandb.use:
-    import wandb
-    wandb.init(project=config.wandb.project, entity=config.wandb.entity, config=config, name="eval_model_{}_method_{}".format(config.model.model_class, config.method.model_kwargs.method_name))
+base_path = '/mnt/home/yzhang1/ceph'
 
-# set seed for reproducibility
-set_seed(config.seed)
+# Configuration
+configs = {
+    'model_config': 'src/configs/ndt1.yaml',
+    'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+    'trainer_config': 'src/configs/trainer.yaml',
+    'dataset_path': None, 
+    'test_size': 0.2,
+    'seed': 42,
+    'mask_name': mask_name,
+}  
 
-# download dataset from huggingface
-if "ibl" in config.data.dataset_name:
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)
-    # show the columns
+# init wandb
+import wandb
+wandb.init(project='ibl-ssl-eval', config=configs, name=f'model_{model_name}_method_ssl_{mask_name}')
+
+# load your model and dataloader
+model, accelerator, dataset, dataloader = load_model_data_local(**configs)
+
+# co-smoothing
+if co_smooth:
+    print('Start co-smoothing:')
+    co_smoothing_configs = {
+        'subtract': 'task',
+        'onset_alignment': [40],
+        'method_name': mask_name, 
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/co_smooth',
+        'mode': 'per_neuron',
+        'n_time_steps': n_time_steps,    
+        'is_aligned': True,
+        'target_regions': None
+    }
+
+    results = co_smoothing_eval(model, 
+                    accelerator, 
+                    dataloader, 
+                    dataset, 
+                    **co_smoothing_configs)
+    print(results)
+    wandb.log(results)
+
+
+# forward prediction
+if forward_pred:
+    print('Start forward prediction:')
+    results = co_smoothing_configs = {
+        'subtract': 'task',
+        'onset_alignment': [],
+        'method_name': mask_name, 
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/forward_pred',
+        'mode': 'forward_pred',
+        'n_time_steps': n_time_steps,    
+        'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
+        'is_aligned': True,
+        'target_regions': None
+    }
+
+    results = co_smoothing_eval(model, 
+                    accelerator, 
+                    dataloader, 
+                    dataset, 
+                    **co_smoothing_configs)
+    print(results)
+    wandb.log(results)
     
-    bin_size = dataset["train"]["bin_size"][0]
-    
 
-    # split the dataset to train and test
-    dataset = dataset["train"].train_test_split(test_size=0.1, seed=config.seed)
-    # select the train dataset and the spikes_sparse_data column
-    data_columns = ['spikes_sparse_data', 'spikes_sparse_indices', 'spikes_sparse_indptr', 'spikes_sparse_shape']
-    train_dataset = dataset["train"].select_columns(data_columns)
-    test_dataset = dataset["test"].select_columns(data_columns)
+# inter-region
+if inter_region:
+    print('Start inter-region:')
+    co_smoothing_configs = {
+        'subtract': 'task',
+        'onset_alignment': [40],
+        'method_name': mask_name,
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/inter_region',
+        'mode': 'inter_region',
+        'n_time_steps': n_time_steps,    
+        'held_out_list': None,
+        'is_aligned': True,
+        'target_regions': ['all']
+    }
 
-    if config.data.include_behav:
-        dataset = load_from_disk(os.path.join('data', config.dirs.behav_dir))
-        dataset = concatenate_datasets([dataset["train"], dataset["val"], dataset["test"]])
-        dataset = dataset.train_test_split(test_size=0.1, seed=config.seed)
-        bin_size = dataset["train"]["binsize"][0]
+    results = co_smoothing_eval(model, 
+                    accelerator, 
+                    dataloader, 
+                    dataset, 
+                    **co_smoothing_configs)
+    print(results)
+    wandb.log(results)
 
-        train_dataset = dataset["train"]
-        test_dataset = dataset["test"]
 
-    print(dataset.column_names)
-    print(f"bin_size: {bin_size}")
+# intra-region
+if intra_region:
+    print('Start intra-region:')
+    co_smoothing_configs = {
+        'subtract': 'task',
+        'onset_alignment': [40],
+        'method_name': mask_name, 
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/intra_region',
+        'mode': 'intra_region',
+        'n_time_steps': n_time_steps,    
+        'held_out_list': None,
+        'is_aligned': True,
+        'target_regions': ['all']
+    }
 
-else:
-    train_dataset = get_data_from_h5("train", config.dirs.dataset_dir, config=config)
-    test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
-    bin_size = None
+    results = co_smoothing_eval(model, 
+                    accelerator, 
+                    dataloader, 
+                    dataset, 
+                    **co_smoothing_configs)
+    print(results)
+    wandb.log(results)
 
-# make the dataloader
-train_dataloader = make_loader(train_dataset, 
-                         batch_size=config.training.train_batch_size, 
-                         pad_to_right=True, 
-                         patching=config.data.patching,
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
-                         dataset_name=config.data.dataset_name,
-                         shuffle=True)
 
-test_dataloader = make_loader(test_dataset, 
-                         batch_size=config.training.test_batch_size, 
-                         pad_to_right=True, 
-                         patching=config.data.patching,
-                         pad_value=-1.,
-                         bin_size=bin_size,
-                         max_time_length=config.data.max_time_length,
-                         max_space_length=config.data.max_space_length,
-                         n_neurons_per_patch=config.data.n_neurons_per_patch,
-                         dataset_name=config.data.dataset_name,
-                         shuffle=False)
+if choice_decoding:
+    print('Start choice_decoding:')
+    configs = {
+        'model_config': 'src/configs/ndt1.yaml',
+        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+        'trainer_config': 'src/configs/trainer_sl_choice.yaml',
+        'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/choice_decoding',
+        'test_size': 0.2,
+        'seed': 42,
+        'mask_name': mask_name,
+        'metric': 'acc',
+        'from_scratch': False,
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
+    }  
+    results = behavior_decoding(**configs)
+    print(results)
+    wandb.log(results)
 
-# Initialize the accelerator
-accelerator = Accelerator()
 
-# load model
-NAME2MODEL = {"NDT1": NDT1, "NDT2": NDT2}
-model_class = NAME2MODEL[config.model.model_class]
-model = model_class(config.model, **config.method.model_kwargs)
-# load pretrained model
-model_ckpt = torch.load(os.path.join(config.dirs.pretrained_model_path))
-model.load_state_dict(model_ckpt['model'].state_dict())
-model = accelerator.prepare(model)
-
-model.eval()
-gt = []
-preds = []
-with torch.no_grad():
-    for batch in test_dataloader:
-        batch = move_batch_to_device(batch, accelerator.device)
-        if config.data.patching:
-            gt.append(batch['neuron_patches'].clone().reshape((-1, config.data.max_time_length, config.data.max_space_length*config.data.n_neurons_per_patch)))
-        else:
-            gt.append(batch['spikes_data'].clone())
-        if config.data.patching:
-            outputs = model(
-                batch['neuron_patches'].flatten(1,-2), 
-                batch['space_attention_mask'].flatten(1), 
-                batch['time_attention_mask'].flatten(1),
-                batch['spikes_spacestamps'].flatten(1),
-                batch['spikes_timestamps'].flatten(1)
-            )
-            preds.append(outputs.preds.clone().reshape((-1, config.data.max_time_length, config.data.max_space_length*config.data.n_neurons_per_patch)))
-        else:
-            outputs = model(batch['spikes_data'], 
-                              batch['attention_mask'], 
-                              batch['spikes_timestamps'])
-            preds.append(outputs.preds.clone())
-
-gt = torch.cat(gt, dim=0)
-preds = torch.cat(preds, dim=0)
-
-if config.method.model_kwargs.loss == "poisson_nll":
-    preds = torch.exp(preds)
-
-# prepare the condition matrix
-b_list = []
-
-# choice
-choice = np.array(test_dataset['choice'])
-choice = np.tile(np.reshape(choice, (choice.shape[0], 1)), (1, 100))
-b_list.append(choice)
-
-# reward
-reward = np.array(test_dataset['reward'])
-reward = np.tile(np.reshape(reward, (reward.shape[0], 1)), (1, 100))
-b_list.append(reward)
-
-# block
-block = np.array(test_dataset['block'])
-block = np.tile(np.reshape(block, (block.shape[0], 1)), (1, 100))
-b_list.append(block)
-
-# wheel
-wheel = np.array(test_dataset['wheel-speed'])
-b_list.append(wheel)
-
-behavior_set = np.stack(b_list,axis=-1)
-print(behavior_set.shape)
-
-# Settings for validation
-X = behavior_set # [#trials, #timesteps, #variables]
-ys = gt.cpu().numpy() # [#trials, #timesteps, #neurons]
-y_preds = preds.cpu().numpy() # [#trials, #timesteps, #neurons]
-
-var_name2idx = {'block':[2], 
-                'choice': [0], 
-                'reward': [1], 
-                'wheel': [3],
-                }
-
-var_value2label = {'block': {(0.2,): "p(left)=0.2",
-                            (0.5,): "p(left)=0.5",
-                            (0.8,): "p(left)=0.8",},
-                   'choice': {(-1.0,): "right",
-                            (1.0,): "left"},
-                   'reward': {(0.,): "no reward",
-                            (1.,): "reward", } }
-
-var_tasklist = ['block','choice','reward']
-var_behlist = []
-
-# choose more active neuron
-tmp = np.mean(ys, axis=(0,1))
-idx_top = np.argsort(tmp)[-5:]
-print(idx_top)
-
-import matplotlib.pyplot as plt
-
-for i in range(idx_top.shape[0]):
-    viz_single_cell(X,ys[:,:,idx_top[i]],y_preds[:,:,idx_top[i]], 
-                    var_name2idx, var_tasklist, var_value2label, var_behlist,
-                    subtract_psth="task", aligned_tbins=[26], neuron_idx=idx_top[i])
-    plt.savefig(os.path.join(log_dir, f"neuron_{idx_top[i]}.png"))
-    # wandb
-    if config.wandb.use:
-        wandb.log({f"neuron_{idx_top[i]}": wandb.Image(os.path.join(log_dir, f"neuron_{idx_top[i]}.png"))})
+if continuous_decoding:
+    print('Start continuous_decoding:')
+    configs = {
+        'model_config': 'src/configs/ndt1.yaml',
+        'model_path': f'{base_path}/results/train/model_{model_name}/method_ssl/{mask_name}/model_best.pt',
+        'trainer_config': 'src/configs/trainer_sl_continuous.yaml',
+        'dataset_path': None, 
+        'save_path': f'{base_path}/results/eval/model_{model_name}/method_ssl/{mask_name}/continuous_decoding',
+        'test_size': 0.2,
+        'seed': 42,
+        'mask_name': mask_name,
+        'metric': 'r2',
+        'from_scratch': False,
+        'freeze_encoder': False,
+        'mask_ratio': 0.1
+    }  
+    results = behavior_decoding(**configs)
+    print(results)
+    wandb.log(results)
     

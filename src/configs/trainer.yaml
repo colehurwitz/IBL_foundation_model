@@ -1,39 +1,40 @@
 seed: 42
 
 savestring: test
-wandb_project: test
+wandb_project: iTransformer
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: true
-  entity: null
-  project: test
-  run_name: ndt1-ssl
+  use: false
+  entity: wdk0082
+  project: iTransformer
+  run_name: test
 
 # Logging directories
 dirs:
-  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: results  # save tensorboard logs
-  dataset_cache_dir: checkpoints/datasets_cache
+  # checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: checkpoints/models/iTransformer/test # save models
+  dataset_cache_dir: data/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/models/ndt2/model_best_behav.pt
-  dataset_dir: berkott/ibl_ssl_data
-  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  huggingface_org: neurofm123
   
 
 
 # Training configuration
 training:
-  num_epochs: 200
-  train_batch_size: 16
-  test_batch_size: 1024  
+  num_epochs: 20
+  train_batch_size: 32
+  test_batch_size: 500  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 20  # Plot the model output every n epochs
-  save_every: null  # Save checkpoint
+  save_every: 100  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -41,7 +42,7 @@ training:
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
 model: 
-  model_class: null   # Any registered model class name. 
+  model_class: iTransformer_multi   # Any registered model class name.
 
 # Data configuration.
 data:
@@ -61,24 +62,37 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 50 # max time sequence length
-  max_space_length: 15 # max space(neuron) sequence length
-  n_neurons_per_patch: 16 # number of neurons per patch
-  patching: True # patching the neurons
+  max_time_length: 100    # max_time_length has to be a multiple of time patch size
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  patching: false # patching the neurons
+  sort_by_depth: false
+  sort_by_region: false
+  brain_region: all
+  spike_augmentation: false
 
-  include_behav: True # include behavior data
+  include_behav: false # include behavior data
+  target: null
+
+  load_meta: true
+
+  num_sessions: 3
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
+
+  split_method: session_based # random_split/session_based
+
+  use_aligned_test: False
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: sl #ssl 
+    method_name: ssl #ssl 
 
     use_lograte: true
-    loss: cross_entropy  # poisson_nll # mse/other distirbutions (todo)
+    loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
     output_size: 2
-    clf: true
+    clf: false
     reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 

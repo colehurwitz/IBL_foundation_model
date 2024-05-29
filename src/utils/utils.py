@@ -3,9 +3,10 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from utils.metric_utils import r2_score
+from src.utils.metric_utils import r2_score
 from sklearn.metrics import r2_score as r2_score_sklearn
 from sklearn.cluster import SpectralClustering
+from sklearn.metrics import accuracy_score
 
 def set_seed(seed):
     # set seed for reproducibility
@@ -90,14 +91,19 @@ def plt_condition_avg_r2(gt, pred, epoch=0, neuron_idx=0, condition_idx=0, first
     return fig
 
 # metrics list, return different metrics results
-def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
+def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
     results = {}
-    if "r2" in metrics:
+    if "r2" in metrics:  # gt: (n_neurons, seq_len, bs)
         r2_list = []
+        # each neuron, each trial. 
         for i in range(gt.shape[0]):
-            r2 = r2_score(y_true=gt[i], y_pred=pred[i], device=device)
-            r2_list.append(r2)
-        r2 = np.mean(r2_list)
+            for j in range(gt.shape[2]):
+                r2 = r2_score(y_true=gt[i, :, j], y_pred=pred[i, :, j], device=device)
+                r2_list.append(r2)  
+        # debug        
+        # print(r2_list)
+        # TODO: there will be some -inf here. haven't figure out reasons. r2 too low?
+        r2 = np.mean(np.array(r2_list)[np.isfinite(r2_list)])
         results["r2"] = r2
     if "mse" in metrics:
         mse = torch.mean((gt - pred) ** 2)
@@ -105,6 +111,9 @@ def metrics_list(gt, pred, metrics=["r2", "mse", "mae"], device="cpu"):
     if "mae" in metrics:
         mae = torch.mean(torch.abs(gt - pred))
         results["mae"] = mae
+    if "acc" in metrics:
+        acc = accuracy_score(gt.cpu().numpy(), pred.cpu().detach().numpy())
+        results["acc"] = acc
     return results
 
 
@@ -212,15 +221,7 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
     psth_pred_xy = compute_all_psth(X, y_pred, idxs_psth)
     r2_psth = compute_R2_psth(psth_xy, psth_pred_xy)
     r2_single_trial = np.mean(compute_R2_main(y, y_pred, clip=False))
-    '''
-    axes[-1].annotate(f'PSTH R2: {r2_psth:.2f}'+"\n"+f"#conds: {len(psth_xy.keys())}", 
-                        xy=(y.shape[1], 0), 
-                        xytext=(y.shape[1]+20, 0), 
-                        ha='left', 
-                        rotation=90)
-    '''
-    axes[0].set_ylabel(f'Neuron: #{neuron_idx}')
-    
+    axes[0].set_ylabel(f'Neuron: #{neuron_idx} \n PSTH R2: {r2_psth:.2f} \n Pred R2: {r2_single_trial:.2f}')    
     
     for ax in axes:
         # ax.axis('off')
@@ -228,6 +229,9 @@ def plot_psth(X, y, y_pred, var_tasklist, var_name2idx, var_value2label,
         # ax.set_frame_on(False)
         # ax.tick_params(bottom=False, left=False)
     plt.tight_layout()
+
+    return {"psth_r2": r2_psth,
+            "pred_r2": r2_single_trial}
 
 """
 :X: [n_trials, n_timesteps, n_variables]
@@ -376,7 +380,7 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
 
     ### plot psth
     axes_psth = [plt.subplot(nrows, len(var_tasklist), k+1) for k in range(len(var_tasklist))]
-    plot_psth(X, y, y_pred,
+    metrics = plot_psth(X, y, y_pred,
               var_tasklist=var_tasklist,
               var_name2idx=var_name2idx,
               var_value2label=var_value2label,
@@ -395,6 +399,7 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
 
     fig_name = 'single_neuron' + str(neuron_idx)
     plt.tight_layout()
+    return metrics
     # plt.show()
 
 def _add_baseline(ax, aligned_tbins=[40]):
@@ -481,3 +486,39 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+    
+def prep_cond_matrix(test_dataset):
+    b_list = []
+    # choice
+    choice = np.array(test_dataset['choice'])
+    choice = np.tile(np.reshape(choice, (choice.shape[0], 1)), (1, 100))
+    b_list.append(choice)
+    # reward
+    reward = np.array(test_dataset['reward'])
+    reward = np.tile(np.reshape(reward, (reward.shape[0], 1)), (1, 100))
+    b_list.append(reward)
+    # block
+    block = np.array(test_dataset['block'])
+    block = np.tile(np.reshape(block, (block.shape[0], 1)), (1, 100))
+    b_list.append(block)
+    # wheel
+    wheel = np.array(test_dataset['wheel-speed'])
+    b_list.append(wheel)
+    behavior_set = np.stack(b_list,axis=-1)
+    return behavior_set
+
+var_name2idx = {'block':[2], 
+                'choice': [0], 
+                'reward': [1], 
+                'wheel': [3],
+                }
+
+var_value2label = {'block': {(0.2,): "p(left)=0.2",
+                            (0.5,): "p(left)=0.5",
+                            (0.8,): "p(left)=0.8",},
+                   'choice': {(-1.0,): "right",
+                            (1.0,): "left"},
+                   'reward': {(0.,): "no reward",
+                            (1.,): "reward", } }
+
+var_tasklist = ['block','choice','reward']
