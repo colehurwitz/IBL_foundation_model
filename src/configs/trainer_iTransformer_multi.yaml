@@ -8,33 +8,32 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: True
   entity: wdk0082
   project: iTransformer_multi
-  run_name: test
+  run_name: test_30
 
 # Logging directories
 dirs:
-  # checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: checkpoints/models/iTransformer/test # save models
-  dataset_cache_dir: data/datasets_cache  # save dataset cache
-  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
-  behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  log_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_30 # save models
+  dataset_cache_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/datasets_cache  # save dataset cache
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned # not used in multi-session training.
   huggingface_org: neurofm123
-  
+  # checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
+  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
+  # behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
 
 
 # Training configuration
 training:
-  num_epochs: 20
+  num_epochs: 500
   train_batch_size: 32
-  test_batch_size: 500  
+  test_batch_size: 128  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 20  # Plot the model output every n epochs
-  save_every: 100  # Save checkpoint
+  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
+  save_every: 30  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -63,7 +62,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 500   # max_space_length has to be a multiple of space patch size
+  max_space_length: 600   # max_space_length has to be a multiple of space patch size
   patching: false # patching the neurons
   sort_by_depth: false
   sort_by_region: false
@@ -98,16 +97,6 @@ method:
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}
 
-  # Passed to the DataLoader __init__ method.
-  dataloader_kwargs:
-    # Contains which keys to pad, along which dimension with which value
-    pad_dict: 
-      spikes:
-          dim: 0
-          side: right
-          value: 0
-          truncate: null
-          min_length: null
       
 
 optimizer:

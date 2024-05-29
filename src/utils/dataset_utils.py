@@ -332,11 +332,12 @@ def multi_session_dataset_iTransformer(
     dataset_val_list = []
     dataset_test_list = []
     for eid in eid_list:
-        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+        print(f"### Loading: {eid} ###")
+        dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir, download_mode="force_redownload")
         dataset_train_list.append(dataset['train'])
         dataset_val_list.append(dataset['val'])
         dataset_test_list.append(dataset['test'])
-
+        
     dataset_train = concatenate_datasets(dataset_train_list)
     dataset_val = concatenate_datasets(dataset_val_list)
     dataset_test = concatenate_datasets(dataset_test_list)

@@ -1,4 +1,5 @@
 numpy
+datasets
 pandas
 tqdm
 matplotlib

@@ -1,5 +1,5 @@
 import torch
-from src.loader.base import BaseDataset
+from loader.base import BaseDataset
 from torch.utils.data.sampler import BatchSampler
 from transformers.trainer_pt_utils import LengthGroupedSampler
 
