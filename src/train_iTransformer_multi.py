@@ -39,7 +39,7 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
-train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config, n_eids=30)
+train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config, n_eids=1)
 try:
     bin_size = train_dataset["binsize"][0]
 except:
