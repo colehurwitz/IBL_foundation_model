@@ -244,11 +244,6 @@ class iTransformerEncoder(nn.Module):
             tokens = torch.cat((self.cls_embed(torch.zeros_like(tokens[:, :1, 0]).to(torch.int64)), tokens),
                                dim=1)  # (batch, 1+n_channels, hidden_size)
 
-        # Add a row and a column for the cls token in attention mask
-        if self.use_cls:
-            # TODO: need to edit the mask for the cls token
-            pass
-
         if self.attn_mode == 'mix_sequence':
             x = self.transformer(self.embed_dropout(tokens), attn_mask_list=attention_mask)
         else:
