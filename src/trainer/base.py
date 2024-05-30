@@ -206,7 +206,7 @@ class Trainer():
                                    pred=preds[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
                                    metrics=["r2"], 
                                    device=self.accelerator.device)
-        elif self.config.method.model_kwargs.method_name == 'sl':
+        elif self.config.method.model_kwargs.method_name in ['sl', 'stat_behaviour', 'dyn_behaviour']:
             if self.config.method.model_kwargs.clf:
                 results = metrics_list(gt=gt.argmax(1),  # TODO: change this (probably)
                                        pred=preds.argmax(1),
