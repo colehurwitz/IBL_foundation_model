@@ -112,6 +112,8 @@ def metrics_list(gt, pred, metrics=["r2", "mse", "mae", "acc"], device="cpu"):
         mae = torch.mean(torch.abs(gt - pred))
         results["mae"] = mae
     if "acc" in metrics:
+        # debug
+        # print(gt.cpu().numpy(), pred.cpu().detach().numpy())
         acc = accuracy_score(gt.cpu().numpy(), pred.cpu().detach().numpy())
         results["acc"] = acc
     return results
