@@ -6,7 +6,7 @@ encoder:
 
   masker: 
     force_active: True
-    mode: neuron        # masking mode
+    mode: temporal        # masking mode
     ratio: 0.0          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
@@ -31,7 +31,7 @@ encoder:
   dropout: 0.4
   n_heads: 8
   n_layers: 5
-  max_n_channels: 0        # 0 to skip channel embeddings
+  max_n_channels: 1000        # 0 to skip channel embeddings
   embed_region: true
   neuron_regions: null       # not used in iTransformer_multi
   attn_mode: all       # all, inter-region, inter-region-switch, intra-region, mix_sequence, mix_multihead, mix_sample
@@ -41,6 +41,6 @@ encoder:
 
 decoder:
   from_pt: null
-  mlp_decoder: true
+  mlp_decoder: true  # or it will be a linear decoder
   activation: relu
   use_cls: true

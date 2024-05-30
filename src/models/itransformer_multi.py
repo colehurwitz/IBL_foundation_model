@@ -52,7 +52,6 @@ class CustomTransformerEncoderLayer(nn.Module):
             dropout=0.1,
             bias=True,
             batch_first=True,
-            residual=True,  # residual connection in attention block (not feedforward block)
         ):
             super().__init__()
             self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
@@ -67,8 +66,6 @@ class CustomTransformerEncoderLayer(nn.Module):
             self.dropout2 = nn.Dropout(dropout)
             self.activation = activation
 
-            self.residual = residual
-
         def forward(
             self,
             src,
@@ -76,10 +73,9 @@ class CustomTransformerEncoderLayer(nn.Module):
         ):
             # Attention block
             src2, attn_weights = self.self_attn(src, src, src, attn_mask=src_mask, average_attn_weights=False)
-            if self.residual:
-                src = src + self.dropout1(src2)
-            else:
-                src = self.dropout1(src2)
+            
+            src = src + self.dropout1(src2)
+            
             src = self.norm1(src)
 
             # Feedforward block
@@ -113,7 +109,6 @@ class CustomTransformerEncoder(nn.Module):
                 dropout=dropout,
                 bias=bias,
                 batch_first=batch_first,
-                residual=(attention_mode_list[i] != "inter-region")
             )
             for i in range(num_layers)])
         self.norm = norm
@@ -297,7 +292,7 @@ class iTransformer(nn.Module):
             n_outputs = config.encoder.embedder.max_n_bins
         elif self.method == "stat_behaviour":
             if kwargs["loss"] == "cross_entropy":
-                n_outputs = kwargs["n_labels"]
+                n_outputs = kwargs["output_size"]
             elif kwargs["loss"] == "mse":
                 n_outputs = 1
         else:
@@ -312,8 +307,8 @@ class iTransformer(nn.Module):
         if config.decoder.mlp_decoder:
             decoder_layers.append(nn.Linear(config.encoder.hidden_size, config.encoder.hidden_size))
             decoder_layers.append(ACT2FN[config.decoder.activation])
-            # add a dropout layer in MLP ?
-            # decoder_layers.append(nn.Dropout(0.4))
+            # debug: add a dropout layer in MLP ?
+            # decoder_layers.append(nn.Dropout(0.6))
         decoder_layers.append(nn.Linear(config.encoder.hidden_size, n_outputs))
 
         if self.method == "ssl" and not kwargs["use_lograte"]:
@@ -369,6 +364,7 @@ class iTransformer(nn.Module):
             eid=None,  # not used
     ) -> iTransformerOutput:
 
+        
         # Can hard-set the masking mode during inference. Be careful here.
         if masking_mode is not None:
             self.masker.mode = masking_mode
@@ -392,8 +388,15 @@ class iTransformer(nn.Module):
         attn_mode = self.encoder.attn_mode
         n_heads = self.encoder.n_heads
 
+        # debug 
+        # print('space_attn_mask (0 for mask) sum: ', space_attn_mask.sum())
+        # print('targets_mask (1 for mask) sum: ', targets_mask.sum())
+        
+        # adjust the shape of some tensors for [cls].
         if self.use_cls:
-            space_attn_mask = torch.cat((torch.ones((space_attn_mask.size(0), 1), dtype=torch.bool), space_attn_mask), dim=1)
+            space_attn_mask = torch.cat((torch.ones((space_attn_mask.size(0), 1), dtype=torch.bool, device=space_attn_mask.device), space_attn_mask), dim=1)
+            targets_mask = torch.cat((torch.zeros((targets_mask.size(0), targets_mask.size(1), 1), dtype=torch.bool, device=targets_mask.device), targets_mask), dim=2)
+
 
         # experiment on 1.the order of heads and batch, 2.(solved!)the orientation of the attn mask. ***********
         pad_mask = space_attn_mask.unsqueeze(1).repeat_interleave(n_heads, dim=0).to(torch.bool).to(spikes.device)  # (bs*n_heads, 1, n_channels)
@@ -487,7 +490,10 @@ class iTransformer(nn.Module):
         elif self.method == "stat_behaviour":
             targets_mask = targets_mask & time_attn_mask.unsqueeze(2) & space_attn_mask.unsqueeze(1)
             if self.loss_name == "cross_entropy":
-                loss = self.loss_fn(preds, targets.long().squeeze(1)).sum()
+                # debug
+                print('Preds: ', preds.argmax(1))
+                print('Targets: ', targets.argmax(1))
+                loss = self.loss_fn(preds, targets.argmax(1)).sum()
             elif self.loss_name == "mse":
                 loss = self.loss_fn(preds.squeeze(1), targets.squeeze(1)).sum()
             n_examples = torch.tensor(len(targets), device=loss.device, dtype=torch.long)
@@ -533,8 +539,8 @@ def create_attn_mask(
     attn_mask = torch.tensor(attn_mask_np, dtype=torch.bool)
 
     if use_cls:
-        attn_mask = torch.cat((torch.zeros((1, attn_mask.shape[1]), dtype=torch.bool), attn_mask), dim=0)
-        attn_mask = torch.cat((torch.zeros((attn_mask.shape[0], 1), dtype=torch.bool), attn_mask), dim=1)
+        attn_mask = torch.cat((torch.zeros((1, attn_mask.shape[1]), dtype=torch.bool, device=attn_mask.device), attn_mask), dim=0)
+        attn_mask = torch.cat((torch.zeros((attn_mask.shape[0], 1), dtype=torch.bool, device=attn_mask.device), attn_mask), dim=1)
 
     # make sure each token can at least attend to itself
     if mode == "inter-region":
