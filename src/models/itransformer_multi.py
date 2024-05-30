@@ -296,7 +296,7 @@ class iTransformer(nn.Module):
         elif self.method == "dyn_behaviour":
             n_outputs = config.encoder.embedder.max_n_bins
         elif self.method == "stat_behaviour":
-            if kwargs["loss"] == "xent":
+            if kwargs["loss"] == "cross_entropy":
                 n_outputs = kwargs["n_labels"]
             elif kwargs["loss"] == "mse":
                 n_outputs = 1
@@ -312,6 +312,8 @@ class iTransformer(nn.Module):
         if config.decoder.mlp_decoder:
             decoder_layers.append(nn.Linear(config.encoder.hidden_size, config.encoder.hidden_size))
             decoder_layers.append(ACT2FN[config.decoder.activation])
+            # add a dropout layer in MLP ?
+            # decoder_layers.append(nn.Dropout(0.4))
         decoder_layers.append(nn.Linear(config.encoder.hidden_size, n_outputs))
 
         if self.method == "ssl" and not kwargs["use_lograte"]:
@@ -342,7 +344,7 @@ class iTransformer(nn.Module):
             self.loss_name = kwargs["loss"]
             if self.loss_name == "mse":
                 self.loss_fn = nn.MSELoss(reduction="none")
-            elif self.loss_name == "xent":
+            elif self.loss_name == "cross_entropy":
                 self.loss_fn = nn.CrossEntropyLoss(reduction="none")
             else:
                 raise Exception(f"Loss {kwargs['loss']} not implemented yet for stat_behaviour")
@@ -367,7 +369,7 @@ class iTransformer(nn.Module):
             eid=None,  # not used
     ) -> iTransformerOutput:
 
-        # Can hard-set the masking mode during inference. Not used in iTransformer now.
+        # Can hard-set the masking mode during inference. Be careful here.
         if masking_mode is not None:
             self.masker.mode = masking_mode
 
@@ -484,7 +486,7 @@ class iTransformer(nn.Module):
 
         elif self.method == "stat_behaviour":
             targets_mask = targets_mask & time_attn_mask.unsqueeze(2) & space_attn_mask.unsqueeze(1)
-            if self.loss_name == "xent":
+            if self.loss_name == "cross_entropy":
                 loss = self.loss_fn(preds, targets.long().squeeze(1)).sum()
             elif self.loss_name == "mse":
                 loss = self.loss_fn(preds.squeeze(1), targets.squeeze(1)).sum()
