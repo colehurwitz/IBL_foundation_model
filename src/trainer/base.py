@@ -40,8 +40,12 @@ class Trainer():
                 
         self.session_active_neurons = []
 
-        self.masking_ratio = model.encoder.masker.ratio
-        self.masking_mode = model.encoder.masker.mode
+        if self.model_class == 'iTransformer':
+            self.masking_ratio = model.masker.ratio
+            self.masking_mode = model.masker.mode
+        else:
+            self.masking_ratio = model.encoder.masker.ratio
+            self.masking_mode = model.encoder.masker.mode
         self.masking_schemes = ['neuron', 'causal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
@@ -90,8 +94,8 @@ class Trainer():
                 print(f"epoch: {epoch} eval loss: {eval_epoch_results['eval_loss']} {self.metric}: {eval_epoch_results[f'eval_trial_avg_{self.metric}']}")
 
             # save model by epoch
-            if epoch % self.config.training.save_every == 0:
-                self.save_model(name="epoch", epoch=epoch)
+            # if epoch % self.config.training.save_every == 0:
+            #     self.save_model(name="epoch", epoch=epoch)
 
             # plot epoch
             if epoch % self.config.training.save_plot_every_n_epochs == 0:
@@ -139,11 +143,20 @@ class Trainer():
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
                 if masking_mode == 'temporal':
-                    self.model.encoder.masker.ratio = 0.3
+                    if self.model_class == 'iTransformer':
+                        self.model.masker.ratio = 0.3
+                    else:
+                        self.model.encoder.masker.ratio = 0.3
                 elif masking_mode == 'causal':
-                    self.model.encoder.masker.ratio = 0.6
+                    if self.model_class == 'iTransformer':
+                        self.model.masker.ratio = 0.6
+                    else:
+                        self.model.encoder.masker.ratio = 0.6
                 else:
-                    self.model.encoder.masker.ratio = self.masking_ratio
+                    if self.model_class == 'iTransformer':
+                        self.model.masker.ratio = self.masking_ratio
+                    else:
+                        self.model.encoder.masker.ratio = self.masking_ratio
             else:
                 masking_mode = self.masking_mode
             outputs = self._forward_model_outputs(batch, masking_mode)
@@ -171,7 +184,8 @@ class Trainer():
             masking_mode=masking_mode, 
             spike_augmentation=self.config.data.spike_augmentation,
             num_neuron=batch['spikes_data'].shape[2],
-            eid=batch['eid'][0]  # each batch consists of data from the same eid
+            eid=batch['eid'][0],  # each batch consists of data from the same eid
+            nemo_rep=batch['nemo_rep']
         ) 
     
     def eval_epoch(self):
@@ -191,11 +205,20 @@ class Trainer():
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
                         if masking_mode == 'temporal':
-                            self.model.encoder.masker.ratio = 0.3
+                            if self.model_class == 'iTransformer':
+                                self.model.masker.ratio = 0.3
+                            else:
+                                self.model.encoder.masker.ratio = 0.3
                         elif masking_mode == 'causal':
-                            self.model.encoder.masker.ratio = 0.6
+                            if self.model_class == 'iTransformer':
+                                self.model.masker.ratio = 0.6
+                            else:
+                                self.model.encoder.masker.ratio = 0.6
                         else:
-                            self.model.encoder.masker.ratio = self.masking_ratio
+                            if self.model_class == 'iTransformer':
+                                self.model.masker.ratio = self.masking_ratio
+                            else:
+                                self.model.encoder.masker.ratio = self.masking_ratio
                     else:
                         masking_mode = self.masking_mode
                     outputs = self._forward_model_outputs(batch, masking_mode)
@@ -276,5 +299,12 @@ class Trainer():
             "model": self.model,
             "epoch": epoch,
         }
-        torch.save(dict_config, os.path.join(self.log_dir, f"model_{name}.pt"))
+        if self.model_class != 'iTransformer':
+            torch.save(dict_config, os.path.join(self.log_dir, f"model_{name}.pt"))
+        else:
+            if not os.path.exists(os.path.join(self.log_dir, name)):
+                os.makedirs(os.path.join(self.log_dir, name))
+            print("saving model: {} to {}".format(name, os.path.join(self.log_dir, name)))
+            self.model.save_checkpoint(os.path.join(self.log_dir, name))
+
         

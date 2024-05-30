@@ -1,4 +1,5 @@
 import torch
+import pickle
 import numpy as np
 from utils.dataset_utils import get_binned_spikes_from_sparse
 from torch.utils.data.sampler import Sampler
@@ -265,6 +266,7 @@ class BaseDataset(torch.utils.data.Dataset):
         brain_region = 'all',
         dataset_name = "ibl",
         stitching = False,
+        use_nemo = False,
     ) -> None:
         self.dataset = dataset
         self.target = target
@@ -280,6 +282,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.load_meta = load_meta
         self.dataset_name = dataset_name
         self.stitching = stitching
+        self.use_nemo = use_nemo
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -321,23 +324,41 @@ class BaseDataset(torch.utils.data.Dataset):
             
         binned_spikes_data = binned_spikes_data[0]
 
+        if self.use_nemo:
+            neuron_uuids = np.array(data['cluster_uuids']).astype('str')
+            with open('data/MtM_unit_embed.pkl','rb') as file:
+                nemo_data = pickle.load(file)
+            nemo_uuids = nemo_data['uuids']
+            nemo_rep = np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1)
+            include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
+            nemo_rep = nemo_rep[np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in nemo_uuids]).flatten() == 1).astype(np.int64)].squeeze()
+            include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)
+            self.max_space_length = len(include_neuron_ids)
+        else:
+            include_neuron_ids = np.ones(binned_spikes_data.shape[-1]).flatten().astype(np.int64)
+            nemo_rep = np.array([np.nan])
+        
+        binned_spikes_data = binned_spikes_data[:,include_neuron_ids].squeeze()
+
         if self.load_meta:
             if 'cluster_depths' in data:
                 neuron_depths = np.array(data['cluster_depths']).astype(np.float32)
+                neuron_depths = neuron_depths[include_neuron_ids].squeeze()
             else:
                 neuron_depths = np.array([np.nan])
             neuron_regions = np.array(data['cluster_regions']).astype('str')
+            neuron_regions = neuron_regions[include_neuron_ids].squeeze()
         else:
             neuron_depths = neuron_regions = np.array([np.nan])
             
         if self.load_meta & (self.brain_region != 'all'):
-            # only load neurons from a given brain region
-            # this is for NDT2 since not enough RAM to load all neurons  
             region_idxs = np.argwhere(neuron_regions == self.brain_region)
             binned_spikes_data = binned_spikes_data[:,region_idxs].squeeze()
             neuron_regions = neuron_regions[region_idxs]
             if self.sort_by_depth:
                 neuron_depths = neuron_depths[region_idxs]   
+            if self.use_nemo:
+                nemo_rep = nemo_rep[region_idxs]
 
         pad_time_length, pad_space_length = 0, 0
 
@@ -355,6 +376,8 @@ class BaseDataset(torch.utils.data.Dataset):
             binned_spikes_data = binned_spikes_data[:,sorted_neuron_idxs]
             neuron_depths = neuron_depths[sorted_neuron_idxs]
             neuron_regions = neuron_regions[sorted_neuron_idxs]
+            if self.use_nemo:
+                nemo_rep = nemo_rep[sorted_neuron_idxs]
 
         neuron_regions = list(neuron_regions)
         
@@ -375,6 +398,8 @@ class BaseDataset(torch.utils.data.Dataset):
                 binned_spikes_data = binned_spikes_data[:,:self.max_space_length]
                 neuron_depths = neuron_depths[:self.max_space_length]
                 neuron_regions = neuron_regions[:self.max_space_length]
+                if self.use_nemo:
+                    nemo_rep = nemo_rep[:self.max_space_length]
             else: 
                 if self.pad_to_right:
                     pad_space_length = self.max_space_length - num_neurons
@@ -382,11 +407,15 @@ class BaseDataset(torch.utils.data.Dataset):
                     # binned_spikes_data = _wrap_pad_neuron_up_to_n(binned_spikes_data, self.max_space_length).T
                     neuron_depths = _pad_seq_right_to_n(neuron_depths, self.max_space_length, np.nan)
                     neuron_regions = _pad_seq_right_to_n(neuron_regions, self.max_space_length, np.nan)
+                    if self.use_nemo:
+                        nemo_rep = _pad_seq_right_to_n(nemo_rep, self.max_space_length, np.nan)
                 else:
                     pad_space_length = num_neurons - self.max_space_length
                     binned_spikes_data = _pad_seq_left_to_n(binned_spikes_data.T, self.max_space_length, self.pad_value)
                     neuron_depths = _pad_seq_left_to_n(neuron_depths, self.max_space_length, np.nan)
                     neuron_regions = _pad_seq_left_to_n(neuron_regions, self.max_space_length, np.nan)
+                    if self.use_nemo:
+                        nemo_rep = _pad_seq_left_to_n(nemo_rep, self.max_space_length, np.nan)
                 binned_spikes_data = binned_spikes_data.T
             spikes_spacestamps = np.arange(self.max_space_length).astype(np.int64)
             space_attn_mask = _attention_mask(self.max_space_length, pad_space_length).astype(np.int64)
@@ -409,7 +438,8 @@ class BaseDataset(torch.utils.data.Dataset):
             "target": target_behavior,
             "neuron_depths": neuron_depths, 
             "neuron_regions": list(neuron_regions),
-            "eid": data['eid']
+            "eid": data['eid'],
+            "nemo_rep": nemo_rep,
         }
     
     def __len__(self):

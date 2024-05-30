@@ -14,7 +14,8 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 from models.masker import Masker
-DEFAULT_CONFIG = "src/configs/itransformer.yaml"
+from models.region_lookup import RegionLookup 
+DEFAULT_CONFIG = "src/configs/itransformer/itransformer.yaml"
 
 
 @dataclass
@@ -51,7 +52,6 @@ class iTransformerEncoder(nn.Module):
             MLP(
                 in_channels=config.embedder.max_n_bins, 
                 hidden_channels=[config.hidden_size, config.hidden_size],
-                # activation_layer=ACT2FN[config.embedder.activation].__class__,
                 bias=config.embedder.bias,
                 dropout=config.embedder.dropout,
             ),
@@ -67,15 +67,28 @@ class iTransformerEncoder(nn.Module):
 
         self.embed_region = config.embed_region
         if self.embed_region:
-            self.neuron_regions = config.neuron_regions
-            self.region_to_indx = {r: i for i,r in enumerate(self.neuron_regions)}
-            self.indx_to_region = {v: k for k,v in self.region_to_indx.items()}
+            # self.neuron_regions = config.neuron_regions
+            # self.region_to_indx = {r: i for i,r in enumerate(self.neuron_regions)}
+            # self.indx_to_region = {v: k for k,v in self.region_to_indx.items()}
+            self.regionlookup = RegionLookup(config)
             self.region_embeddings = nn.Sequential(
-                nn.Embedding(len(self.region_to_indx), config.hidden_size),
+                # nn.Embedding(len(self.region_to_indx), config.hidden_size),
+                nn.Embedding(self.regionlookup.max_region_indx, config.hidden_size),
                 nn.LayerNorm(config.hidden_size),
             )
-    
 
+        self.embed_nemo = config.embed_nemo
+        if self.embed_nemo:
+            self.nemo_embeddings = nn.Sequential(
+                MLP(
+                    in_channels=config.embedder.nemo_dim, 
+                    hidden_channels=[config.hidden_size, config.hidden_size],
+                    bias=config.embedder.bias,
+                    dropout=config.embedder.dropout,
+                ),
+                nn.LayerNorm(config.hidden_size), 
+            )
+    
         self.use_cls = use_cls
         if self.use_cls:
             self.cls_embed = nn.Embedding(1, config.hidden_size)
@@ -105,6 +118,7 @@ class iTransformerEncoder(nn.Module):
         spikes_timestamps:   Optional[torch.LongTensor]  = None, # (bs, seq_len) 
         spikes_spacestamps:  Optional[torch.LongTensor]  = None, # (bs, n_channels) 
         neuron_regions:     Optional[np.ndarray]        = None, # (bs, n_channels)
+        nemo_rep:           Optional[np.ndarray]        = None, 
     ) -> torch.FloatTensor:   # (batch, n_channels, hidden_size)
         
     
@@ -117,10 +131,15 @@ class iTransformerEncoder(nn.Module):
             tokens += channel_embeds                                    # (batch, n_channels, hidden_size)
 
         if self.embed_region:
-            region_indx = torch.stack([torch.tensor([self.region_to_indx[r] for r in row], dtype=torch.int64, device=spikes.device) for row in neuron_regions], dim=0)
+            neuron_regions = np.array(neuron_regions).T
+            region_indx = self.regionlookup(neuron_regions).to(spikes.device)
+            # region_indx = torch.stack([torch.tensor([self.region_to_indx[r] for r in row], dtype=torch.int64, device=spikes.device) for row in neuron_regions], dim=0)
             region_embeds = self.region_embeddings(region_indx)        # (batch, n_channels, hidden_size)
             tokens += region_embeds
 
+        if self.embed_nemo:
+            nemo_embeds = self.nemo_embeddings(nemo_rep)       
+            tokens += nemo_embeds
 
         # Append cls token at the beginning
         if self.use_cls:
@@ -168,7 +187,7 @@ class iTransformer(nn.Module):
 
         # Build decoder
         if self.method == "ssl":
-            assert config.encoder.masker.active, "Can't pretrain with inactive masking"
+            assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
             n_outputs = config.encoder.embedder.max_n_bins
         elif self.method == "ctc":
             n_outputs = kwargs["vocab_size"] * config.encoder.embedder.max_n_bins
@@ -242,7 +261,12 @@ class iTransformer(nn.Module):
         targets:            Optional[torch.FloatTensor] = None, # (bs, tar_len) 
         targets_lengths:    Optional[torch.LongTensor]  = None, # (bs)
         neuron_regions:     Optional[np.ndarray]        = None, # (bs, n_channels)
+        nemo_rep:         Optional[np.ndarray]        = None,
         masking_mode:     Optional[str] = None,
+        spike_augmentation: Optional[bool] = False,
+        eval_mask:        Optional[torch.LongTensor] = None,
+        num_neuron:       Optional[torch.LongTensor] = None,
+        eid:              Optional[str] = None,
     ) -> iTransformerOutput:
 
         if self.method == "ssl":
@@ -253,7 +277,7 @@ class iTransformer(nn.Module):
         spikes, targets_mask = self.masker(spikes, neuron_regions)
         
 
-        x = self.encoder(spikes, spikes_timestamps, spikes_spacestamps, neuron_regions=neuron_regions)    # (batch, n_channels, hidden_size)
+        x = self.encoder(spikes, spikes_timestamps, spikes_spacestamps, neuron_regions=neuron_regions, nemo_rep=nemo_rep)    # (batch, n_channels, hidden_size)
 
         # Select cls token, assumed to be the first one
         if self.use_cls:
@@ -267,8 +291,7 @@ class iTransformer(nn.Module):
 
         if self.method == "ssl":
             preds = preds.transpose(1,2)    # (bs, seq_len, n_channels)
-            # Include padding in mask
-            targets_mask = targets_mask & time_attn_mask.unsqueeze(2) 
+            targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(2).to(torch.int64)
             # Compute the loss only over masked timesteps that are not padded 
             loss = (self.loss_fn(preds, targets) * targets_mask).sum()
             n_examples = targets_mask.sum()
@@ -295,7 +318,7 @@ class iTransformer(nn.Module):
             )
 
         elif self.method == "stat_behaviour":
-            targets_mask = targets_mask & time_attn_mask.unsqueeze(2) 
+            targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(2).to(torch.int64)
             if self.loss_name == "xent":
                 loss = self.loss_fn(preds, targets.long().squeeze(1)).sum()
             elif self.loss_name == "mse":
@@ -319,7 +342,6 @@ class iTransformer(nn.Module):
                 preds=preds,
                 targets=targets,
             )
-
 
     def save_checkpoint(self, save_dir):
         torch.save(self.encoder.state_dict(), os.path.join(save_dir,"encoder.bin"))

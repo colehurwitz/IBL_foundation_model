@@ -36,7 +36,7 @@ encoder:
   max_n_channels: 0       # 0 to skip channel embeddings
   embed_region: true
   neuron_regions: null       # set this to the list of all regions in the dataset before initialisation
-  embed_nemo: false
+  embed_nemo: true
 
 
 decoder:
