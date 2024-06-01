@@ -1,13 +1,13 @@
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
 from src.loader.make_loader import make_loader
-from src.utils.dataset_utils import split_both_dataset
+from src.utils.dataset_utils import split_both_dataset, multi_session_zs_dataset_iTransformer, multi_session_dataset_iTransformer
 from src.utils.utils import set_seed, move_batch_to_device, plot_gt_pred, metrics_list, plot_avg_rate_and_spike, \
     plot_rate_and_spike
 from src.utils.config_utils import config_from_kwargs, update_config
 from src.models.ndt1 import NDT1
 from src.models.stpatch import STPatch
-from src.models.itransformer import iTransformer
+from src.models.itransformer_multi import iTransformer # use multi-version for now
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -36,12 +36,13 @@ def load_model_data_local(**kwargs):
     model_config = kwargs['model_config']
     trainer_config = kwargs['trainer_config']
     model_path = kwargs['model_path']
-    # dataset_path = kwargs['dataset_path']
-    # test_size = kwargs['test_size']
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
-    # ? mask_mode = mask_name.split("_")[1]
     mask_mode = mask_name  # local
+    zero_shot = kwargs['zero_shot']
+    eid = kwargs['eid']
+    # test_size = kwargs['test_size']
+    # ? mask_mode = mask_name.split("_")[1]
 
     # set seed
     set_seed(seed)
@@ -75,18 +76,20 @@ def load_model_data_local(**kwargs):
     print(model)
 
     # load the dataset
-    dataset = load_dataset(config.dirs.dataset_dir, cache_dir=config.dirs.dataset_cache_dir)["test"]
+    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)['test']
 
     dataloader = make_loader(
         dataset,
         target=config.data.target,
-        batch_size=10000,
+        load_meta=config.data.load_meta,
+        batch_size=config.training.test_batch_size,
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
         max_space_length=config.data.max_space_length,
         dataset_name=config.data.dataset_name,
-        load_meta=config.data.load_meta,
+        sort_by_depth=config.data.sort_by_depth,
+        sort_by_region=config.data.sort_by_region,
         shuffle=False
     )
 

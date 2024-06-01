@@ -11,11 +11,11 @@ wandb:
   use: True
   entity: wdk0082
   project: iTransformer_multi
-  run_name: test_choice_MLP
+  run_name: test_choice_mlp_30
 
 # Logging directories
 dirs:
-  log_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_choice_MLP # save models
+  log_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_choice_mlp_30 # save models
   dataset_cache_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/datasets_cache  # save dataset cache
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned # not used in multi-session training.
   huggingface_org: neurofm123
