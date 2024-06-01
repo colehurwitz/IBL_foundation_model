@@ -2,7 +2,7 @@ model_class: iTransformer
 
 
 encoder:
-  from_pt: null
+  from_pt: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_zs_30/best
 
   masker: 
     force_active: True
@@ -40,7 +40,7 @@ encoder:
   attn_mix_ratio: [0.25, 0.25, 0.5] # inter : intra : all, should add up to 1 (mix_sample)
 
 decoder:
-  from_pt: null
+  from_pt: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_zs_30/best
   mlp_decoder: true
   activation: relu
   use_cls: false
