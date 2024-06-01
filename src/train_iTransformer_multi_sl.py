@@ -18,7 +18,8 @@ kwargs = {
     "model": "include:src/configs/itransformer_multi_sl.yaml"
 }
 
-EID_PATH = 'data/target_eids.txt'
+# EID_PATH = 'data/target_eids.txt'
+EID_PATH = 'data/split_eids'
 
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/trainer_iTransformer_multi_sl.yaml", config)
@@ -39,8 +40,8 @@ if config.wandb.use:
 set_seed(config.seed)
 
 # download dataset from huggingface
-train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config, n_eids=30)
-# train_dataset, val_dataset, test_dataset = multi_session_zs_dataset_iTransformer(EID_PATH, config, n_eids_train=30)
+# train_dataset, val_dataset, test_dataset = multi_session_dataset_iTransformer(EID_PATH, config, n_eids=1)
+train_dataset, val_dataset, test_dataset = multi_session_zs_dataset_iTransformer(EID_PATH, config, n_eids_train=30)
 try:
     bin_size = train_dataset["binsize"][0]
 except:
