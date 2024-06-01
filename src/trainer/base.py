@@ -236,7 +236,7 @@ class Trainer():
         # debug (why did the zero shot program crash?)
         print('plot_epoch: ', gt.shape, preds.shape, active_neurons.shape)
         
-        trial_idx = random.randint(0, gt.shape[0])  # random trial to plot
+        trial_idx = random.randint(0, gt.shape[0]-1)  # random trial to plot
         active_neurons = active_neurons[trial_idx, :5].tolist()  # plot the top 5 active neurons in selected trials
 
         gt_pred_fig = plot_gt_pred(gt=gt[trial_idx].T.cpu().numpy(),
