@@ -39,7 +39,6 @@ def load_model_data_local(**kwargs):
     seed = kwargs['seed']
     mask_name = kwargs['mask_name']
     mask_mode = mask_name  # local
-    zero_shot = kwargs['zero_shot']
     eid = kwargs['eid']
     # test_size = kwargs['test_size']
     # ? mask_mode = mask_name.split("_")[1]
@@ -282,7 +281,9 @@ def co_smoothing_eval(
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
-        for n_i in tqdm(range(batch['spikes_data'].shape[-1])):
+        # some of them are padded value (-1). TODO: this will break if the padding value is not -1
+        print('number of neuron: {}'.format((batch['spikes_data'][0, 0, :] >= 0).sum()))
+        for n_i in tqdm(range((batch['spikes_data'][0, 0, :] >= 0).sum())):
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -1230,8 +1231,8 @@ def viz_single_cell(X, y, y_pred, var_name2idx, var_tasklist, var_value2label, v
 
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    plt.savefig(os.path.join(save_path, f'{neuron_region}_{neuron_idx}_{r2_trial:.2f}_{method}.png'))
-    plt.tight_layout();
+    # plt.savefig(os.path.join(save_path, f'{neuron_region}_{neuron_idx}_{r2_trial:.2f}_{method}.png'))
+    # plt.tight_layout()
     # plt.show()
 
     return r2_psth, r2_trial
