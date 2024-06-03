@@ -5,11 +5,10 @@ warnings.simplefilter("ignore")
 configs = {
     'model_config': 'src/configs/itransformer_multi.yaml',
     'model_path': None,
-    'trainer_config': 'src/configs/trainer_iTransformer_zs.yaml',
+    'trainer_config': 'src/configs/trainer_iTransformer_multi.yaml',
     'mask_name': 'None', # no need for iTransformer
     'seed': 42,
-    'eid': '71e55bfe-5a3a-4cba-bdc7-f085140d798e',
-    'zero_shot': True
+    'eid': '671c7ea7-6726-4fbe-adeb-f89c2c8e489b',
 }
 
 model, accelerator, dataset, dataloader = load_model_data_local(**configs)

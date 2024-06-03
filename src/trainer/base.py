@@ -194,10 +194,10 @@ class Trainer():
             preds = torch.nn.functional.softmax(preds, dim=1)
 
         if self.config.method.model_kwargs.method_name == 'ssl':
-            # use the most active 100 neurons to select model (r2)
+            # use the most active 50 neurons to select model (r2)
             # neurons in each trial will be different
             _tmp_ac = gt.detach().cpu().numpy().mean(1)  # (bs, n_neurons)
-            self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :100].copy()
+            self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :50].copy()
             _bs = np.arange(gt.shape[0])[:, None].copy()
 
 
