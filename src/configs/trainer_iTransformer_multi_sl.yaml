@@ -1,40 +1,39 @@
 seed: 42
 
 savestring: test
-wandb_project: single-session
+wandb_project: iTransformer_multi
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: true
-  entity: null
-  project: single-session
-  run_name: 671c7ea7
+  use: True
+  entity: wdk0082
+  project: iTransformer_multi
+  run_name: test_choice_zs
 
 # Logging directories
 dirs:
-  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: results  # save tensorboard logs
-  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
-  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
-  behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  log_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/test_choice_zs # save models
+  dataset_cache_dir: /expanse/lustre/scratch/zwang34/temp_project/iTransformer/checkpoints/datasets_cache  # save dataset cache
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned # not used in multi-session training.
   huggingface_org: neurofm123
-  
+  # checkpoint_dir: /mnt/home/yzhang1/ceph/checkpoints  # save model state dicts (todo optimizer states)
+  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
+  # behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
 
 
 # Training configuration
 training:
-  num_epochs: 30
-  train_batch_size: 16
-  test_batch_size: 16  
+  num_epochs: 500
+  train_batch_size: 32
+  test_batch_size: 128  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 5  # Plot the model output every n epochs
-  save_every: 50  # Save checkpoint
+  save_every: 30  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -42,7 +41,7 @@ training:
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
 model: 
-  model_class: null   # Any registered model class name. 
+  model_class: iTransformer   # Any registered model class name.
 
 # Data configuration.
 data:
@@ -63,20 +62,19 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
-  patching: true # patching the neurons
+  max_space_length: 1000   # max_space_length has to be a multiple of space patch size
+  patching: false # patching the neurons
   sort_by_depth: false
   sort_by_region: false
   brain_region: all
   spike_augmentation: false
 
-  include_behav: true # include behavior data
-  target: left-whisker-motion-energy
+  target: choice
 
   load_meta: true
 
   num_sessions: 3
-  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
 
   split_method: session_based # random_split/session_based
 
@@ -87,33 +85,23 @@ method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: sl #ssl 
+    method_name: stat_behaviour # stat_behaviour / dyn_behaviour / ssl
 
     use_lograte: true
-    loss: mse  # poisson_nll # mse/other distirbutions (todo)
-    output_size: 100
-    clf: false
-    reg: true
+    loss: cross_entropy  # poisson_nll / cross_entropy / mse
+    output_size: 2
+    clf: true
+    reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}
 
-  # Passed to the DataLoader __init__ method.
-  dataloader_kwargs:
-    # Contains which keys to pad, along which dimension with which value
-    pad_dict: 
-      spikes:
-          dim: 0
-          side: right
-          value: 0
-          truncate: null
-          min_length: null
       
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 5.e-4
-  wd: 0.1
+  lr: 1.e-4
+  wd: 1
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
   gamma: 0.95     # step

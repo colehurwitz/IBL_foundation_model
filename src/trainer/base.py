@@ -183,7 +183,7 @@ class Trainer():
                     if self.config.data.patching:
                         gt.append(outputs.targets.clone())
                     else:
-                        gt.append(batch['spikes_data'].clone())
+                        gt.append(outputs.targets.clone())
                     preds.append(outputs.preds.clone())
             gt = torch.cat(gt, dim=0)
             preds = torch.cat(preds, dim=0)
@@ -192,12 +192,13 @@ class Trainer():
             preds = torch.exp(preds)
         elif self.config.method.model_kwargs.loss == "cross_entropy":
             preds = torch.nn.functional.softmax(preds, dim=1)
-            
-        # use the most active 100 neurons to select model (r2)
-        # neurons in each trial will be different
-        _tmp_ac = gt.detach().cpu().numpy().mean(1)  # (bs, n_neurons)
-        self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :100].copy()
-        _bs = np.arange(gt.shape[0])[:, None].copy()
+
+        if self.config.method.model_kwargs.method_name == 'ssl':
+            # use the most active 50 neurons to select model (r2)
+            # neurons in each trial will be different
+            _tmp_ac = gt.detach().cpu().numpy().mean(1)  # (bs, n_neurons)
+            self.active_neurons_idx = np.argsort(_tmp_ac, axis=1)[:, ::-1][:, :50].copy()
+            _bs = np.arange(gt.shape[0])[:, None].copy()
 
 
         # TODO: model selection might be not rigorous (right) now
@@ -206,8 +207,11 @@ class Trainer():
                                    pred=preds[_bs, :, self.active_neurons_idx].transpose(0, 1).transpose(1, 2),
                                    metrics=["r2"], 
                                    device=self.accelerator.device)
-        elif self.config.method.model_kwargs.method_name == 'sl':
+        elif self.config.method.model_kwargs.method_name in ['sl', 'stat_behaviour', 'dyn_behaviour']:
             if self.config.method.model_kwargs.clf:
+                # debug
+                print('############ eval ###############')
+                print(f'gt: {gt}\n preds: {preds}')
                 results = metrics_list(gt=gt.argmax(1),  # TODO: change this (probably)
                                        pred=preds.argmax(1),
                                        metrics=[self.metric], 
@@ -229,7 +233,10 @@ class Trainer():
 
     def plot_epoch(self, gt, preds, epoch, active_neurons):  # (bs, seq_len, n_neurons)
 
-        trial_idx = random.randint(0, gt.shape[0])  # random trial to plot
+        # debug (why did the zero shot program crash?)
+        print('plot_epoch: ', gt.shape, preds.shape, active_neurons.shape)
+        
+        trial_idx = random.randint(0, gt.shape[0]-1)  # random trial to plot
         active_neurons = active_neurons[trial_idx, :5].tolist()  # plot the top 5 active neurons in selected trials
 
         gt_pred_fig = plot_gt_pred(gt=gt[trial_idx].T.cpu().numpy(),
