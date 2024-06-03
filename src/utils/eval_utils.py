@@ -1,3 +1,5 @@
+import pickle
+from math import ceil
 from datasets import load_dataset, load_from_disk, concatenate_datasets, DatasetDict
 from accelerate import Accelerator
 from loader.make_loader import make_loader
@@ -20,13 +22,16 @@ import matplotlib.colors as colors
 import os
 from trainer.make import make_trainer
 from pathlib import Path
+from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.metrics import accuracy_score, r2_score
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 
 import logging
 
 logger = logging.getLogger(__name__)
-PROMPTING_MODE=['neuron', 'causal', 'inter-region', 'intra-region']
+
 
 # --------------------------------------------------------------------------------------------------
 # Model/Dataset Loading and Configuration
@@ -44,6 +49,7 @@ def load_model_data_local(**kwargs):
     eid = kwargs['eid']
     stitching = kwargs['stitching']
     num_sessions = kwargs['num_sessions']
+    use_nemo = kwargs['use_nemo']
 
     # set seed
     set_seed(seed)
@@ -68,35 +74,62 @@ def load_model_data_local(**kwargs):
                         )
     print(meta_data)
 
-    model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
-    model = torch.load(model_path)['model']
-
-    model.encoder.masker.mode = mask_mode
-    model.encoder.masker.force_active = False
-
-    print("(eval) masking mode: ", model.encoder.masker.mode)
-    print("(eval) masking ratio: ", model.encoder.masker.ratio)
-    print("(eval) masking active: ", model.encoder.masker.force_active)
-    if 'causal' in mask_name:
-        model.encoder.context_forward = 0
-        print("(behave decoding) context forward: ", model.encoder.context_forward)
-    
-    model = accelerator.prepare(model)
-
     # load the dataset
-    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
+    r_dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+    dataset = r_dataset["test"]
 
-    n_neurons = len(dataset['cluster_regions'][0])
+    if use_nemo:
+        neuron_uuids = np.array(dataset['cluster_uuids'][0]).astype('str')
+        with open('data/MtM_unit_embed.pkl','rb') as file:
+            nemo_data = pickle.load(file)
+        nemo_uuids = nemo_data['uuids']
+        include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
+        n_neurons = len(include_uuids)
+        print('Use NEMO cell-type embeddings.')
+    else:
+        n_neurons = len(dataset['cluster_regions'][0])
 
+    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
+        config["model"]["encoder"]["neuron_regions"] = list(
+            set(str(b) for a in [row["cluster_regions"] for rows in r_dataset.values() for row in rows] for b in a)
+        )
+        
     if config.model.model_class in ["NDT1", "iTransformer"]:
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
-        max_space_length = config.model.encoder.embedder.n_neurons
+        max_space_F = config.model.encoder.embedder.max_space_F
+        max_space_length = ceil(n_neurons/max_space_F) * max_space_F
     else:
         max_space_length = config.data.max_space_length
 
     print('encoder max space length:', max_space_length)
+
+    meta_data['num_neurons'] = [n_neurons]
+    print(meta_data)
+
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
+
+    if config.model.model_class == 'iTransformer':
+        model.load_checkpoint(model_path)
+        model.masker.mode = mask_mode
+        model.masker.ratio = 0
+        model.masker.force_active = False
+        print("(eval) masking mode: ", model.masker.mode)
+        print("(eval) masking ratio: ", model.masker.ratio)
+        print("(eval) masking active: ", model.masker.force_active)
+    else:
+        model = torch.load(model_path)['model']
+        model.encoder.masker.mode = mask_mode
+        model.encoder.masker.force_active = False
+        print("(eval) masking mode: ", model.encoder.masker.mode)
+        print("(eval) masking ratio: ", model.encoder.masker.ratio)
+        print("(eval) masking active: ", model.encoder.masker.force_active)
+        if 'causal' in mask_name:
+            model.encoder.context_forward = 0
+            print("(behave decoding) context forward: ", model.encoder.context_forward)
+    
+    model = accelerator.prepare(model)
 
     dataloader = make_loader(
         dataset,
@@ -108,6 +141,7 @@ def load_model_data_local(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
         shuffle=False,
     )
 
@@ -201,7 +235,7 @@ def co_smoothing_eval(
             if counter >= tot_num_neurons:
                 break
             gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
-            time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
+            time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst, nemo_rep_lst = [], [], [], [], [], [], []
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
@@ -224,11 +258,16 @@ def co_smoothing_eval(
                             spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
                             targets_lst.append(batch['target'])
                             neuron_regions_lst.append(batch['neuron_regions'])
+                            nemo_rep_lst.append(batch['nemo_rep'])
                         else:
                             break
 
-                    masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
+                    try:
+                        masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
+                        model.encoder.mask = False
+                    except AttributeError:
+                        masking_mode = model.masker.mode
+                        model.mask = False
                     
                     outputs = model(
                         torch.cat(mask_spikes_lst, 0),
@@ -237,11 +276,12 @@ def co_smoothing_eval(
                         spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
                         spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
                         targets = torch.cat(targets_lst, 0),
-                        neuron_regions=np.stack(neuron_regions_lst),
+                        neuron_regions=np.stack(neuron_regions_lst, axis=-1).squeeze(),
                         eval_mask=torch.cat(eval_mask_lst, 0),
                         masking_mode = masking_mode,
                         num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        eid=batch['eid'][0],
+                        nemo_rep=torch.cat(nemo_rep_lst, 0)
                     )
             outputs.preds = torch.exp(outputs.preds)
     
@@ -306,10 +346,14 @@ def co_smoothing_eval(
                         heldout_idxs=hd,
                         target_regions=target_regions,
                         neuron_regions=region_list
-                    )                
+                    )  
                     
-                    masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
+                    try:
+                        masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
+                        model.encoder.mask = False
+                    except AttributeError:
+                        masking_mode = model.masker.mode
+                        model.mask = False
                     
                     outputs = model(
                         mask_result['spikes'],
@@ -322,7 +366,8 @@ def co_smoothing_eval(
                         eval_mask=mask_result['eval_mask'],
                         masking_mode=masking_mode,
                         num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        eid=batch['eid'][0],
+                        nemo_rep=batch['nemo_rep']
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -399,8 +444,12 @@ def co_smoothing_eval(
                         neuron_regions=region_list
                     )              
 
-                    masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
+                    try:
+                        masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+                        model.encoder.mask = False
+                    except AttributeError:
+                        masking_mode = model.masker.mode
+                        model.mask = False
                     
                     outputs = model(
                         mask_result['spikes'],
@@ -413,7 +462,8 @@ def co_smoothing_eval(
                         eval_mask=mask_result['eval_mask'],
                         masking_mode=masking_mode,
                         num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        eid=batch['eid'][0],
+                        nemo_rep=batch['nemo_rep']
                     )
             outputs.preds = torch.exp(outputs.preds)
         
@@ -479,7 +529,7 @@ def co_smoothing_eval(
                     break
 
                 gt_spikes_lst, mask_spikes_lst, eval_mask_lst, heldout_idxs_lst = [], [], [], []
-                time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
+                time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst, nemo_rep_lst = [], [], [], [], [], [], []
     
                 model.eval()
                 with torch.no_grad():
@@ -505,11 +555,16 @@ def co_smoothing_eval(
                                 spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
                                 targets_lst.append(batch['target'])
                                 neuron_regions_lst.append(batch['neuron_regions'])
+                                nemo_rep_lst.append(batch['nemo_rep'])
                             else:
                                 break
 
-                        masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
-                        model.encoder.mask = False
+                        try:
+                            masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
+                            model.encoder.mask = False
+                        except AttributeError:
+                            masking_mode = model.masker.mode
+                            model.mask = False
                         
                         outputs = model(
                             torch.cat(mask_spikes_lst, 0),
@@ -518,11 +573,12 @@ def co_smoothing_eval(
                             spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
                             spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
                             targets = torch.cat(targets_lst, 0),
-                            neuron_regions=np.stack(neuron_regions_lst),
+                            neuron_regions=np.stack(neuron_regions_lst, axis=-1).squeeze(),
                             eval_mask=torch.cat(eval_mask_lst, 0),
                             masking_mode=masking_mode,
                             num_neuron=batch['spikes_data'].shape[2],
-                            eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            eid=batch['eid'][0],
+                            nemo_rep=torch.cat(nemo_rep_lst, 0)
                         )
                 outputs.preds = torch.exp(outputs.preds)
             
@@ -697,9 +753,9 @@ def behavior_decoding(**kwargs):
     mask_mode = mask_name.split("_")[1]
     eid = kwargs['eid']
     num_sessions = kwargs['num_sessions']
-    num_train_sessions = kwargs['num_train_sessions']
-    use_logreg = kwargs['use_logreg']
+    target = kwargs['target']
     use_trial_filter = kwargs['use_trial_filter']
+    use_nemo = kwargs['use_nemo']
 
     # set seed
     set_seed(seed)
@@ -708,10 +764,7 @@ def behavior_decoding(**kwargs):
     config = config_from_kwargs({"model": f"include:{model_config}"})
     config = update_config(model_config, config)
     config = update_config(trainer_config, config)
-
     config.model.encoder.masker.mode = mask_mode
-
-    target = config.data.target
 
     accelerator = Accelerator()
 
@@ -726,49 +779,29 @@ def behavior_decoding(**kwargs):
                         eid=eid
                     )
     print(meta_data)
-    log_dir = os.path.join(
-            config.dirs.log_dir, 
-            "train", 
-            "num_session_{}".format(num_train_sessions),
-            "model_{}".format(config.model.model_class), 
-            "method_sl", mask_name, 
-            f"ratio_{mask_ratio}", 
-            target,
-            eid
-    )
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    model_class = NAME2MODEL[config.model.model_class]
-    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
-    if use_logreg:
-        model = torch.load(model_path)['model']
-
-    if not kwargs['from_scratch'] and not use_logreg:
-        pretrained_model = torch.load(model_path)['model']
-        model.encoder = pretrained_model.encoder
-        if kwargs['freeze_encoder']:
-            for param in model.encoder.parameters():
-                param.requires_grad = False
-
-    model.encoder.masker.mode = mask_mode
-    model.encoder.masker.ratio = mask_ratio
-    model.encoder.masker.force_active = False
-
-    print("(behave decoding) masking mode: ", model.encoder.masker.mode)
-    print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
-    print("(behave decoding) masking active: ", model.encoder.masker.force_active)
-    if 'causal' in mask_name:
-        model.encoder.context_forward = 0
-        print("(behave decoding) context forward: ", model.encoder.context_forward)
-
-    model = accelerator.prepare(model)
 
     # load the dataset
     dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
+
+    if use_nemo:
+        neuron_uuids = np.array(train_dataset['cluster_uuids'][0]).astype('str')
+        with open('data/MtM_unit_embed.pkl','rb') as file:
+            nemo_data = pickle.load(file)
+        nemo_uuids = nemo_data['uuids']
+        include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
+        n_neurons = len(include_uuids)
+        print('Use NEMO cell-type embeddings.')
+        print('Num of neurons with NEMO embeddings: ', n_neurons)
+    else:
+        n_neurons = len(train_dataset['cluster_regions'][0])
+
+    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
+        config["model"]["encoder"]["neuron_regions"] = list(
+            set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a)
+        )
 
     if use_trial_filter:
         # load the trial filter
@@ -786,20 +819,46 @@ def behavior_decoding(**kwargs):
         test_dataset = test_dataset.select(test_filter_idx)
         print(f"Filtered trials: train {len(train_dataset)}, val {len(val_dataset)}, test {len(test_dataset)}")
 
-    n_neurons = len(train_dataset['cluster_regions'][0])
-
     if config.model.model_class in ["NDT1", "iTransformer"]:
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
-        max_space_length = config.model.encoder.embedder.n_neurons
+        max_space_F = config.model.encoder.embedder.max_space_F
+        max_space_length = ceil(n_neurons/max_space_F) * max_space_F
     else:
         max_space_length = config.data.max_space_length
 
     print('encoder max space length:', max_space_length)
 
+    meta_data['max_space_length'] = max_space_length 
+    meta_data['num_neurons'] = [n_neurons]
+    print(meta_data)
+
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+
+    if config.model.model_class == 'iTransformer':
+        model.load_checkpoint(model_path)
+        model.masker.mode = mask_mode
+        model.masker.ratio = mask_ratio
+        print("(behave decoding) masking mode: ", model.masker.mode)
+        print("(behave decoding) masking ratio: ", model.masker.ratio)
+        print("(behave decoding) masking active: ", model.masker.force_active)
+    else:
+        model = torch.load(model_path)['model']
+        model.encoder.masker.mode = mask_mode
+        model.encoder.masker.ratio = mask_ratio
+        print("(behave decoding) masking mode: ", model.encoder.masker.mode)
+        print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
+        print("(behave decoding) masking active: ", model.encoder.masker.force_active)
+        if args.mask_mode == 'causal':
+            model.encoder.context_forward = 0
+            print("(train) context forward: ", model.encoder.context_forward)
+
+    model = accelerator.prepare(model)
+
     train_dataloader = make_loader(
         train_dataset,
-        target=config.data.target,
+        target=target,
         batch_size=config.training.train_batch_size,
         pad_to_right=True,
         pad_value=-1.,
@@ -807,12 +866,13 @@ def behavior_decoding(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
-        shuffle=True
+        use_nemo=use_nemo,
+        shuffle=False
     )
 
     val_dataloader = make_loader(
         val_dataset,
-        target=config.data.target,
+        target=target,
         batch_size=config.training.test_batch_size,
         pad_to_right=True,
         pad_value=-1.,
@@ -820,12 +880,13 @@ def behavior_decoding(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
         shuffle=False
     )
 
     test_dataloader = make_loader(
         test_dataset,
-        target=config.data.target,
+        target=target,
         batch_size=10000,
         pad_to_right=True,
         pad_value=-1.,
@@ -833,190 +894,407 @@ def behavior_decoding(**kwargs):
         max_space_length=max_space_length,
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
         shuffle=False
     )
-    per_mode_res = {}
-    if not use_logreg:
-        optimizer = torch.optim.AdamW(
-            model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps
-        )
-        lr_scheduler = OneCycleLR(
-                        optimizer=optimizer,
-                        total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                        max_lr=config.optimizer.lr,
-                        pct_start=config.optimizer.warmup_pct,
-                        div_factor=config.optimizer.div_factor,
-                    )
 
-        trainer_kwargs = {
-            "log_dir": log_dir,
-            "accelerator": accelerator,
-            "lr_scheduler": lr_scheduler,
-            "config": config,
+    train_y, train_x = [], []
+    model.eval()
+    with torch.no_grad():
+        for batch in train_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            model.encoder.mask = False
+            outputs = model(
+                batch['spikes_data'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                neuron_regions=batch['neuron_regions'],
+                eval_mask=torch.ones_like(batch['spikes_data']),
+                masking_mode = 'causal' if target == 'choice' else 'causal',
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0],  
+                nemo_rep=batch['nemo_rep']
+            )
+            train_y.append(batch['target'].clone())
+            train_x.append(outputs.preds.clone())
+
+        for batch in val_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)   
+            model.encoder.mask = False 
+            outputs = model(
+                batch['spikes_data'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                neuron_regions=batch['neuron_regions'],
+                eval_mask=torch.ones_like(batch['spikes_data']),
+                masking_mode = 'causal' if target == 'choice' else 'causal',
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0],
+                nemo_rep=batch['nemo_rep']
+            )
+            train_y.append(batch['target'].clone())
+            train_x.append(outputs.preds.clone())
+    train_y = torch.cat(train_y, dim=0)
+    train_x = torch.cat(train_x, dim=0)
+
+    test_y, test_x = [], []
+    model.eval()
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            
+            model.encoder.mask = False
+            
+            outputs = model(
+                batch['spikes_data'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                neuron_regions=batch['neuron_regions'],
+                eval_mask=torch.ones_like(batch['spikes_data']),
+                masking_mode = 'causal' if target == 'choice' else 'causal',
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0],
+                nemo_rep=batch['nemo_rep']
+            )
+            test_y.append(batch['target'].clone())
+            test_x.append(outputs.preds.clone())
+    test_y = torch.cat(test_y, dim=0)
+    test_x = torch.cat(test_x, dim=0)
+
+    
+    train_y = train_y.cpu().detach().numpy()
+    train_x = train_x.cpu().detach().numpy().reshape((len(train_x), -1))
+    test_y = test_y.cpu().detach().numpy()
+    test_x = test_x.cpu().detach().numpy().reshape((len(test_x), -1))
+
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.linear_model import LogisticRegression, Ridge
+    from sklearn.metrics import accuracy_score, r2_score
+
+    if target == 'choice':
+        train_y, test_y = train_y.argmax(1).flatten(), test_y.argmax(1).flatten()
+        grid={"C": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4], "penalty":["l2"]}
+        logreg=LogisticRegression(random_state=seed)
+        logreg_cv=GridSearchCV(logreg, grid, cv=4)
+        logreg_cv.fit(train_x, train_y)
+        test_pred = logreg_cv.predict(test_x)
+        acc = accuracy_score(test_y, test_pred)
+        results = {
+            metric: acc
         }
-        trainer_ = make_trainer(
-            model=model,
-            train_dataloader=train_dataloader,
-            eval_dataloader=val_dataloader,
-            test_dataloader=test_dataloader,
-            optimizer=optimizer,
-            **trainer_kwargs,
-            **meta_data
-        )
-        
-        trainer_.train()
+    elif target == 'whisker-motion-energy':
+        grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
+        reg=Ridge(random_state=seed)
+        reg_cv=GridSearchCV(reg, grid, cv=4)
+        reg_cv.fit(train_x, train_y)
+        test_pred = reg_cv.predict(test_x)
+        r2 = r2_score(test_y.flatten(), test_pred.flatten())
+        results = {
+            metric: r2
+        }
 
-        model = torch.load(os.path.join(log_dir, 'model_best.pt'))['model']
 
-        model.encoder.masker.force_active = False
-        print("(behave decoding) masking active: ", model.encoder.masker.force_active)
-
-        for prompting_mode in PROMPTING_MODE:
-            gt, preds = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    gt.append(outputs.targets.clone())
-                    preds.append(outputs.preds.clone())
-            gt = torch.cat(gt, dim=0)
-            preds = torch.cat(preds, dim=0)
-
-            if config.method.model_kwargs.loss == "cross_entropy":
-                preds = torch.nn.functional.softmax(preds, dim=1) 
-
-            if config.method.model_kwargs.clf:
-                results = metrics_list(gt = gt.argmax(1),
-                                    pred = preds.argmax(1), 
-                                    metrics=[metric], 
-                                    device=accelerator.device)
-            elif config.method.model_kwargs.reg:
-                results = metrics_list(gt = gt,
-                                    pred = preds,
-                                    metrics=[metric],
-                                    device=accelerator.device)
-            per_mode_res[target+'_'+prompting_mode] = results
-            
-    else:
-        train_val_dataset = torch.utils.data.ConcatDataset([train_dataset, val_dataset])
-        train_val_dataloader = make_loader(
-            train_val_dataset,
-            target=config.data.target,
-            batch_size=config.training.train_batch_size,
-            pad_to_right=True,
-            pad_value=-1.,
-            max_time_length=config.data.max_time_length,
-            max_space_length=max_space_length,
-            dataset_name=config.data.dataset_name,
-            load_meta=config.data.load_meta,
-            shuffle=False
-        )
-        for prompting_mode in PROMPTING_MODE:
-            train_y, train_x = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in train_val_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    train_y.append(batch['target'].clone())
-                    train_x.append(outputs.preds.clone())
-
-                train_y = torch.cat(train_y, dim=0)
-                train_x = torch.cat(train_x, dim=0)
-
-            test_y, test_x = [], []
-            model.eval()
-            with torch.no_grad():
-                for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
-                    
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        batch['spikes_data'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        masking_mode = prompting_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
-                    test_y.append(batch['target'].clone())
-                    test_x.append(outputs.preds.clone())
-                test_y = torch.cat(test_y, dim=0)
-                test_x = torch.cat(test_x, dim=0)
-            
-            train_y = train_y.cpu().numpy()
-            train_x = train_x.cpu().numpy().reshape(train_x.shape[0], -1)
-            test_y = test_y.cpu().numpy()
-            test_x = test_x.cpu().numpy().reshape(test_x.shape[0], -1)
-
-            from sklearn.model_selection import GridSearchCV
-            from sklearn.linear_model import LogisticRegression, Ridge
-            from sklearn.metrics import accuracy_score, r2_score
-            if target == 'choice':
-                train_y, test_y = train_y.argmax(1).flatten(), test_y.argmax(1).flatten()
-                grid={"C": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4], "penalty":["l2"]}
-                logreg=LogisticRegression(random_state=seed)
-                logreg_cv=GridSearchCV(logreg, grid, cv=4)
-                logreg_cv.fit(train_x, train_y)
-                test_pred = logreg_cv.predict(test_x)
-                acc = accuracy_score(test_y, test_pred)
-                print(f"accuracy: {acc}, metric: {metric}")
-                per_mode_res[target+'_'+prompting_mode] = {"acc": acc}
-            elif target == 'whisker-motion-energy':
-                grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
-                reg=Ridge(random_state=seed)
-                reg_cv=GridSearchCV(reg, grid, cv=4)
-                reg_cv.fit(train_x, train_y)
-                test_pred = reg_cv.predict(test_x)
-                r2 = r2_score(test_y.flatten(), test_pred.flatten())
-                print(f"r2: {r2}, metric: {metric}")
-                per_mode_res[target+'_'+prompting_mode] = {"rsquared": r2}
-
-            else:
-                raise NotImplementedError('target not implemented')
-            
     if not os.path.exists(kwargs['save_path']):
         os.makedirs(kwargs['save_path'])
-    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), per_mode_res)
-
-    return {
-        f"{target}_{metric}": per_mode_res,
-    }
+    np.save(os.path.join(kwargs['save_path'], f'{target}_results.npy'), results)
     
+    return {
+        f"{target}_{metric}": results[metric],
+    }
+
+
+def region_wise_behavior_decoding(**kwargs):
+    model_config = kwargs['model_config']
+    trainer_config = kwargs['trainer_config']
+    model_path = kwargs['model_path']
+    dataset_path = kwargs['dataset_path']
+    test_size = kwargs['test_size']
+    seed = kwargs['seed']
+    mask_name = kwargs['mask_name']
+    metric = kwargs['metric']
+    mask_ratio = kwargs['mask_ratio']
+    mask_mode = mask_name.split("_")[1]
+    eid = kwargs['eid']
+    num_sessions = kwargs['num_sessions']
+    target = kwargs['target']
+    use_nemo = kwargs['use_nemo']
+
+    # set seed
+    set_seed(seed)
+
+    # load the model
+    config = config_from_kwargs({"model": f"include:{model_config}"})
+    config = update_config(model_config, config)
+    config = update_config(trainer_config, config)
+    config.model.encoder.masker.mode = mask_mode
+
+    accelerator = Accelerator()
+
+    _,_,_, meta_data = load_ibl_dataset(
+                        cache_dir=config.dirs.dataset_cache_dir,
+                        user_or_org_name=config.dirs.huggingface_org,
+                        num_sessions=1,
+                        split_method="predefined",
+                        test_session_eid=[],
+                        batch_size=config.training.train_batch_size,
+                        seed=seed,
+                        eid=eid
+                    )
+    print(meta_data)
+
+    # load the dataset
+    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["val"]
+    test_dataset = dataset["test"]
+
+    cluster_regions = np.array(test_dataset['cluster_regions'])[0].astype('str')
+
+    if use_nemo:
+        neuron_uuids = np.array(train_dataset['cluster_uuids'][0]).astype('str')
+        with open('data/MtM_unit_embed.pkl','rb') as file:
+            nemo_data = pickle.load(file)
+        nemo_uuids = nemo_data['uuids']
+        include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
+        include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)
+        cluster_regions = cluster_regions[include_neuron_ids].squeeze()
+        print('Use NEMO cell-type embeddings.')
+        print('Num of neurons with NEMO embeddings: ', n_neurons)
+
+    if config.model.model_class == "iTransformer" and config.model.encoder.embed_region:
+        config["model"]["encoder"]["neuron_regions"] = list(
+            set(str(b) for a in [row["cluster_regions"] for rows in dataset.values() for row in rows] for b in a)
+        )
+
+    n_neurons = len(cluster_regions)
+    brain_regions = []
+    for region in np.unique(cluster_regions):
+        if region not in ['root']:
+            brain_regions.append(region)
+
+    if config.model.model_class in ["NDT1", "iTransformer"]:
+        max_space_length = n_neurons  
+    elif config.model.model_class == "STPatch":
+        max_space_F = config.model.encoder.embedder.max_space_F
+        max_space_length = ceil(n_neurons/max_space_F) * max_space_F
+    else:
+        max_space_length = config.data.max_space_length
+
+    print('encoder max space length:', max_space_length)
+
+    meta_data['max_space_length'] = max_space_length
+    meta_data['num_neurons'] = [n_neurons]
+
+    model_class = NAME2MODEL[config.model.model_class]
+    model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+
+    if config.model.model_class == 'iTransformer':
+        model.load_checkpoint(model_path)
+        model.masker.mode = mask_mode
+        model.masker.ratio = mask_ratio
+        print("(behave decoding) masking mode: ", model.masker.mode)
+        print("(behave decoding) masking ratio: ", model.masker.ratio)
+        print("(behave decoding) masking active: ", model.masker.force_active)
+    else:
+        model = torch.load(model_path)['model']
+        model.encoder.masker.mode = mask_mode
+        model.encoder.masker.ratio = mask_ratio
+        model.encoder.masker.force_active = False
+        print("(behave decoding) masking mode: ", model.encoder.masker.mode)
+        print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
+        print("(behave decoding) masking active: ", model.encoder.masker.force_active)
+        if 'causal' in mask_name:
+            model.encoder.context_forward = 0
+            print("(behave decoding) context forward: ", model.encoder.context_forward)
+
+    model = accelerator.prepare(model)
+
+    train_dataloader = make_loader(
+        train_dataset,
+        target=target,
+        batch_size=config.training.train_batch_size,
+        pad_to_right=True,
+        pad_value=-1.,
+        max_time_length=config.data.max_time_length,
+        max_space_length=max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
+        shuffle=False
+    )
+
+    val_dataloader = make_loader(
+        val_dataset,
+        target=target,
+        batch_size=config.training.test_batch_size,
+        pad_to_right=True,
+        pad_value=-1.,
+        max_time_length=config.data.max_time_length,
+        max_space_length=max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
+        shuffle=False
+    )
+
+    test_dataloader = make_loader(
+        test_dataset,
+        target=target,
+        batch_size=10000,
+        pad_to_right=True,
+        pad_value=-1.,
+        max_time_length=config.data.max_time_length,
+        max_space_length=max_space_length,
+        dataset_name=config.data.dataset_name,
+        load_meta=config.data.load_meta,
+        use_nemo=use_nemo,
+        shuffle=False
+    )
+
+    results = {}
+    for region in brain_regions:
+
+        print(f'Start {region}:')
+        if len(np.argwhere(cluster_regions == region).flatten()) < 1:
+            print(f'Skip {region} due to too few neurons.')
+            continue
+
+        train_y, train_x = [], []
+        model.eval()
+        with torch.no_grad():
+            for batch in train_dataloader:
+                batch = move_batch_to_device(batch, accelerator.device)
+                model.encoder.mask = False
+
+                mask_result = heldout_mask(
+                    batch['spikes_data'].clone(),
+                    mode='intra_region',
+                    heldout_idxs=np.array([]),
+                    target_regions=[region],
+                    neuron_regions=cluster_regions
+                )   
+                heldout_idxs = mask_result['heldout_idxs']
+
+                outputs = model(
+                    mask_result['spikes'],
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    neuron_regions=batch['neuron_regions'],
+                    eval_mask=mask_result['eval_mask'],
+                    masking_mode = 'intra-region',
+                    num_neuron=batch['spikes_data'].shape[2],
+                    eid=batch['eid'][0],
+                    nemo_rep=batch['nemo_rep']
+                )
+                train_y.append(batch['target'].clone())
+                train_x.append(torch.exp(outputs.preds.clone()[:,:,heldout_idxs]))
+
+            for batch in val_dataloader:
+                batch = move_batch_to_device(batch, accelerator.device)   
+                model.encoder.mask = False 
+                mask_result = heldout_mask(
+                    batch['spikes_data'].clone(),
+                    mode='intra_region',
+                    heldout_idxs=np.array([]),
+                    target_regions=[region],
+                    neuron_regions=cluster_regions
+                )   
+                heldout_idxs = mask_result['heldout_idxs']
+
+                outputs = model(
+                    mask_result['spikes'],
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    neuron_regions=batch['neuron_regions'],
+                    eval_mask=mask_result['eval_mask'],
+                    masking_mode = 'intra-region',
+                    num_neuron=batch['spikes_data'].shape[2],
+                    eid=batch['eid'][0],
+                    nemo_rep=batch['nemo_rep']
+                )
+                train_y.append(batch['target'].clone())
+                train_x.append(torch.exp(outputs.preds.clone()[:,:,heldout_idxs]))
+        train_y = torch.cat(train_y, dim=0)
+        train_x = torch.cat(train_x, dim=0)
+
+        test_y, test_x = [], []
+        model.eval()
+        with torch.no_grad():
+            for batch in test_dataloader:
+                batch = move_batch_to_device(batch, accelerator.device)
+                
+                model.encoder.mask = False
+                
+                mask_result = heldout_mask(
+                    batch['spikes_data'].clone(),
+                    mode='intra_region',
+                    heldout_idxs=np.array([]),
+                    target_regions=[region],
+                    neuron_regions=cluster_regions
+                )   
+                heldout_idxs = mask_result['heldout_idxs']
+
+                outputs = model(
+                    mask_result['spikes'],
+                    time_attn_mask=batch['time_attn_mask'],
+                    space_attn_mask=batch['space_attn_mask'],
+                    spikes_timestamps=batch['spikes_timestamps'], 
+                    spikes_spacestamps=batch['spikes_spacestamps'], 
+                    neuron_regions=batch['neuron_regions'],
+                    eval_mask=mask_result['eval_mask'],
+                    masking_mode = 'intra-region',
+                    num_neuron=batch['spikes_data'].shape[2],
+                    eid=batch['eid'][0],
+                    nemo_rep=batch['nemo_rep']
+                )
+                test_y.append(batch['target'].clone())
+                test_x.append(torch.exp(outputs.preds.clone()[:,:,heldout_idxs]))
+        test_y = torch.cat(test_y, dim=0)
+        test_x = torch.cat(test_x, dim=0)
+
+        print(train_x.shape)
+        
+        train_y = train_y.cpu().detach().numpy()
+        train_x = train_x.cpu().detach().numpy().reshape((len(train_x), -1))
+        test_y = test_y.cpu().detach().numpy()
+        test_x = test_x.cpu().detach().numpy().reshape((len(test_x), -1))
+
+        if target == 'choice':
+            train_y, test_y = train_y.argmax(1).flatten(), test_y.argmax(1).flatten()
+            grid={"C": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4], "penalty":["l2"]}
+            logreg=LogisticRegression(random_state=seed)
+            logreg_cv=GridSearchCV(logreg, grid, cv=4)
+            logreg_cv.fit(train_x, train_y)
+            test_pred = logreg_cv.predict(test_x)
+            acc = accuracy_score(test_y, test_pred)
+            results[region] = acc
+        elif target == 'whisker-motion-energy':
+            grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
+            reg=Ridge(random_state=seed)
+            reg_cv=GridSearchCV(reg, grid, cv=4)
+            reg_cv.fit(train_x, train_y)
+            test_pred = reg_cv.predict(test_x)
+            r2 = r2_score(test_y.flatten(), test_pred.flatten())
+            results[region] = r2
+
+    if not os.path.exists(kwargs['save_path']):
+        os.makedirs(kwargs['save_path'])
+    np.save(os.path.join(kwargs['save_path'], f'{target}_region_results.npy'), results)
+        
+    return results
+    
+
+
 def compare_R2_scatter(**kwargs):
     A_path = kwargs['A_path'],
     B_path = kwargs['B_path'],
@@ -1094,8 +1372,11 @@ def heldout_mask(
         for region in target_regions:
             region_idxs = np.argwhere(neuron_regions == region).flatten()
             mask[:, :, region_idxs] = 1 
-            target_idxs = region_idxs[heldout_idxs]
-            mask[:, :, target_idxs] = 0
+            if len(heldout_idxs) == 0:
+                target_idxs = region_idxs
+            else:
+                target_idxs = region_idxs[heldout_idxs]
+                mask[:, :, target_idxs] = 0
             hd.append(target_idxs)
         hd = np.stack(hd).flatten()
             
@@ -1610,3 +1891,5 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+        
+
