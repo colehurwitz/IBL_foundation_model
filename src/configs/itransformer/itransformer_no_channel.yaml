@@ -6,7 +6,7 @@ encoder:
 
   masker: 
     force_active: true         
-    mode: all           # masking mode
+    mode: all      # masking mode
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
@@ -17,7 +17,7 @@ encoder:
     mask_regions: ['all']        # brain regions to mask in ``inter-region`` mode
     target_regions: ['all']     # brain regions to predict in ``intra-region`` mode
     n_mask_regions: 1       # number of regions to choose from the list of mask_regions or target_regions
-    causal_zero: true       # only for iTransformer causal mode
+    causal_zero: true  
   
 
   embedder:
@@ -35,17 +35,17 @@ encoder:
   dropout: 0.4
   n_heads: 8
   n_layers: 5
-  max_n_channels: 154       # 0 to skip channel embeddings
+  max_n_channels: 0       # 0 to skip channel embeddings
   embed_region: true
   neuron_regions: null       # set this to the list of all regions in the dataset before initialisation
-  embed_nemo: false
+  embed_nemo: true
   attn_mode: all       # all, inter-region, inter-region-switch, intra-region, mix_sequence, mix_multihead, mix_sample, none
   attn_mix_n: [2, 2, 4]        # inter-region, intra-region, all, should add up to n_heads (mix_multihead)
   attn_mix_seq: ['intra-region', 'intra-region','inter-region', 'intra-region', 'intra-region'] # sequence of residual block (mix_sequence)
   attn_mix_ratio: [0.25, 0.25, 0.5] # inter : intra : all, should add up to 1 (mix_sample)
 
-
 decoder:
   from_pt: null
   mlp_decoder: true
   activation: relu
+  use_cls: false

@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torch import FloatTensor, Tensor
+
 from utils.config_utils import DictConfig
 
 
@@ -49,21 +51,22 @@ class Masker(nn.Module):
         self.mask_regions = config.mask_regions
         self.target_regions = config.target_regions
         self.n_mask_regions = config.n_mask_regions
+        self.causal_zero = config.causal_zero
 
     def forward(
         self, 
         spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
         neuron_regions: np.ndarray = None,              # (bs, n_channels)     
-    ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
+    ) -> Tuple[torch.FloatTensor, torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
 
         if not self.training and not self.force_active:
-            return spikes, torch.zeros_like(spikes)
+            return spikes, torch.zeros_like(spikes).to(torch.int64)
         elif self.target_regions is None:
-            return spikes, torch.zeros_like(spikes)
+            return spikes, torch.zeros_like(spikes).to(torch.int64)
         elif self.mask_regions is None:
-            return spikes, torch.zeros_like(spikes)
+            return spikes, torch.zeros_like(spikes).to(torch.int64)
         elif self.ratio == 0:
-            return spikes, torch.zeros_like(spikes)
+            return spikes, torch.zeros_like(spikes).to(torch.int64)
 
 
         if 'all' in self.mask_regions:
@@ -81,6 +84,14 @@ class Masker(nn.Module):
                 timespan = 1
             mask_ratio = mask_ratio/timespan
             mask_probs = torch.full(spikes[:, :, 0].shape, mask_ratio) # (bs, seq_len)
+
+            # for causal mask in iTransformer, we must expand the mask.
+            if self.mode == "causal":
+                timespan = torch.randint(1, self.max_timespan+1, (1, )).item()     
+                # hack: hard set this to a number
+                mask_ratio = 0.01
+                mask_probs = torch.full(spikes[:, :, 0].shape, mask_ratio) # (bs, seq_len)
+                
         elif self.mode == "neuron":
             mask_probs = torch.full(spikes[:, 0].shape, mask_ratio)    # (bs, n_channels)
         elif self.mode == "random":
@@ -124,7 +135,16 @@ class Masker(nn.Module):
         if self.mode in ["temporal", "random_token", "causal"]:
             if timespan > 1:
                 mask = self.expand_timesteps(mask, timespan)
-            mask = mask.unsqueeze(2).expand_as(spikes).bool()    
+
+            # Causal mask for iTransformer
+            if self.causal_zero and self.mode == "causal":
+                _idx = torch.argmax(mask.int(), dim=1).int()
+                _target = mask.clone()
+                for j in range(mask.shape[0]):
+                    mask[j, _idx[j]:] = 1
+                    
+            mask = mask.unsqueeze(2).expand_as(spikes).bool()  
+            
         elif self.mode in ["neuron","region","intra-region","inter-region"]:
             mask = mask.unsqueeze(1).expand_as(spikes).bool()    
         elif self.mode in ["co-smooth"]:
@@ -141,7 +161,10 @@ class Masker(nn.Module):
         random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device)).to(spikes.dtype)
         spikes[random_idx] = random_spikes[random_idx]
 
-        targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(spikes.device)
+        if self.mode == "causal" and self.causal_zero:
+            targets_mask = _target.unsqueeze(2).expand_as(spikes).bool()
+        else:
+            targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(spikes.device)
         return spikes, targets_mask.to(torch.int64) 
 
     @staticmethod

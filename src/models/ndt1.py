@@ -145,7 +145,7 @@ class NeuralEmbeddingLayer(nn.Module):
         # Embed prompt token
         self.use_prompt = config.use_prompt
         if self.use_prompt:
-            self.mask_types = ['neuron', 'causal', 'inter-region', 'intra-region']
+            self.mask_types = ['neuron', 'temporal', 'causal', 'inter-region', 'intra-region']
             self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
             self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
 

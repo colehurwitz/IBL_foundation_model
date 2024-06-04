@@ -266,7 +266,7 @@ def co_smoothing_eval(
                         masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
                         model.encoder.mask = False
                     except AttributeError:
-                        masking_mode = model.masker.mode
+                        masking_mode = 'neuron' if model.use_prompt else model.masker.mode
                         model.mask = False
                     
                     outputs = model(
@@ -352,7 +352,7 @@ def co_smoothing_eval(
                         masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
                         model.encoder.mask = False
                     except AttributeError:
-                        masking_mode = model.masker.mode
+                        masking_mode = 'causal' if model.use_prompt else model.masker.mode
                         model.mask = False
                     
                     outputs = model(
@@ -448,7 +448,7 @@ def co_smoothing_eval(
                         masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
                         model.encoder.mask = False
                     except AttributeError:
-                        masking_mode = model.masker.mode
+                        masking_mode = 'inter-region' if model.use_prompt else model.masker.mode
                         model.mask = False
                     
                     outputs = model(
@@ -563,7 +563,7 @@ def co_smoothing_eval(
                             masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
                             model.encoder.mask = False
                         except AttributeError:
-                            masking_mode = model.masker.mode
+                            masking_mode = 'intra-region' if model.use_prompt else model.masker.mode
                             model.mask = False
                         
                         outputs = model(

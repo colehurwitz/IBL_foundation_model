@@ -51,11 +51,11 @@ print(f'Working on EID: {eid} ...')
 model_acroynm = args.model_name.lower()
 
 # load config
-if args.mask_mode == 'causal':
+if (args.mask_mode == 'causal') & (args.model_name != 'iTransformer'):
     kwargs = {
         "model": f"include:src/configs/{model_acroynm}/{model_acroynm}_causal.yaml"
     }
-elif args.prompting:
+elif (args.prompting) & (args.model_name != 'iTransformer'):
     kwargs = {
         "model": f"include:src/configs/{model_acroynm}/{model_acroynm}_prompting.yaml"
     }
@@ -291,18 +291,18 @@ if args.eval:
     
     print(mask_name)
 
-    if args.mask_mode == 'causal':
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_causal.yaml"
-    elif args.prompting:
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_prompting.yaml"
+    if (args.mask_mode == 'causal') & (args.model_name != 'iTransformer'):
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_causal_eval.yaml"
+    elif (args.prompting) & (args.model_name != 'iTransformer'):
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_prompting_eval.yaml"
     elif args.tokenize_binary_mask:
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_mask_token.yaml"
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_mask_token_eval.yaml"
     elif args.no_channel_embed:
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_no_channel.yaml"
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_no_channel_eval.yaml"
     elif args.embed_nemo:
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_nemo.yaml"
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_nemo_eval.yaml"
     else:
-        model_config = f"src/configs/{model_acroynm}/{model_acroynm}.yaml"
+        model_config = f"src/configs/{model_acroynm}/{model_acroynm}_eval.yaml"
     
     # Configuration
     configs = {

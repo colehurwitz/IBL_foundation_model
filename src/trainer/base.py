@@ -46,7 +46,7 @@ class Trainer():
         else:
             self.masking_ratio = model.encoder.masker.ratio
             self.masking_mode = model.encoder.masker.mode
-        self.masking_schemes = ['neuron', 'causal']
+        self.masking_schemes = ['neuron', 'causal', 'temporal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
 
@@ -142,21 +142,10 @@ class Trainer():
         for batch in tqdm(self.train_dataloader):
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
-                if masking_mode == 'temporal':
-                    if self.model_class == 'iTransformer':
-                        self.model.masker.ratio = 0.3
-                    else:
-                        self.model.encoder.masker.ratio = 0.3
-                elif masking_mode == 'causal':
-                    if self.model_class == 'iTransformer':
-                        self.model.masker.ratio = 0.6
-                    else:
-                        self.model.encoder.masker.ratio = 0.6
+                if self.model_class == 'iTransformer':
+                    self.model.masker.ratio = self.masking_ratio
                 else:
-                    if self.model_class == 'iTransformer':
-                        self.model.masker.ratio = self.masking_ratio
-                    else:
-                        self.model.encoder.masker.ratio = self.masking_ratio
+                    self.model.encoder.masker.ratio = self.masking_ratio
             else:
                 masking_mode = self.masking_mode
             outputs = self._forward_model_outputs(batch, masking_mode)
@@ -204,21 +193,10 @@ class Trainer():
                 for batch in self.eval_dataloader:
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
-                        if masking_mode == 'temporal':
-                            if self.model_class == 'iTransformer':
-                                self.model.masker.ratio = 0.3
-                            else:
-                                self.model.encoder.masker.ratio = 0.3
-                        elif masking_mode == 'causal':
-                            if self.model_class == 'iTransformer':
-                                self.model.masker.ratio = 0.6
-                            else:
-                                self.model.encoder.masker.ratio = 0.6
+                        if self.model_class == 'iTransformer':
+                            self.model.masker.ratio = self.masking_ratio
                         else:
-                            if self.model_class == 'iTransformer':
-                                self.model.masker.ratio = self.masking_ratio
-                            else:
-                                self.model.encoder.masker.ratio = self.masking_ratio
+                            self.model.encoder.masker.ratio = self.masking_ratio
                     else:
                         masking_mode = self.masking_mode
                     outputs = self._forward_model_outputs(batch, masking_mode)
@@ -257,7 +235,7 @@ class Trainer():
                                         metrics=["r2"], 
                                         device=self.accelerator.device)
                     
-                elif self.config.method.model_kwargs.method_name == 'sl':
+                elif self.config.method.model_kwargs.method_name in ['sl', 'stat_behaviour', 'dyn_behaviour']:
                     if self.config.method.model_kwargs.clf:
                         results = metrics_list(gt = gt[idx].argmax(1),
                                             pred = preds[idx].argmax(1), 
