@@ -35,10 +35,10 @@ encoder:
   dropout: 0.4
   n_heads: 8
   n_layers: 5
-  max_n_channels: 0       # 0 to skip channel embeddings
   embed_region: true
   neuron_regions: null       # set this to the list of all regions in the dataset before initialisation
   embed_nemo: true
+  embed_channel: false
   attn_mode: all       # all, inter-region, inter-region-switch, intra-region, mix_sequence, mix_multihead, mix_sample, none
   attn_mix_n: [2, 2, 4]        # inter-region, intra-region, all, should add up to n_heads (mix_multihead)
   attn_mix_seq: ['intra-region', 'intra-region','inter-region', 'intra-region', 'intra-region'] # sequence of residual block (mix_sequence)

@@ -138,6 +138,7 @@ class iTransformerEncoder(nn.Module):
     def __init__(
         self,
         config: DictConfig,
+        n_channel: int,
         use_prompt: bool,
         use_session: bool,
     ):
@@ -167,10 +168,10 @@ class iTransformerEncoder(nn.Module):
             nn.LayerNorm(config.hidden_size), # MAJOR CHANGE HERE
         )
         
-        self.embed_channel = (config.max_n_channels != 0)
+        self.embed_channel = config.embed_channel
         if self.embed_channel:
             self.channel_embeddings = nn.Sequential(
-                nn.Embedding(config.max_n_channels, config.hidden_size),
+                nn.Embedding(n_channel, config.hidden_size),
                 nn.LayerNorm(config.hidden_size),
             )
 
@@ -324,7 +325,7 @@ class iTransformer(nn.Module):
         self.use_session = config.encoder.embedder.use_session
         
         # Build encoder
-        self.encoder = iTransformerEncoder(config.encoder, self.use_prompt, self.use_session)
+        self.encoder = iTransformerEncoder(config.encoder, kwargs['max_space_length'], self.use_prompt, self.use_session)
 
         # Load encoder weights
         if encoder_pt_path is not None:
