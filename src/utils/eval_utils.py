@@ -104,6 +104,7 @@ def load_model_data_local(**kwargs):
 
     print('encoder max space length:', max_space_length)
 
+    meta_data['max_space_length'] = max_space_length
     meta_data['num_neurons'] = [n_neurons]
     print(meta_data)
 
