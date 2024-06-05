@@ -424,6 +424,8 @@ class iTransformer(nn.Module):
         # change the format of neuron_regions
         if isinstance(neuron_regions, list):
             neuron_regions_np = np.asarray(neuron_regions).T
+        elif isinstance(neuron_regions, np.ndarray):
+            neuron_regions_np = neuron_regions.T
 
         # Encode neural data. x is the masked embedded spikes. targets_mask is True for masked bins
         spikes, targets_mask = self.masker(spikes, neuron_regions_np)
