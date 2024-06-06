@@ -317,7 +317,7 @@ if args.eval:
         'eid': eid,
         'stitching': False,
         'num_sessions': 1,
-        'use_nemo': True
+        'use_nemo': args.use_nemo
     }  
     
     # load your model and dataloader
@@ -463,7 +463,7 @@ if args.eval:
                 'num_sessions': 1,
                 'target': 'choice',
                 'use_trial_filter': False,
-                'use_nemo': True
+                'use_nemo': args.use_nemo
             }  
             results = behavior_decoding(**configs)
             print(results)
@@ -493,7 +493,7 @@ if args.eval:
                 'num_sessions': 1,
                 'target': args.cont_target,
                 'use_trial_filter': False,
-                'use_nemo': True
+                'use_nemo': args.use_nemo
             }  
             results = behavior_decoding(**configs)
             print(results)
