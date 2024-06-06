@@ -24,6 +24,7 @@ encoder:
     mask_regions: null     # brain regions to mask in ``inter-region`` mode
     target_regions: null  # brain regions to predict in ``intra-region`` mode
     n_mask_regions: 1       # number of regions to choose from the list of mask_regions or target_regions
+    causal_zero: true       # only for iTransformer causal mode
     
   patcher:
     active: true       

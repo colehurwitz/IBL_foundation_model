@@ -668,6 +668,7 @@ class NDT1(nn.Module):
         eval_mask:        Optional[torch.LongTensor] = None,
         num_neuron:       Optional[torch.LongTensor] = None,
         eid:              Optional[str] = None,
+        nemo_rep:         Optional[np.ndarray] = None, 
     ) -> NDT1Output:  
 
         _, _T, _ = spikes.size()

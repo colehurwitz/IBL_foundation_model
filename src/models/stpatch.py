@@ -570,6 +570,7 @@ class STPatch(nn.Module):
         eval_mask:        Optional[torch.LongTensor] = None,
         num_neuron:       Optional[torch.LongTensor] = None,
         eid:              Optional[str] = None,
+        nemo_rep:         Optional[np.ndarray] = None, 
     ) -> STPatchOutput:   
 
         B, T_, N = spikes.size()

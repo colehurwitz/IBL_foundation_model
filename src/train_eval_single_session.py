@@ -94,10 +94,11 @@ if config.wandb.use:
 # set seed for reproducibility
 set_seed(config.seed)
 
-ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'model_last.pt'
+last_ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'model_last.pt'
+best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
 
 if args.train:
-    final_checkpoint = f'{base_path}/results/{eid}/train/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/{ckpt_path}'
+    final_checkpoint = f'{base_path}/results/{eid}/train/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/{last_ckpt_path}'
     if not os.path.exists(final_checkpoint) or args.overwrite:
         
         _, _, _, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
@@ -307,7 +308,7 @@ if args.eval:
     # Configuration
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{ckpt_path}',
+        'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
         'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
         'dataset_path': None, 
         'test_size': 0.2,
@@ -447,7 +448,7 @@ if args.eval:
             print('Start choice_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{ckpt_path}',
+                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
                 'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
                 'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
                 'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/choice_decoding',
@@ -477,7 +478,7 @@ if args.eval:
             print('Start continuous_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{ckpt_path}',
+                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
                 'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
                 'dataset_path': None, 
                 'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/continuous_decoding',

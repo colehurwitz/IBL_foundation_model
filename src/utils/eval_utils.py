@@ -989,7 +989,7 @@ def behavior_decoding(**kwargs):
         results = {
             metric: acc
         }
-    elif target == 'whisker-motion-energy':
+    elif target in ['whisker-motion-energy', 'wheel-speed', 'left-whisker-motion-energy']:
         grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
         reg=Ridge(random_state=seed)
         reg_cv=GridSearchCV(reg, grid, cv=4)
@@ -1279,7 +1279,7 @@ def region_wise_behavior_decoding(**kwargs):
             test_pred = logreg_cv.predict(test_x)
             acc = accuracy_score(test_y, test_pred)
             results[region] = acc
-        elif target == 'whisker-motion-energy':
+        elif target in ['whisker-motion-energy', 'wheel-speed', 'left-whisker-motion-energy']:
             grid={"alpha": [0, 1e1, 1e2, 1e3, 1e4]}
             reg=Ridge(random_state=seed)
             reg_cv=GridSearchCV(reg, grid, cv=4)
