@@ -52,6 +52,8 @@ class MultiModal(nn.Module):
         if share_modality_embeddings:
             self.share_modality_embeddings()
 
+        # TO DO: Define masker to sample encoder and decoder tokens
+
         # TO DO
         self.encoder = Encoder(config.encoder, **kwargs)
         self.decoder = Decoder(config.decoder, **kwargs)
@@ -185,17 +187,22 @@ class MultiModal(nn.Module):
         num_encoder_tokens: int, 
         num_decoder_tokens: int, 
         loss_type: str = 'mod', 
-        return_logits: bool = False
     ) -> Union[Dict[str, torch.Tensor], Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
 
         encoder_mod_dict = {mod: self.encoder_embeddings[mod](d)
                             for mod, d in mod_dict.items()
                             if mod in self.encoder_embeddings}
+
+        # TO DO: Sample encoder tokens
+        
         encoder_tokens, encoder_emb, encoder_mask, encoder_mod_mask = self.forward_mask_encoder(encoder_mod_dict, num_encoder_tokens)
 
         decoder_mod_dict = {mod: self.decoder_embeddings[mod].forward_embed(d)
                             for mod, d in mod_dict.items()
                             if mod in self.decoder_embeddings}
+
+        # TO DO: Sample decoder tokens
+        
         decoder_tokens, decoder_emb, decoder_mask, target_ids, decoder_attention_mask, decoder_mod_mask = self.forward_mask_decoder(decoder_mod_dict, num_decoder_tokens)
 
         x = encoder_tokens + encoder_emb
