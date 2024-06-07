@@ -147,7 +147,7 @@ class MultiModal(nn.Module):
 
         return decoder_tokens_all, emb_all, target_gts_all, decoder_attn_mask_all, mod_mask_all, targets_mask_all
 
-    # Check
+    
     def forward_mask_encoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor]:
         
         B = list(mod_dict.values())[0]['inputs'].shape[0]
@@ -159,8 +159,9 @@ class MultiModal(nn.Module):
             sess_token = self.session_embed(sess_idx)[None,None,:].expand(B,-1,-1)
             encoder_tokens = torch.cat([sess_token, encoder_tokens], dim=1)
             encoder_emb = torch.cat([torch.zeros_like(sess_token), encoder_emb], dim=1)
-            encoder_mask = torch.cat([torch.zeros((B, sess_token.shape[1]), dtype=torch.bool, device=encoder_mask.device), encoder_mask], dim=1)
+            encoder_attn_mask = torch.cat([torch.zeros((B, sess_token.shape[1]), dtype=torch.bool, device=encoder_attn_mask.device), encoder_attn_mask], dim=1)
             mod_mask = torch.cat([torch.full((B, sess_token.shape[1]), -1, dtype=torch.int16, device=mod_mask.device), mod_mask], dim=1)
+            inputs_mask = torch.cat([torch.zeros((B, sess_token.shape[1]), dtype=torch.bool, device=inputs_mask.device), inputs_mask], dim=1)
 
         encoder_tokens[inputs_mask] = 0.
         encoder_emb[inputs_mask] = 0.
@@ -171,8 +172,9 @@ class MultiModal(nn.Module):
         
         return encoder_tokens, encoder_emb, encoder_attn_mask, mod_mask, inputs_mask
 
-    # Check 
+    
     def forward_mask_decoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor]:
+        
         decoder_tokens, decoder_emb, target_gts, decoder_attn_mask, mod_mask, targets_mask = self.cat_decoder_tensors(mod_dict)
 
         decoder_tokens[targets_mask] = 0.
