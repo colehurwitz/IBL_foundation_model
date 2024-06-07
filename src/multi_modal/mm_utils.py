@@ -14,6 +14,19 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 
+def create_context_mask(context_forward, context_backward, max_F) -> torch.LongTensor: 
+    
+    if context_forward == -1 and context_backward == -1:
+        return torch.ones(max_F, max_F).to(torch.int64)
+
+    context_forward = context_forward if context_forward >= 0 else max_F
+    context_backward = context_backward if context_backward >= 0 else max_F
+    mask = (torch.triu(torch.ones(max_F, max_F), diagonal=-context_forward).to(torch.int64)).transpose(0, 1)
+    if context_backward > 0:
+        back_mask = (torch.triu(torch.ones(max_F, max_F), diagonal=-context_backward).to(torch.int64))
+        mask = mask & back_mask
+    return mask
+
 
 class ScaleNorm(nn.Module):
     def __init__(self, scale, eps=1e-5):

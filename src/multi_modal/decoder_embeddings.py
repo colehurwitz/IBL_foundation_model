@@ -43,7 +43,6 @@ class DecoderEmbeddingLayer(nn.Module):
     def forward(
             self, 
             targets:           torch.FloatTensor,      
-            targets_mask:      torch.LongTensor,    
             targets_timestamp: torch.LongTensor,  
             targets_modality:  int,
         ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
@@ -82,11 +81,11 @@ class DecoderEmbedding(nn.Module):
     
     def forward(self, d : Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:    
         
-        targets, targets_mask, targets_timestamp, targets_modality  = d['targets'], d['targets_mask'], d['targets_timestamp'], d['targets_modality']
+        targets, targets_timestamp, targets_modality  = d['targets'], d['targets_timestamp'], d['targets_modality']
         
         B, T, N = inputs.size() 
         
-        x, x_emb = self.embedder(inputs, inputs_mask, inputs_timestamp, inputs_modality)
+        x, x_emb = self.embedder(targets, targets_timestamp, targets_modality)
 
         d['x'] = x
         d['emb'] = x_emb
