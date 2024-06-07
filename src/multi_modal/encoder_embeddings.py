@@ -11,6 +11,7 @@ from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
+from models.multi_modal.mm_utils import ScaleNorm, MLP, FactorsProjection, Attention
 
 DEFAULT_CONFIG = "src/configs/multi_modal/encoder.yaml"
 
@@ -94,17 +95,46 @@ class EncoderEmbedding(nn.Module):
 
         return d
 
-# TO DO
-class Encoder(nn.Module):
 
-    def __init__(
-        self, 
-        config: DictConfig,
-        **kwargs
-    ):
-        super().__init__() 
-
-    def forward(self):
-        pass
-
+class EncoderLayer(nn.Module):
     
+    def __init__(self, idx, max_F, config: DictConfig):
+        super().__init__()
+
+        self.idx = idx
+    
+        self.ln1 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
+        self.ln2 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        self.mlp = MLP(config.hidden_size, config.inter_size, config.act, config.mlp_bias, config.dropout)
+
+        if config.fixup_init:
+            self.fixup_initialization(config.n_layers)
+
+    def forward(
+        self, 
+        x:     torch.FloatTensor,                  
+        mask:  torch.LongTensor,                  
+    ) -> torch.FloatTensor :                           
+        
+        x = x + self.attn(self.ln1(x), mask)
+
+        x = x + self.mlp(self.ln2(x))
+
+        return x
+
+    def fixup_initialization(self, n_layers):
+        temp_state_dic = {}
+        for name, param in self.named_parameters():
+            if name.endswith("_proj.weight"):
+                temp_state_dic[name] = (0.67 * (n_layers) ** (- 1. / 4.)) * param
+            elif name.endswith("value.weight"):
+                temp_state_dic[name] = (0.67 * (n_layers) ** (- 1. / 4.)) * (param * (2**0.5))
+                
+        for name in self.state_dict():
+            if name not in temp_state_dic:
+                temp_state_dic[name] = self.state_dict()[name]
+        self.load_state_dict(temp_state_dic)   
+
+
+

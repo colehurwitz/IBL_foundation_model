@@ -11,12 +11,12 @@ from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
+from models.multi_modal.mm_utils import ScaleNorm, MLP, FactorsProjection, Attention, CrossAttention
 
 DEFAULT_CONFIG = "src/configs/multi_modal/decoder.yaml"
 
 
 class DecoderEmbeddingLayer(nn.Module):
-
     def __init__(self, hidden_size, n_channels, config: DictConfig):
         super().__init__()
 
@@ -65,7 +65,6 @@ class DecoderEmbeddingLayer(nn.Module):
 
 
 class DecoderEmbedding(nn.Module):
-
     def __init__(
         self, 
         n_channel,
@@ -73,7 +72,7 @@ class DecoderEmbedding(nn.Module):
         **kwargs
     ):
         super().__init__() 
-
+        
         self.hidden_size = config.transformer.hidden_size
         self.n_layers = config.transformer.n_layers
         self.max_F = config.embedder.max_F
@@ -95,16 +94,54 @@ class DecoderEmbedding(nn.Module):
 
         return d
 
-# TO DO
-class Decoder(nn.Module):
 
-    def __init__(
+class DecoderLayer(nn.Module):
+    def __init__(self, idx, max_F, config: DictConfig):
+        super().__init__()
+
+        self.idx = idx
+    
+        self.ln1 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        
+        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
+        self.cross_attn = CrossAttention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
+        
+        self.query_norm = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        self.context_norm = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        
+        self.ln2 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
+        
+        self.mlp = MLP(config.hidden_size, config.inter_size, config.act, config.mlp_bias, config.dropout)
+
+        if config.fixup_init:
+            self.fixup_initialization(config.n_layers)
+
+    def forward(
         self, 
-        config: DictConfig,
-        **kwargs
-    ):
-        super().__init__() 
+        x:        torch.FloatTensor, 
+        context:  torch.FloatTensor, 
+        sa_mask:  Optional[torch.LongTensor] = None,
+        xa_mask:  Optional[torch.LongTensor] = None,
+    ) -> torch.FloatTensor :                           
+        
+        x = x + self.attn(self.ln1(x), sa_mask)
 
-    def forward(self):
-        pass
+        x = x + self.cross_attn(self.query_norm(x), self.context_norm(context), xa_mask)
 
+        x = x + self.mlp(self.ln2(x))
+
+        return x
+
+    def fixup_initialization(self, n_layers):
+        temp_state_dic = {}
+        for name, param in self.named_parameters():
+            if name.endswith("_proj.weight"):
+                temp_state_dic[name] = (0.67 * (n_layers) ** (- 1. / 4.)) * param
+            elif name.endswith("value.weight"):
+                temp_state_dic[name] = (0.67 * (n_layers) ** (- 1. / 4.)) * (param * (2**0.5))
+                
+        for name in self.state_dict():
+            if name not in temp_state_dic:
+                temp_state_dic[name] = self.state_dict()[name]
+        self.load_state_dict(temp_state_dic)   
+        

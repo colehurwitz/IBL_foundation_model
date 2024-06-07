@@ -12,8 +12,8 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
-from models.multi_modal.encoder import EncoderEmbedding, Encoder
-from models.multi_modal.decoder import DecoderEmbedding, Decoder
+from models.multi_modal.encoder import EncoderEmbedding, EncoderLayer
+from models.multi_modal.decoder import DecoderEmbedding, DecoderLayer
 
 DEFAULT_CONFIG = "src/configs/multi_modal/mm.yaml"
 
@@ -43,6 +43,11 @@ class MultiModal(nn.Module):
         self.use_session = use_session
         self.use_prompt = config.use_prompt
 
+        self.n_enc_layers = config.n_enc_layers
+        self.n_dec_layers = config.n_dec_layers
+        self.hidden_size = config.hidden_size
+        self.max_F = config.max_F
+
         self.encoder_modalities = set(encoder_embeddings.keys())
         self.encoder_embeddings = nn.ModuleDict(encoder_embeddings)
 
@@ -52,11 +57,16 @@ class MultiModal(nn.Module):
         if share_modality_embeddings:
             self.share_modality_embeddings()
 
-        # TO DO: Define masker to sample encoder and decoder tokens
+        # TO DO: Define masker to sample input and target tokens
 
-        # TO DO
-        self.encoder = Encoder(config.encoder, **kwargs)
-        self.decoder = Decoder(config.decoder, **kwargs)
+
+        self.encoder = nn.ModuleList([EncoderLayer(idx, self.max_F, config.transformer) for idx in range(self.n_enc_layers)])
+        self.encoder_norm = nn.LayerNorm(self.hidden_size) 
+
+        self.decoder_proj_context = nn.Linear(self.hidden_size, self.hidden_size)
+        
+        self.decoder = nn.ModuleList([DecoderLayer(idx, self.max_F, config.transformer) for idx in range(self.n_dec_layers)])
+        self.decoder_norm = nn.LayerNorm(self.hidden_size) 
 
         # TO DO
         if self.use_prompt:
@@ -99,7 +109,7 @@ class MultiModal(nn.Module):
         attention_mask_all = []
         mod_mask_all = []
 
-        # Shuffle order in which modalities are provided (useful for modality causal mask)
+        # shuffle order in which modalities are provided (useful for modality causal mask)
         mod_dict = {mod: d for mod, d in random.sample(mod_dict.items(), len(mod_dict))}
 
         for mod, d in mod_dict.items():
@@ -113,7 +123,7 @@ class MultiModal(nn.Module):
         decoder_tokens_all = torch.cat(decoder_tokens_all, dim=1)
         emb_all = torch.cat(emb_all, dim=1)
         decoder_mask_all = torch.cat(decoder_mask_all, dim=1)
-        target_gts_all = torch.cat(target_ids_all, dim=1)
+        target_gts_all = torch.cat(target_gts_all, dim=1)
         attention_mask_all = torch.cat(attention_mask_all, dim=1)
         mod_mask_all = torch.cat(mod_mask_all, dim=1)
 
@@ -123,14 +133,14 @@ class MultiModal(nn.Module):
     def forward_mask_encoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]], num_encoder_tokens: int) -> Tuple[torch.Tensor]:
         encoder_tokens_all, emb_all, encoder_mask_all, mod_mask_all = self.cat_encoder_tensors(mod_dict)
 
-        # TO DO: Prepend tokens
+        # TO DO: Prepend tokens + Handle context
         
         return encoder_tokens, encoder_emb, encoder_mask, mod_mask
 
     def forward_mask_decoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]], num_decoder_tokens: int) -> Tuple[torch.Tensor]:
         decoder_tokens_all, emb_all, decoder_mask_all, target_gts_all, decoder_attention_mask_all, mod_mask_all = self.cat_decoder_tensors(mod_dict)
 
-        # TO DO: Prepend tokens
+        # TO DO: Prepend tokens + Handle context
         
         return decoder_tokens, decoder_emb, decoder_mask, target_gts, decoder_attention_mask, mod_mask
         
@@ -138,17 +148,22 @@ class MultiModal(nn.Module):
     def adapt_decoder_attention_mask(self, decoder_attention_mask: torch.Tensor, mod_mask=Optional[torch.Tensor]) -> torch.Tensor:
         pass
 
+    
     def forward_encoder(self, x: torch.Tensor, encoder_mask: torch.Tensor) -> torch.Tensor:
         
-        for blk in self.encoder:
-            x = blk(x, mask=encoder_mask)
+        for layer in self.encoder:
+            x = layer(x, mask=encoder_mask)
+
+        x = self.encoder_norm(x)
 
         return x
 
     def forward_decoder(self, y: torch.Tensor, context: torch.Tensor, encoder_mask: torch.Tensor, decoder_attention_mask: torch.Tensor) -> torch.Tensor:
 
-        for blk in self.decoder:
-            y = blk(y, context, sa_mask=decoder_attention_mask, xa_mask=encoder_mask)
+        for layer in self.decoder:
+            y = layer(y, context, sa_mask=decoder_attention_mask, xa_mask=encoder_mask)
+
+        y = self.decoder_norm(y)
 
         return y
 
@@ -193,7 +208,7 @@ class MultiModal(nn.Module):
                             for mod, d in mod_dict.items()
                             if mod in self.encoder_embeddings}
 
-        # TO DO: Sample encoder tokens
+        # TO DO: Sample input tokens
         
         encoder_tokens, encoder_emb, encoder_mask, encoder_mod_mask = self.forward_mask_encoder(encoder_mod_dict, num_encoder_tokens)
 
@@ -201,14 +216,13 @@ class MultiModal(nn.Module):
                             for mod, d in mod_dict.items()
                             if mod in self.decoder_embeddings}
 
-        # TO DO: Sample decoder tokens
+        # TO DO: Sample target tokens
         
-        decoder_tokens, decoder_emb, decoder_mask, target_ids, decoder_attention_mask, decoder_mod_mask = self.forward_mask_decoder(decoder_mod_dict, num_decoder_tokens)
+        decoder_tokens, decoder_emb, decoder_mask, target_gts, decoder_attention_mask, decoder_mod_mask = self.forward_mask_decoder(decoder_mod_dict, num_decoder_tokens)
 
         x = encoder_tokens + encoder_emb
         x = self.forward_encoder(x, encoder_mask=encoder_mask)
 
-        # TO DO: Do we need to project the tokens again? 
         context = self.decoder_proj_context(x) + encoder_emb
         y = decoder_tokens + decoder_emb
         y = self.forward_decoder(y, context, encoder_mask=encoder_mask, decoder_attention_mask=decoder_attention_mask)
