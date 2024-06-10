@@ -13,7 +13,7 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.multi_modal.mm_utils import ScaleNorm, MLP, FactorsProjection, Attention
 
-DEFAULT_CONFIG = "src/configs/multi_modal/encoder.yaml"
+DEFAULT_CONFIG = "src/configs/multi_modal/mm.yaml"
 
 
 class EncoderEmbeddingLayer(nn.Module):
