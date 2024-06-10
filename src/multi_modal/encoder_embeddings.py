@@ -11,7 +11,7 @@ from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
-from models.multi_modal.mm_utils import ScaleNorm, MLP, FactorsProjection, Attention
+from models.multi_modal.mm_utils import ScaleNorm, MLP, Attention
 
 DEFAULT_CONFIG = "src/configs/multi_modal/mm.yaml"
 
@@ -41,12 +41,9 @@ class EncoderEmbeddingLayer(nn.Module):
 
         self.dropout = nn.Dropout(config.dropout)
 
-    def forward(
-            self, 
-            inputs:           torch.FloatTensor,      
-            inputs_timestamp: torch.LongTensor,  
-            inputs_modality:  int,
-        ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
+    def forward(self, d : Dict[str, torch.Tensor]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
+
+        inputs, inputs_timestamp, inputs_modality  = d['inputs'], d['inputs_timestamp'], d['inputs_modality']
         
         B, _, _ = inputs.size()
 

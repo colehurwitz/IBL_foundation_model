@@ -40,12 +40,9 @@ class DecoderEmbeddingLayer(nn.Module):
 
         self.dropout = nn.Dropout(config.dropout)
 
-    def forward(
-            self, 
-            targets:           torch.FloatTensor,      
-            targets_timestamp: torch.LongTensor,  
-            targets_modality:  int,
-        ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
+    def forward(self, d : Dict[str, torch.Tensor]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
+
+        targets, targets_timestamp, targets_modality  = d['targets'], d['targets_timestamp'], d['targets_modality']
         
         B, _, _ = targets.size()
 

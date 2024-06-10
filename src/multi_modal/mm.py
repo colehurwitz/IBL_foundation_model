@@ -48,15 +48,14 @@ class MultiModal(nn.Module):
         self.modality_info = modality_info
         self.share_modality_embeddings = share_modality_embeddings
         self.use_session = use_session
-        self.use_prompt = config.use_prompt
-        self.decoder_sep_mask = config.decoder_sep_mask
+        self.decoder_sep_mask = config.decoder.decoder_sep_mask
 
-        self.n_enc_layers = config.n_enc_layers
-        self.n_dec_layers = config.n_dec_layers
-        self.hidden_size = config.hidden_size
-        self.max_F = config.max_F
-        self.context_forward = config.context.forward
-        self.context_backward = config.context.backward
+        self.n_enc_layers = config.encoder.transformer.n_layers
+        self.n_dec_layers = config.decoder.transformer.n_layers
+        self.hidden_size = config.encoder.transformer.hidden_size
+        self.max_F = config.encoder.embedder.max_F
+        self.context_forward = config.encoder.context.forward
+        self.context_backward = config.encoder.context.backward
 
         self.encoder_modalities = set(encoder_embeddings.keys())
         self.encoder_embeddings = nn.ModuleDict(encoder_embeddings)
@@ -72,12 +71,12 @@ class MultiModal(nn.Module):
             assert config.masker.mode in ['temporal', 'causal'], "Only token-wise masking is allowed for multi-modal model for now."
             self.masker = Masker(config.masker)
 
-        self.encoder = nn.ModuleList([EncoderLayer(idx, self.max_F, config.transformer) for idx in range(self.n_enc_layers)])
+        self.encoder = nn.ModuleList([EncoderLayer(idx, self.max_F, config.encoder.transformer) for idx in range(self.n_enc_layers)])
         self.encoder_norm = nn.LayerNorm(self.hidden_size) 
 
         self.decoder_proj_context = nn.Linear(self.hidden_size, self.hidden_size)
         
-        self.decoder = nn.ModuleList([DecoderLayer(idx, self.max_F, config.transformer) for idx in range(self.n_dec_layers)])
+        self.decoder = nn.ModuleList([DecoderLayer(idx, self.max_F, config.decoder.transformer) for idx in range(self.n_dec_layers)])
         self.decoder_norm = nn.LayerNorm(self.hidden_size) 
             
         if self.use_session:
