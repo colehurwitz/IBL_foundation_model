@@ -33,6 +33,7 @@ ap.add_argument("--tokenize_binary_mask", action='store_true')
 ap.add_argument("--prompting", action='store_true')
 ap.add_argument("--use_nemo", action='store_true')
 ap.add_argument("--embed_nemo", action='store_true')
+ap.add_argument("--wvf_only", action='store_true')
 ap.add_argument("--no_channel_embed", action='store_true')
 ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
@@ -84,10 +85,11 @@ if config.wandb.use:
     import wandb
     wandb.init(
         project=config.wandb.project, entity=config.wandb.entity, config=config,
-        name="{}_train_model_{}_method_{}_mask_{}_ratio_{}_mask_token_{}_prompt_{}_NEMO_{}_no_channel_{}".format(
+        name="{}_train_model_{}_method_{}_mask_{}_ratio_{}_mask_token_{}_prompt_{}_NEMO_{}_no_channel_{}_wvf_only_{}".format(
             eid[:5],
             config.model.model_class, config.method.model_kwargs.method_name, 
-            args.mask_mode, args.mask_ratio, args.tokenize_binary_mask, args.prompting, args.embed_nemo, args.no_channel_embed
+            args.mask_mode, args.mask_ratio, args.tokenize_binary_mask, args.prompting, args.embed_nemo, args.no_channel_embed,
+            args.wvf_only,
         )
     )
 
@@ -95,10 +97,11 @@ if config.wandb.use:
 set_seed(config.seed)
 
 last_ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'model_last.pt'
-best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
+best_ckpt_path = last_ckpt_path
+# best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
 
 if args.train:
-    final_checkpoint = f'{base_path}/results/{eid}/train/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/{last_ckpt_path}'
+    final_checkpoint = f'{base_path}/results/{eid}/train/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/{last_ckpt_path}'
     if not os.path.exists(final_checkpoint) or args.overwrite:
         
         _, _, _, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
@@ -125,6 +128,7 @@ if args.train:
             "prompt_{}".format(args.prompting),
             "NEMO_{}".format(args.embed_nemo),
             "no_channel_{}".format(args.no_channel_embed),
+            "wvf_only_{}".format(args.wvf_only),
         )
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -176,6 +180,7 @@ if args.train:
                                  target=config.data.target,
                                  load_meta=config.data.load_meta,
                                  use_nemo=args.use_nemo,
+                                 wvf_only=args.wvf_only,
                                  batch_size=config.training.train_batch_size, 
                                  pad_to_right=True, 
                                  pad_value=-1.,
@@ -190,6 +195,7 @@ if args.train:
                                  target=config.data.target,
                                  load_meta=config.data.load_meta,
                                  use_nemo=args.use_nemo,
+                                 wvf_only=args.wvf_only,
                                  batch_size=config.training.test_batch_size, 
                                  pad_to_right=True, 
                                  pad_value=-1.,
@@ -204,6 +210,7 @@ if args.train:
                                  target=config.data.target,
                                  load_meta=config.data.load_meta,
                                  use_nemo=args.use_nemo,
+                                 wvf_only=args.wvf_only,
                                  batch_size=config.training.test_batch_size, 
                                  pad_to_right=True, 
                                  pad_value=-1.,
@@ -308,7 +315,7 @@ if args.eval:
     # Configuration
     configs = {
         'model_config': model_config,
-        'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
+        'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/{best_ckpt_path}',
         'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
         'dataset_path': None, 
         'test_size': 0.2,
@@ -317,7 +324,8 @@ if args.eval:
         'eid': eid,
         'stitching': False,
         'num_sessions': 1,
-        'use_nemo': args.use_nemo
+        'use_nemo': args.use_nemo,
+        'wvf_only': args.wvf_only,
     }  
     
     # load your model and dataloader
@@ -325,15 +333,15 @@ if args.eval:
     
     # co-smoothing
     if co_smooth:
-        co_smooth_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/co_smooth/bps.npy'
-        co_smooth_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/co_smooth/r2.npy'
+        co_smooth_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/co_smooth/bps.npy'
+        co_smooth_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/co_smooth/r2.npy'
         if not os.path.exists(co_smooth_bps_file) or not os.path.exists(co_smooth_r2_file) or args.overwrite:
             print('Start co-smoothing:')
             co_smoothing_configs = {
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/co_smooth',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/co_smooth',
                 'mode': 'per_neuron',
                 'n_time_steps': n_time_steps,    
                 'is_aligned': True,
@@ -354,15 +362,15 @@ if args.eval:
     
     # forward prediction
     if forward_pred:
-        forward_pred_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/forward_pred/bps.npy'
-        forward_pred_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/forward_pred/r2.npy'
+        forward_pred_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/forward_pred/bps.npy'
+        forward_pred_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/forward_pred/r2.npy'
         if not os.path.exists(forward_pred_bps_file) or not os.path.exists(forward_pred_r2_file) or args.overwrite:
             print('Start forward prediction:')
             results = co_smoothing_configs = {
                 'subtract': 'task',
                 'onset_alignment': [],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/forward_pred',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/forward_pred',
                 'mode': 'forward_pred',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
@@ -384,15 +392,15 @@ if args.eval:
     
     # inter-region
     if inter_region:
-        inter_region_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/inter_region/bps.npy'
-        inter_region_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/inter_region/r2.npy'
+        inter_region_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/inter_region/bps.npy'
+        inter_region_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/inter_region/r2.npy'
         if not os.path.exists(inter_region_bps_file) or not os.path.exists(inter_region_r2_file) or args.overwrite:
             print('Start inter-region:')
             co_smoothing_configs = {
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name,
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/inter_region',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/inter_region',
                 'mode': 'inter_region',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': None,
@@ -414,15 +422,15 @@ if args.eval:
     
     # intra-region
     if intra_region:
-        intra_region_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/intra_region/bps.npy'
-        intra_region_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/intra_region/r2.npy'
+        intra_region_bps_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/intra_region/bps.npy'
+        intra_region_r2_file = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/intra_region/r2.npy'
         if not os.path.exists(intra_region_bps_file) or not os.path.exists(intra_region_r2_file) or args.overwrite:
             print('Start intra-region:')
             co_smoothing_configs = {
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/intra_region',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/intra_region',
                 'mode': 'intra_region',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': None,
@@ -443,15 +451,15 @@ if args.eval:
     
     
     if choice_decoding:
-        choice_results_dir = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/choice_decoding'
+        choice_results_dir = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/choice_decoding'
         if not os.path.exists(choice_results_dir) or args.overwrite:
             print('Start choice_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
+                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/{best_ckpt_path}',
                 'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
                 'dataset_path': '/home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned',
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/choice_decoding',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/choice_decoding',
                 'test_size': 0.2,
                 'seed': 42,
                 'mask_name': mask_name,
@@ -463,7 +471,8 @@ if args.eval:
                 'num_sessions': 1,
                 'target': 'choice',
                 'use_trial_filter': False,
-                'use_nemo': args.use_nemo
+                'use_nemo': args.use_nemo,
+                'wvf_only': args.wvf_only,
             }  
             results = behavior_decoding(**configs)
             print(results)
@@ -473,15 +482,15 @@ if args.eval:
     
     
     if continuous_decoding:        
-        continuous_results_dir = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/continuous_decoding'
+        continuous_results_dir = f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/continuous_decoding'
         if not os.path.exists(continuous_results_dir) or args.overwrite:
             print('Start continuous_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/{best_ckpt_path}',
+                'model_path': f'{base_path}/results/{eid}/train/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/{best_ckpt_path}',
                 'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
                 'dataset_path': None, 
-                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/continuous_decoding',
+                'save_path': f'{base_path}/results/{eid}/eval/model_{model_name}/method_ssl/{mask_name}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/continuous_decoding',
                 'test_size': 0.2,
                 'seed': 42,
                 'mask_name': mask_name,
@@ -493,7 +502,8 @@ if args.eval:
                 'num_sessions': 1,
                 'target': args.cont_target,
                 'use_trial_filter': False,
-                'use_nemo': args.use_nemo
+                'use_nemo': args.use_nemo,
+                'wvf_only': args.wvf_only,
             }  
             results = behavior_decoding(**configs)
             print(results)

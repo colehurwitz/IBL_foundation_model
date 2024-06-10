@@ -267,6 +267,7 @@ class BaseDataset(torch.utils.data.Dataset):
         dataset_name = "ibl",
         stitching = False,
         use_nemo = False,
+        wvf_only = False,
     ) -> None:
         self.dataset = dataset
         self.target = target
@@ -283,6 +284,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.dataset_name = dataset_name
         self.stitching = stitching
         self.use_nemo = use_nemo
+        self.wvf_only = wvf_only
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -329,7 +331,10 @@ class BaseDataset(torch.utils.data.Dataset):
             with open('data/MtM_unit_embed.pkl','rb') as file:
                 nemo_data = pickle.load(file)
             nemo_uuids = nemo_data['uuids']
-            nemo_rep = np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1)
+            if self.wvf_only:
+                nemo_rep = np.asarray(nemo_data['wvf_rep'])
+            else:
+                nemo_rep = np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1)
             include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
             nemo_rep = nemo_rep[np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in nemo_uuids]).flatten() == 1).astype(np.int64)].squeeze()
             include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)

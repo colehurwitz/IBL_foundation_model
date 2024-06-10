@@ -50,6 +50,7 @@ def load_model_data_local(**kwargs):
     stitching = kwargs['stitching']
     num_sessions = kwargs['num_sessions']
     use_nemo = kwargs['use_nemo']
+    wvf_only = kwargs['wvf_only']
 
     # set seed
     set_seed(seed)
@@ -143,6 +144,7 @@ def load_model_data_local(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False,
     )
 
@@ -757,6 +759,7 @@ def behavior_decoding(**kwargs):
     target = kwargs['target']
     use_trial_filter = kwargs['use_trial_filter']
     use_nemo = kwargs['use_nemo']
+    wvf_only = kwargs['wvf_only']
 
     # set seed
     set_seed(seed)
@@ -868,6 +871,7 @@ def behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 
@@ -882,6 +886,7 @@ def behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 
@@ -896,6 +901,7 @@ def behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 
@@ -1025,6 +1031,7 @@ def region_wise_behavior_decoding(**kwargs):
     num_sessions = kwargs['num_sessions']
     target = kwargs['target']
     use_nemo = kwargs['use_nemo']
+    wvf_only = kwargs['wvf_only']
 
     # set seed
     set_seed(seed)
@@ -1127,6 +1134,7 @@ def region_wise_behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 
@@ -1141,6 +1149,7 @@ def region_wise_behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 
@@ -1155,6 +1164,7 @@ def region_wise_behavior_decoding(**kwargs):
         dataset_name=config.data.dataset_name,
         load_meta=config.data.load_meta,
         use_nemo=use_nemo,
+        wvf_only=wvf_only,
         shuffle=False
     )
 

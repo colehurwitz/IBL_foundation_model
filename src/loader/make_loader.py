@@ -14,6 +14,7 @@ def make_loader(dataset,
                  brain_region = 'all',
                  load_meta=False,
                  use_nemo=False,
+                 wvf_only=False,
                  dataset_name = "ibl",
                  stitching = False,
                  shuffle = True):
@@ -31,6 +32,7 @@ def make_loader(dataset,
                           brain_region = brain_region,
                           load_meta=load_meta,
                           use_nemo=use_nemo,
+                          wvf_only=wvf_only,
                           stitching=stitching
             )
     
