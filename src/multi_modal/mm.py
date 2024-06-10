@@ -155,7 +155,7 @@ class MultiModal(nn.Module):
         encoder_tokens, encoder_emb, encoder_attn_mask, mod_mask, inputs_mask = self.cat_encoder_tensors(mod_dict)
 
         if self.use_session:
-            sess_idx = torch.tensor(self.eid_to_indx[self.modality_info[mod]['eid']], dtype=torch.int64, device=encoder_tokens.device)
+            sess_idx = torch.tensor(self.eid_to_indx[mod_dict[mod]['eid']], dtype=torch.int64, device=encoder_tokens.device)
             sess_token = self.session_embed(sess_idx)[None,None,:].expand(B,-1,-1)
             encoder_tokens = torch.cat([sess_token, encoder_tokens], dim=1)
             encoder_emb = torch.cat([torch.zeros_like(sess_token), encoder_emb], dim=1)
@@ -245,7 +245,7 @@ class MultiModal(nn.Module):
     
     def forward(
             self, mod_dict: Dict[str, Dict[str, torch.Tensor]]
-        ) -> Union[Dict[str, torch.Tensor], Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
+        ) -> MultiModalOutput:
 
         for mod, d in mod_dict.items():
             B, N, D = mod_dict[mod]['inputs'].size()
