@@ -17,13 +17,12 @@ masker:
   n_mask_regions: 1           # number of regions to choose from the list of mask_regions or target_regions
   causal_zero: true           # only for iTransformer causal mode
 
+context:
+    forward: -1
+    backward: -1
 
 encoder:
   from_pt: null
-    
-  context:
-    forward: -1
-    backward: -1
 
   embedder:
     n_channels: 668       # number of neurons recorded 
@@ -35,7 +34,6 @@ encoder:
     bias: true            # use bias in the embedding layer
     dropout: 0.2          # dropout in embedding layer
 
-  
   transformer:
     n_layers: 5           # number of transformer layers
     hidden_size: 512     # hidden space of the transformer
@@ -53,10 +51,6 @@ decoder:
   from_pt: null
 
   decoder_sep_mask: false
-
-  context:
-    forward: -1
-    backward: -1
 
   embedder:
     n_channels: 668       # number of neurons recorded 

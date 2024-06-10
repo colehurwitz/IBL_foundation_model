@@ -14,8 +14,8 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
-from models.multi_modal.encoder import EncoderEmbedding, EncoderLayer
-from models.multi_modal.decoder import DecoderEmbedding, DecoderLayer
+from models.multi_modal.encoder import EncoderLayer
+from models.multi_modal.decoder import DecoderLayer
 from models.masker import Masker
 from models.multi_modal.mm_utils import create_context_mask
 
@@ -37,15 +37,16 @@ class MultiModal(nn.Module):
         self, 
         encoder_embeddings: Dict[str, nn.Module],
         decoder_embeddings: Dict[str, nn.Module],
-        modality_info:      Dict[str, Any],
+        avail_mod:          List,
         share_modality_embeddings: bool = True,
         use_session: bool = False,
         config: DictConfig,
         **kwargs
     ):
         super().__init__()
-        
-        self.modality_info = modality_info
+
+        self.avail_mod = avail_mod
+        self.mod_to_indx = {r: i for i,r in enumerate(self.avail_mod)}
         self.share_modality_embeddings = share_modality_embeddings
         self.use_session = use_session
         self.decoder_sep_mask = config.decoder.decoder_sep_mask
@@ -54,8 +55,8 @@ class MultiModal(nn.Module):
         self.n_dec_layers = config.decoder.transformer.n_layers
         self.hidden_size = config.encoder.transformer.hidden_size
         self.max_F = config.encoder.embedder.max_F
-        self.context_forward = config.encoder.context.forward
-        self.context_backward = config.encoder.context.backward
+        self.context_forward = config.context.forward
+        self.context_backward = config.context.backward
 
         self.encoder_modalities = set(encoder_embeddings.keys())
         self.encoder_embeddings = nn.ModuleDict(encoder_embeddings)
@@ -106,7 +107,7 @@ class MultiModal(nn.Module):
             encoder_tokens_all.append(d['x'])
             emb_all.append(d['emb'])
             encoder_attn_mask_all.append(d['encoder_attn_mask'])
-            mod_mask_all.append(torch.full_like(d['encoder_attn_mask'], self.modality_info[mod]['id'], dtype=torch.int16))
+            mod_mask_all.append(torch.full_like(d['encoder_attn_mask'], self.mod_to_indx[mod], dtype=torch.int16))
             inputs_mask_all.apend(d['inputs_mask'])
 
         encoder_tokens_all = torch.cat(encoder_tokens_all, dim=1)
@@ -134,7 +135,7 @@ class MultiModal(nn.Module):
             target_gts_all.append(d['gt']) 
             emb_all.append(d['emb'])
             decoder_attn_mask_all.append(d['decoder_attn_mask'])
-            mod_mask_all.append(torch.full_like(d['gt'], self.modality_info[mod]['id'], dtype=torch.int16))
+            mod_mask_all.append(torch.full_like(d['gt'], self.mod_to_indx[mod], dtype=torch.int16))
             targets_mask_all.append(d['targets_mask'])
 
         decoder_tokens_all = torch.cat(decoder_tokens_all, dim=1)

@@ -8,7 +8,7 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: true
+  use: false
   entity: null
   project: multi_modal
   run_name: 671c7ea7

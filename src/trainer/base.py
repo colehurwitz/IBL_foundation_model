@@ -488,7 +488,6 @@ class MultiModalTrainer():
         }
 
     
-    # TO DO: Replace gt_pred_fig with behavior resid plots later
     def plot_epoch(self, gt, preds, epoch, active_neurons, modality):
         
         if modality == 'ap':
@@ -496,8 +495,11 @@ class MultiModalTrainer():
                         pred = preds.mean(0).T.detach().cpu().numpy(),
                         epoch = epoch)
         elif modality == 'behavior':
+            # Hack: Enable drawing multiple behaviors later
+            gt_pred_fig = plot_gt_pred(gt = gt.squeeze().cpu().numpy(),
+                        pred = preds.squeeze().detach().cpu().numpy(),
+                        epoch = epoch)
             active_neurons = [0]
-            gt_pred_fig = None
             
         r2_fig = plot_neurons_r2(gt = gt.mean(0),
                 pred = preds.mean(0),
