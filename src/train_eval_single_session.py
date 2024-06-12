@@ -39,7 +39,7 @@ ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--eval", action='store_true')
 ap.add_argument("--overwrite", action='store_true')
-ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/yzhang39/temp_project")
+ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/zwang34/temp_project/iTransformer")
 args = ap.parse_args()
 
 base_path = args.base_path

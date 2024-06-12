@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: NEMO_wvf
+wandb_project: iTransformer_multi
 log_to_wandb: false
 
 verbosity: 0
@@ -9,8 +9,8 @@ verbosity: 0
 # wandb configuration
 wandb:
   use: true
-  entity: null
-  project: NEMO_wvf
+  entity: wdk0082
+  project: iTransformer_multi
   run_name: 671c7ea7
 
 # Logging directories
