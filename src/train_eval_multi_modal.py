@@ -15,18 +15,18 @@ from accelerate import Accelerator
 from loader.make_loader import make_loader
 from utils.utils import set_seed
 from utils.config_utils import config_from_kwargs, update_config
-from models.multi_modal.mm import MultiModal
+from multi_modal.mm import MultiModal
 from torch.optim.lr_scheduler import OneCycleLR
 from trainer.make import make_multimodal_trainer
-from models.multi_modal.encoder import EncoderEmbedding
-from models.multi_modal.decoder import DecoderEmbedding
+from multi_modal.encoder_embeddings import EncoderEmbedding
+from multi_modal.decoder_embeddings import DecoderEmbedding
 
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--eid", type=str, default='671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
 ap.add_argument("--mask_ratio", type=float, default=0.1)
 ap.add_argument("--mask_mode", type=str, default="temporal")
-ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
+ap.add_argument("--cont_target", type=str, default="left-whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--overwrite", action='store_true')
 ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/yzhang39/temp_project")
@@ -117,7 +117,7 @@ if args.train:
                                  pad_to_right=True, 
                                  pad_value=-1.,
                                  max_time_length=config.data.max_time_length,
-                                 max_space_length=max_space_length,
+                                 max_space_length=n_neurons,
                                  dataset_name=config.data.dataset_name,
                                  sort_by_depth=config.data.sort_by_depth,
                                  sort_by_region=config.data.sort_by_region,
@@ -130,7 +130,7 @@ if args.train:
                                  pad_to_right=True, 
                                  pad_value=-1.,
                                  max_time_length=config.data.max_time_length,
-                                 max_space_length=max_space_length,
+                                 max_space_length=n_neurons,
                                  dataset_name=config.data.dataset_name,
                                  sort_by_depth=config.data.sort_by_depth,
                                  sort_by_region=config.data.sort_by_region,
@@ -141,14 +141,14 @@ if args.train:
         encoder_embeddings, decoder_embeddings = {}, {}
         for mod in avail_mod:
             encoder_embeddings[mod] = EncoderEmbedding(
-                hidden_size=config.encoder.transformer.hidden_size,
-                n_channels=n_neurons if mod == 'ap' else n_behaviors,
-                config=config.encoder.embedder,
+                hidden_size=config.model.encoder.transformer.hidden_size,
+                n_channel=n_neurons if mod == 'ap' else n_behaviors,
+                config=config.model.encoder,
             )
             decoder_embeddings[mod] = DecoderEmbedding(
-                hidden_size=config.decoder.transformer.hidden_size,
-                n_channels=n_neurons if mod == 'ap' else n_behaviors,
-                config=config.decoder.embedder,
+                hidden_size=config.model.decoder.transformer.hidden_size,
+                n_channel=n_neurons if mod == 'ap' else n_behaviors,
+                config=config.model.decoder,
             )
 
         accelerator = Accelerator()
@@ -159,9 +159,11 @@ if args.train:
             encoder_embeddings,
             decoder_embeddings,
             avail_mod=avail_mod,
+            config=config.model, 
             share_modality_embeddings=True,
             use_session=False,
-            config.model, **config.method.model_kwargs, **meta_data
+            **config.method.model_kwargs, 
+            **meta_data
         )
 
         model.masker.mode = args.mask_mode

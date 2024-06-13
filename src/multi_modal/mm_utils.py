@@ -132,7 +132,7 @@ class CrossAttention(nn.Module):
 
         self.attn_drop = nn.Dropout(dropout)
         self.proj = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
-        self.proj_drop = nn.Dropout(proj_drop)
+        self.proj_drop = nn.Dropout(dropout)
 
     def forward(self, x, context, attn_mask=None):
         B, N, C = x.shape

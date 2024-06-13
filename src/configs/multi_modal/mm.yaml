@@ -25,6 +25,7 @@ encoder:
   from_pt: null
 
   embedder:
+    n_modality: 2
     n_channels: 668       # number of neurons recorded 
     max_F: 100           # max feature len in timesteps
     mult: 2               # embedding multiplier. hiddden_sizd = n_channels * mult
@@ -53,6 +54,7 @@ decoder:
   decoder_sep_mask: false
 
   embedder:
+    n_modality: 2
     n_channels: 668       # number of neurons recorded 
     max_F: 100           # max feature len in timesteps
     mult: 2               # embedding multiplier. hiddden_sizd = n_channels * mult
@@ -62,7 +64,7 @@ decoder:
     bias: true            # use bias in the embedding layer
     dropout: 0.2          # dropout in embedding layer
 
-    transformer:
+  transformer:
     n_layers: 5           # number of transformer layers
     hidden_size: 512     # hidden space of the transformer
     use_scalenorm: false  # use scalenorm  instead of layernorm

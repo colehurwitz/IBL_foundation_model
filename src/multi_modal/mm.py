@@ -14,10 +14,10 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
-from models.multi_modal.encoder import EncoderLayer
-from models.multi_modal.decoder import DecoderLayer
+from multi_modal.encoder_embeddings import EncoderLayer
+from multi_modal.decoder_embeddings import DecoderLayer
 from models.masker import Masker
-from models.multi_modal.mm_utils import create_context_mask
+from multi_modal.mm_utils import create_context_mask
 
 DEFAULT_CONFIG = "src/configs/multi_modal/mm.yaml"
 
@@ -38,16 +38,15 @@ class MultiModal(nn.Module):
         encoder_embeddings: Dict[str, nn.Module],
         decoder_embeddings: Dict[str, nn.Module],
         avail_mod:          List,
+        config: DictConfig,
         share_modality_embeddings: bool = True,
         use_session: bool = False,
-        config: DictConfig,
         **kwargs
     ):
         super().__init__()
 
         self.avail_mod = avail_mod
         self.mod_to_indx = {r: i for i,r in enumerate(self.avail_mod)}
-        self.share_modality_embeddings = share_modality_embeddings
         self.use_session = use_session
         self.decoder_sep_mask = config.decoder.decoder_sep_mask
 
@@ -93,7 +92,7 @@ class MultiModal(nn.Module):
     def share_modality_embeddings(self):
         shared_modalities = self.encoder_modalities & self.decoder_modalities
         for mod in shared_modalities:
-            self.decoder_embeddings[mod].mod_emb = self.encoder_embeddings[mod].mod_emb
+            self.decoder_embeddings[mod].embedder.mod_emb = self.encoder_embeddings[mod].embedder.mod_emb
 
     
     def cat_encoder_tensors(self, mod_dict: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor]:
@@ -168,7 +167,7 @@ class MultiModal(nn.Module):
         mod_mask[inputs_mask] = -1
         # mask could be of shape 'b n1 n2' but not needed for masked_fill
         # this means this mask can then be re-used for decoder cross-attention
-        encoder_attn_mask = rearrange(encoder_attn_mask, 'b n2 -> b 1 n2')'
+        encoder_attn_mask = rearrange(encoder_attn_mask, 'b n2 -> b 1 n2')
         
         return encoder_tokens, encoder_emb, encoder_attn_mask, mod_mask, inputs_mask
 
@@ -248,6 +247,10 @@ class MultiModal(nn.Module):
         ) -> MultiModalOutput:
 
         for mod, d in mod_dict.items():
+            
+            if mod == 'behavior':
+                mod_dict[mod]['inputs'] = mod_dict[mod]['inputs'].unsqueeze(-1)
+                
             B, N, D = mod_dict[mod]['inputs'].size()
             if self.mask:
                 if mod == 'ap':
@@ -262,6 +265,7 @@ class MultiModal(nn.Module):
             mod_dict[mod]['targets_mask'] = mask
 
             context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
+            context_mask = context_mask.to(mod_dict[mod]['inputs'].device, torch.int64)
             self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64).expand(B,N,N) 
             
             inputs_mask = mod_dict[mod]['inputs_mask'].unsqueeze(1).expand(B,N,N)

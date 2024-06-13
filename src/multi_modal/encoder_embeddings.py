@@ -11,7 +11,7 @@ from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
-from models.multi_modal.mm_utils import ScaleNorm, MLP, Attention
+from multi_modal.mm_utils import ScaleNorm, MLP, Attention
 
 DEFAULT_CONFIG = "src/configs/multi_modal/mm.yaml"
 
@@ -79,12 +79,8 @@ class EncoderEmbedding(nn.Module):
         self.embedder = EncoderEmbeddingLayer(self.hidden_size, self.n_channel, config.embedder)
     
     def forward(self, d : Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:    
-        
-        inputs, inputs_timestamp, inputs_modality  = d['inputs'], d['inputs_timestamp'], d['inputs_modality']
-        
-        B, T, N = inputs.size() 
-        
-        x, x_emb = self.embedder(inputs, inputs_timestamp, inputs_modality)
+                        
+        x, x_emb = self.embedder(d)
 
         d['x'] = x
         d['emb'] = x_emb

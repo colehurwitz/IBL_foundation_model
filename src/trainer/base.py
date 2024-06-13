@@ -318,9 +318,9 @@ class MultiModalTrainer():
     def _forward_model_outputs(self, batch):
         batch = move_batch_to_device(batch, self.accelerator.device)
         mod_dict = {}
-        for mod in self.self.mod_to_indx.keys():
+        for mod in self.mod_to_indx.keys():
             mod_dict[mod] = {}
-            mod_dict[mod]['inputs_modality'] = self.mod_to_indx[mod]
+            mod_dict[mod]['inputs_modality'] = torch.tensor(self.mod_to_indx[mod]).to(self.accelerator.device)
             mod_dict[mod]['inputs_mask'] = batch['time_attn_mask']
             mod_dict[mod]['inputs_timestamp'] = batch['spikes_timestamps']
             mod_dict[mod]['eid'] = batch['eid'][0]  # each batch is from the same eid
