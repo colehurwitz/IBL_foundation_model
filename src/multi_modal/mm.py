@@ -107,13 +107,15 @@ class MultiModal(nn.Module):
             emb_all.append(d['emb'])
             encoder_attn_mask_all.append(d['encoder_attn_mask'])
             mod_mask_all.append(torch.full_like(d['encoder_attn_mask'], self.mod_to_indx[mod], dtype=torch.int16))
-            inputs_mask_all.apend(d['inputs_mask'])
+            inputs_mask_all.append(d['inputs_mask'])
 
         encoder_tokens_all = torch.cat(encoder_tokens_all, dim=1)
         emb_all = torch.cat(emb_all, dim=1)
-        encoder_mask_all = torch.cat(encoder_mask_all, dim=1)
+        encoder_attn_mask_all = torch.cat(encoder_attn_mask_all, dim=1)
         mod_mask_all = torch.cat(mod_mask_all, dim=1)
         inputs_mask_all = torch.cat(inputs_mask_all, dim=1)
+
+        print('encoder_attn_mask_concat size:', encoder_attn_mask_all.size())
 
         return encoder_tokens_all, emb_all, encoder_attn_mask_all, mod_mask_all, inputs_mask_all
 
@@ -152,7 +154,7 @@ class MultiModal(nn.Module):
         B = list(mod_dict.values())[0]['inputs'].shape[0]
 
         encoder_tokens, encoder_emb, encoder_attn_mask, mod_mask, inputs_mask = self.cat_encoder_tensors(mod_dict)
-
+        
         if self.use_session:
             sess_idx = torch.tensor(self.eid_to_indx[mod_dict[mod]['eid']], dtype=torch.int64, device=encoder_tokens.device)
             sess_token = self.session_embed(sess_idx)[None,None,:].expand(B,-1,-1)
@@ -266,12 +268,13 @@ class MultiModal(nn.Module):
 
             context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
             context_mask = context_mask.to(mod_dict[mod]['inputs'].device, torch.int64)
-            self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64).expand(B,N,N) 
+            # self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64).expand(B,N,N) 
+            self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64)[None,:].expand(B,N) 
             
-            inputs_mask = mod_dict[mod]['inputs_mask'].unsqueeze(1).expand(B,N,N)
+            inputs_mask = mod_dict[mod]['inputs_mask']#.unsqueeze(1).expand(B,N,N)
             mod_dict[mod]['encoder_attn_mask'] = self_mask | (context_mask & inputs_mask)
 
-            targets_mask = mod_dict[mod]['targets_mask'].unsqueeze(1).expand(B,N,N)
+            targets_mask = mod_dict[mod]['targets_mask']#.unsqueeze(1).expand(B,N,N)
             mod_dict[mod]['decoder_attn_mask'] = self_mask | (context_mask & targets_mask)
 
         

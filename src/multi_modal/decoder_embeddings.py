@@ -52,7 +52,7 @@ class DecoderEmbeddingLayer(nn.Module):
 
         x = self.projection(x)
 
-        x_embed = self.mod_emb(targets_modality)
+        x_embed = self.mod_emb(targets_modality)[None,None,:].expand(B,N,-1).clone()
 
         if self.pos:
             x_embed += self.pos_embed(targets_timestamp)

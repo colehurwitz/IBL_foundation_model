@@ -45,7 +45,7 @@ class EncoderEmbeddingLayer(nn.Module):
 
         inputs, inputs_timestamp, inputs_modality  = d['inputs'], d['inputs_timestamp'], d['inputs_modality']
         
-        B, _, _ = inputs.size()
+        B, N, _ = inputs.size()
 
         x = self.token_embed(inputs)
 
@@ -53,7 +53,7 @@ class EncoderEmbeddingLayer(nn.Module):
 
         x = self.projection(x)
 
-        x_embed = self.mod_emb(inputs_modality)
+        x_embed = self.mod_emb(inputs_modality)[None,None,:].expand(B,N,-1).clone()
 
         if self.pos:
             x_embed += self.pos_embed(inputs_timestamp)
