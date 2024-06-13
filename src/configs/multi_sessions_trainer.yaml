@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: iTransformer
+wandb_project: multi-session
 log_to_wandb: false
 
 verbosity: 0
@@ -10,7 +10,7 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: iTransformer
+  project: multi-session
   run_name: 671c7ea7
 
 # Logging directories
@@ -20,8 +20,8 @@ dirs:
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
-  behav_dir:  data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: neurofm123
   
 
@@ -34,7 +34,7 @@ training:
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 5  # Plot the model output every n epochs
-  save_every: 100  # Save checkpoint
+  save_every: 50  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -42,7 +42,7 @@ training:
 # Model configuration. 
 # Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
 model: 
-  model_class: iTransformer   # Any registered model class name. 
+  model_class: null   # Any registered model class name. 
 
 # Data configuration.
 data:
@@ -63,24 +63,33 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 154   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
-  sort_by_region: false
   brain_region: all
-  spike_augmentation: false
 
   include_behav: false # include behavior data
   target: null
 
   load_meta: true
 
-  num_sessions: 3
-  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
+  num_sessions: 10
+  train_session_eid: [
+  '51e53aff-1d5d-4182-a684-aba783d50ae5', '72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '88224abb-5746-431f-9c17-17d7ef806e6a', 'a66f1593-dafd-4982-9b66-f9554b6c86b5', 
+  'c4432264-e1ae-446f-8a07-6280abade813',  'd2832a38-27f6-452d-91d6-af72d794136c', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'db4df448-e449-4a6f-a0e7-288711e7a75a', 'ecb5520d-1358-434c-95ec-93687ecd1396', 'f312aaec-3b6f-44b3-86b4-3a0c119c0438'] 
+  test_session_eid: [] 
 
-  split_method: session_based # random_split/session_based
+  split_method: predefined # random_split/session_based/predefined
 
   use_aligned_test: False
+
+  sort_by_depth: false
+  sort_by_region: false
+  brain_region: all
+
+  spike_augmentation: false
+
+  use_re: true
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
@@ -112,7 +121,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
+  lr: 5.e-4
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

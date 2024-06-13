@@ -201,14 +201,14 @@ class iTransformerEncoder(nn.Module):
         if self.use_prompt:
             self.mask_types = ['neuron', 'temporal', 'causal', 'inter-region', 'intra-region']
             self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
-            self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
+            self.embed_prompt = nn.Embedding(len(self.mask_types), config.hidden_size) 
 
         # Embed session token
         self.use_session = use_session
         if self.use_session:
             self.eid_lookup = include_eids
             self.eid_to_indx = {r: i for i,r in enumerate(self.eid_lookup)}
-            self.embed_session = nn.Embedding(len(self.eid_lookup), hidden_size) 
+            self.embed_session = nn.Embedding(len(self.eid_lookup), config.hidden_size) 
 
         self.embed_dropout = nn.Dropout(config.embedder.dropout)
 
@@ -250,12 +250,14 @@ class iTransformerEncoder(nn.Module):
         spikes_timestamps:   Optional[torch.LongTensor]  = None, # (bs, seq_len) 
         spikes_spacestamps:  Optional[torch.LongTensor]  = None, # (bs, n_channels) 
         neuron_regions:      Optional[np.ndarray]        = None, # (bs, n_channels)
+        masking_mode:        Optional[str]               = None,
         nemo_rep:            Optional[np.ndarray]        = None, 
         attention_mask=None,  # (bs, n_channels, n_channels) or a list of this
     ) -> torch.FloatTensor:   # (batch, n_channels, hidden_size)
         
     
         tokens = self.embed(spikes.transpose(1,2))  # (batch, n_channels, hidden_size)
+        B, _, _ = tokens.size()
         
         if self.embed_channel:
             if spikes_spacestamps is None:
@@ -498,14 +500,16 @@ class iTransformer(nn.Module):
         
         x  = self.encoder(
             spikes, spikes_timestamps, spikes_spacestamps, 
-            neuron_regions=neuron_regions, nemo_rep=nemo_rep, attention_mask=attn_mask
+            neuron_regions=neuron_regions, masking_mode=masking_mode, nemo_rep=nemo_rep, attention_mask=attn_mask
         )    # (batch, n_channels, hidden_size)
 
-        _, _T, _ = spikes.size()
-        _, T, _ = x.size()
+        _, _, _N = spikes.size()
+        _, N, _ = x.size()
 
         if self.use_prompt or self.use_session:
-            x = x[:,T-_T:]
+            x = x[:,N-_N:]
+            targets_mask = targets_mask[:,:,N-_N:]
+            space_attn_mask = space_attn_mask[:,N-_N:]
         
         # Predict rates/ctc-logits from embeddedings
         preds = self.decoder(x)    # (bs, n_channels, seq_len) / (bs, seq_len*vocab_size) / (bs, seq_len) / (bs, n_labels)
@@ -513,7 +517,7 @@ class iTransformer(nn.Module):
         if self.method == "ssl":
             preds = preds.transpose(1,2)    # (bs, seq_len, n_channels)
             targets_mask = targets_mask & time_attn_mask.unsqueeze(2) & space_attn_mask.unsqueeze(1)
-            # Compute the loss only over masked timesteps that are not padded 
+            # Compute the loss only over masked timesteps that are not padded            
             loss = (self.loss_fn(preds, targets) * targets_mask).sum()
             n_examples = targets_mask.sum()
             return iTransformerOutput(

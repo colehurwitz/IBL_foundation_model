@@ -15,7 +15,7 @@ from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 from models.masker import Masker
 
-DEFAULT_CONFIG = "src/configs/ndt1.yaml"
+DEFAULT_CONFIG = "src/configs/ndt1/ndt1.yaml"
 
 with open('data/target_eids.txt') as file:
     include_eids = [line.rstrip() for line in file]

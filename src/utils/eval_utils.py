@@ -168,6 +168,7 @@ def co_smoothing_eval(
         test_dataloader,
         test_dataset,
         n=1,
+        save_plot=False,
         **kwargs
 ):
     assert n == 1, 'only support n=1 now'
@@ -312,14 +313,17 @@ def co_smoothing_eval(
                                                               aligned_tbins=kwargs['onset_alignment'],
                                                               neuron_idx=uuids_list[n_i+i][:4],
                                                               neuron_region=region_list[n_i+i],
-                                                              method=method_name, save_path=kwargs['save_path'])
+                                                              method=method_name, save_path=kwargs['save_path'],
+                                                              save_plot=save_plot
+                                                             )
                         r2_result_list[n_i+i] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
                             gt_held_out.squeeze(), pred_held_out.squeeze(), 
                             neuron_idx=uuids_list[n_i+i][:4],
                             neuron_region=region_list[n_i+i],
-                            method=method_name, save_path=kwargs['save_path']
+                            method=method_name, save_path=kwargs['save_path'],
+                            save_plot=save_plot
                         )
                         r2_result_list[n_i+i] = r2
                 else:
@@ -406,14 +410,17 @@ def co_smoothing_eval(
                                                           aligned_tbins=[],
                                                           neuron_idx=uuids_list[idxs[i]][:4],
                                                           neuron_region=region_list[idxs[i]],
-                                                          method=method_name, save_path=kwargs['save_path']);
+                                                          method=method_name, save_path=kwargs['save_path'],
+                                                          save_plot=save_plot
+                                                         );
                     r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                 else:
                     r2 = viz_single_cell_unaligned(
                         ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
                         neuron_idx=uuids_list[idxs[i]][:4],
                         neuron_region=region_list[idxs[i]],
-                        method=method_name, save_path=kwargs['save_path']
+                        method=method_name, save_path=kwargs['save_path'],
+                        save_plot=save_plot
                     )
                     r2_result_list[idxs[i]] = r2
 
@@ -501,14 +508,17 @@ def co_smoothing_eval(
                                                           aligned_tbins=[],
                                                           neuron_idx=uuids_list[idxs[i]][:4],
                                                           neuron_region=region_list[idxs[i]],
-                                                          method=method_name, save_path=kwargs['save_path']);
+                                                          method=method_name, save_path=kwargs['save_path'],
+                                                          save_plot=save_plot
+                                                         );
                     r2_result_list[idxs[i]] = np.array([_r2_psth, _r2_trial])
                 else:
                     r2 = viz_single_cell_unaligned(
                         ys[:, :, idxs[i]], y_preds[:, :, idxs[i]], 
                         neuron_idx=uuids_list[idxs[i]][:4],
                         neuron_region=region_list[idxs[i]],
-                        method=method_name, save_path=kwargs['save_path']
+                        method=method_name, save_path=kwargs['save_path'],
+                        save_plot=save_plot
                     )
                     r2_result_list[idxs[i]] = r2
                         
@@ -608,14 +618,17 @@ def co_smoothing_eval(
                                                               aligned_tbins=[],
                                                               neuron_idx=uuids_list[heldout_idxs[i]][:4],
                                                               neuron_region=region_list[heldout_idxs[i]],
-                                                              method=method_name, save_path=kwargs['save_path']);
+                                                              method=method_name, save_path=kwargs['save_path'],
+                                                              save_plot=save_plot
+                                                             );
                         r2_result_list[heldout_idxs[i]] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
                             gt_held_out.squeeze(), pred_held_out.squeeze(),
                             neuron_idx=uuids_list[heldout_idxs[i]][:4],
                             neuron_region=region_list[heldout_idxs[i]],
-                            method=method_name, save_path=kwargs['save_path']
+                            method=method_name, save_path=kwargs['save_path'],
+                            save_plot=save_plot
                         )
                         r2_result_list[heldout_idxs[i]] = r2
     else:

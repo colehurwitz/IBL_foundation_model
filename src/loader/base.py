@@ -328,19 +328,24 @@ class BaseDataset(torch.utils.data.Dataset):
 
         if self.use_nemo:
             neuron_uuids = np.array(data['cluster_uuids']).astype('str')
-            with open('data/MtM_unit_embed.pkl','rb') as file:
-                nemo_data = pickle.load(file)
-            nemo_uuids = nemo_data['uuids']
-            if self.wvf_only:
-                nemo_rep = np.asarray(nemo_data['wvf_rep'])
-            else:
-                nemo_rep = np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1)
+            nemo_uuids, nemo_rep = [], []
+            for fname in ['data/MtM_unit_embed.pkl', 'data/MtM_unit_embed_Jun_11.pkl']:
+                with open(fname, 'rb') as file:
+                    nemo_data = pickle.load(file)
+                    nemo_uuids.append(nemo_data['uuids'])
+                    if self.wvf_only:
+                        nemo_rep.append(np.asarray(nemo_data['wvf_rep']))
+                    else:
+                        nemo_rep.append(np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1))
+            nemo_uuids = np.concatenate(nemo_uuids)
+            nemo_rep = np.concatenate(nemo_rep)
+            
             include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
             nemo_rep = nemo_rep[np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in nemo_uuids]).flatten() == 1).astype(np.int64)].squeeze()
             include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)
             self.max_space_length = len(include_neuron_ids)
         else:
-            include_neuron_ids = np.ones(binned_spikes_data.shape[-1]).flatten().astype(bool)
+            include_neuron_ids = np.arange(binned_spikes_data.shape[-1]).flatten().astype(bool)
             nemo_rep = np.array([np.nan])
         
         binned_spikes_data = binned_spikes_data[:,include_neuron_ids].squeeze()

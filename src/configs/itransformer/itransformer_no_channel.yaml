@@ -25,8 +25,8 @@ encoder:
     activation: relu
     dropout: 0.2
     max_n_bins: 100
-    nemo_dim: 300
-    use_prompt: false
+    nemo_dim: 500
+    use_prompt: true
     use_session: false
 
   hidden_size: 128

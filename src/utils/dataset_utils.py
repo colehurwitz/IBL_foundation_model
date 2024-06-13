@@ -1,3 +1,4 @@
+import pickle
 import numpy as np
 from scipy.sparse import csr_array
 from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict, load_from_disk
@@ -174,6 +175,7 @@ def load_ibl_dataset(cache_dir,
                      mode = "train",
                      batch_size=16,
                      use_re=False,
+                     use_nemo=False,
                      seed=42):
     if aligned_data_dir:
         dataset = load_from_disk(aligned_data_dir)
@@ -259,6 +261,21 @@ def load_ibl_dataset(cache_dir,
             try:
                 # print("Loading dataset: ", dataset_eid)
                 session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
+
+                if use_nemo:
+                    print('Use NEMO cell-type embeddings.')
+                    neuron_uuids = np.array(session_dataset["train"]['cluster_uuids'][0]).astype('str')
+                    nemo_uuids = []
+                    for fname in ['data/MtM_unit_embed.pkl', 'data/MtM_unit_embed_Jun_11.pkl']:
+                        with open(fname, 'rb') as file:
+                            nemo_data = pickle.load(file)
+                            nemo_uuids.append(nemo_data['uuids'])
+                    nemo_uuids = np.concatenate(nemo_uuids)
+                    include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
+                    n_neurons = len(include_uuids)
+                else:
+                    n_neurons = len(session_dataset["train"]['cluster_regions'][0])
+
                 train_trials = len(session_dataset["train"]["spikes_sparse_data"])
                 train_trials = train_trials - train_trials % batch_size
                 session_train_datasets.append(session_dataset["train"].select(list(range(train_trials))))
@@ -275,7 +292,7 @@ def load_ibl_dataset(cache_dir,
                                                                     [session_dataset["train"]["spikes_sparse_indptr"][0]],
                                                                     [session_dataset["train"]["spikes_sparse_shape"][0]])
 
-                num_neuron_set.add(binned_spikes_data.shape[2])
+                num_neuron_set.add(n_neurons)
                 eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
                 eid_prefix = eid_prefix.split('/')[1]
                 eids_set.add(eid_prefix)

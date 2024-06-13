@@ -17,6 +17,7 @@ def make_loader(dataset,
                  wvf_only=False,
                  dataset_name = "ibl",
                  stitching = False,
+                 multi_session = False,
                  shuffle = True):
     
     dataset = BaseDataset(dataset=dataset, 
@@ -38,7 +39,7 @@ def make_loader(dataset,
     
     print(f"len(dataset): {len(dataset)}")
 
-    if stitching:
+    if stitching or multi_session:
         train_sampler = LengthStitchGroupedSampler(
             dataset=dataset, batch_size=batch_size, lengths=[sum(x["space_attn_mask"]) for x in dataset]
         )

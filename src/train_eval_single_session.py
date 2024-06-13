@@ -39,7 +39,8 @@ ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--eval", action='store_true')
 ap.add_argument("--overwrite", action='store_true')
-ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/zwang34/temp_project/iTransformer")
+ap.add_argument("--save_plot", action='store_true')
+ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/yzhang39/temp_project")
 args = ap.parse_args()
 
 base_path = args.base_path
@@ -97,8 +98,7 @@ if config.wandb.use:
 set_seed(config.seed)
 
 last_ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'model_last.pt'
-best_ckpt_path = last_ckpt_path
-# best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
+best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
 
 if args.train:
     final_checkpoint = f'{base_path}/results/{eid}/train/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/ratio_{args.mask_ratio}/mask_token_{args.tokenize_binary_mask}/prompt_{args.prompting}/NEMO_{args.embed_nemo}/no_channel_{args.no_channel_embed}/wvf_only_{args.wvf_only}/{last_ckpt_path}'
@@ -353,6 +353,7 @@ if args.eval:
                             accelerator, 
                             dataloader, 
                             dataset, 
+                            save_plot=args.save_plot,
                             **co_smoothing_configs)
             print(results)
             wandb.log(results)
@@ -383,6 +384,7 @@ if args.eval:
                             accelerator, 
                             dataloader, 
                             dataset, 
+                            save_plot=args.save_plot,
                             **co_smoothing_configs)
             print(results)
             wandb.log(results)
@@ -413,6 +415,7 @@ if args.eval:
                             accelerator, 
                             dataloader, 
                             dataset, 
+                            save_plot=args.save_plot,
                             **co_smoothing_configs)
             print(results)
             wandb.log(results)
@@ -443,6 +446,7 @@ if args.eval:
                             accelerator, 
                             dataloader, 
                             dataset, 
+                            save_plot=args.save_plot,
                             **co_smoothing_configs)
             print(results)
             wandb.log(results)
