@@ -122,31 +122,31 @@ class MultiModal(nn.Module):
     
     def cat_decoder_tensors(self, mod_dict: Dict[str, Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor]:
         decoder_tokens_all = []
-        target_gts_all = []
         emb_all = []
         decoder_attn_mask_all = []
         mod_mask_all = []
         targets_mask_all = []
+        target_gts_all = []
 
         # shuffle order in which modalities are provided (useful for modality causal mask)
         # mod_dict = {mod: d for mod, d in random.sample(mod_dict.items(), len(mod_dict))}
 
         for mod, d in mod_dict.items():
             decoder_tokens_all.append(d['x'])
-            target_gts_all.append(d['gt']) 
             emb_all.append(d['emb'])
             decoder_attn_mask_all.append(d['decoder_attn_mask'])
-            mod_mask_all.append(torch.full_like(d['gt'], self.mod_to_indx[mod], dtype=torch.int16))
+            mod_mask_all.append(torch.full_like(d['id'], self.mod_to_indx[mod], dtype=torch.int16))
             targets_mask_all.append(d['targets_mask'])
+            target_gts_all.append(d['gt'])
 
         decoder_tokens_all = torch.cat(decoder_tokens_all, dim=1)
         emb_all = torch.cat(emb_all, dim=1)
-        target_gts_all = torch.cat(target_gts_all, dim=1)
         decoder_attn_mask_all = torch.cat(decoder_attn_mask_all, dim=1)
         mod_mask_all = torch.cat(mod_mask_all, dim=1)
         targets_mask_all = torch.cat(targets_mask_all, dim=1)
+        target_gts_all = torch.cat(target_gts_all, dim=1)
 
-        return decoder_tokens_all, emb_all, target_gts_all, decoder_attn_mask_all, mod_mask_all, targets_mask_all
+        return decoder_tokens_all, emb_all, decoder_attn_mask_all, mod_mask_all, targets_mask_all, target_gts_all
 
     
     def forward_mask_encoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor]:
@@ -169,25 +169,25 @@ class MultiModal(nn.Module):
         mod_mask[inputs_mask] = -1
         # mask could be of shape 'b n1 n2' but not needed for masked_fill
         # this means this mask can then be re-used for decoder cross-attention
-        encoder_attn_mask = rearrange(encoder_attn_mask, 'b n2 -> b 1 n2')
+        # encoder_attn_mask = rearrange(encoder_attn_mask, 'b n2 -> b 1 n2')
         
         return encoder_tokens, encoder_emb, encoder_attn_mask, mod_mask, inputs_mask
 
     
     def forward_mask_decoder(self, mod_dict: Dict[str, Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor]:
         
-        decoder_tokens, decoder_emb, target_gts, decoder_attn_mask, mod_mask, targets_mask = self.cat_decoder_tensors(mod_dict)
+        decoder_tokens, decoder_emb, decoder_attn_mask, mod_mask, targets_mask, target_gts_all = self.cat_decoder_tensors(mod_dict)
 
         decoder_tokens[targets_mask] = 0.
         decoder_emb[targets_mask] = 0.
-        target_gts[targets_mask] = 0
         decoder_attn_mask = self.adapt_decoder_attention_mask(decoder_attn_mask, mod_mask)
         mod_mask[targets_mask] = -1
+        target_gts_all[targets_mask] = 0.
 
         # this means this mask can then be re-used for decoder cross-attention
-        decoder_attn_mask = rearrange(decoder_attn_mask, 'b n2 -> b 1 n2')
+        # decoder_attn_mask = rearrange(decoder_attn_mask, 'b n2 -> b 1 n2')
         
-        return decoder_tokens, decoder_emb, target_gts, decoder_attn_mask, mod_mask, targets_mask
+        return decoder_tokens, decoder_emb, decoder_attn_mask, mod_mask, targets_mask
         
     
     def adapt_decoder_attention_mask(self, decoder_attn_mask: torch.Tensor, mod_mask=Optional[torch.Tensor]) -> torch.Tensor:
@@ -223,7 +223,7 @@ class MultiModal(nn.Module):
 
         return y
 
-
+    # TO DO: Change to logits loss for detokenizer 
     def forward_loss(self, 
         y: torch.Tensor, target_gts: torch.Tensor, decoder_mod_dict: Dict[str, Any], decoder_mod_mask: torch.Tensor
         ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
@@ -268,13 +268,12 @@ class MultiModal(nn.Module):
 
             context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
             context_mask = context_mask.to(mod_dict[mod]['inputs'].device, torch.int64)
-            # self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64).expand(B,N,N) 
-            self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64)[None,:].expand(B,N) 
+            self_mask = torch.eye(N).to(mod_dict[mod]['inputs'].device, torch.int64).expand(B,N,N) 
             
-            inputs_mask = mod_dict[mod]['inputs_mask']#.unsqueeze(1).expand(B,N,N)
+            inputs_mask = mod_dict[mod]['inputs_mask'].unsqueeze(1).expand(B,N,N)
             mod_dict[mod]['encoder_attn_mask'] = self_mask | (context_mask & inputs_mask)
 
-            targets_mask = mod_dict[mod]['targets_mask']#.unsqueeze(1).expand(B,N,N)
+            targets_mask = mod_dict[mod]['targets_mask'].unsqueeze(1).expand(B,N,N)
             mod_dict[mod]['decoder_attn_mask'] = self_mask | (context_mask & targets_mask)
 
         
@@ -288,18 +287,16 @@ class MultiModal(nn.Module):
                             for mod, d in mod_dict.items()
                             if mod in self.decoder_embeddings}
 
-        decoder_tokens, decoder_emb, target_gts, decoder_attn_mask, decoder_mod_mask, targets_mask = self.forward_mask_decoder(decoder_mod_dict)
+        decoder_tokens, decoder_emb, decoder_attn_mask, decoder_mod_mask, targets_mask, target_gts = self.forward_mask_decoder(decoder_mod_dict)
 
         x = encoder_tokens + encoder_emb
-        # Check
         x = self.forward_encoder(x, encoder_attn_mask=encoder_attn_mask)
 
         context = self.decoder_proj_context(x) + encoder_emb
         y = decoder_tokens + decoder_emb
-        # Check
         y = self.forward_decoder(y, context, encoder_attn_mask=encoder_attn_mask, decoder_attention_mask=decoder_attn_mask)
 
-        loss, mod_loss, mod_n_examples, mod_preds, mod_targets = self.forward_loss(y, target_gts, decoder_mod_dict, decoder_mod_mask)
+        loss, mod_loss, mod_n_examples, mod_preds, mod_targets = self.forward_loss(y, target_gts, decoder_mod_dict, decoder_mod_mask, targets_mask)
 
         return MultiModalOutput(
             loss=loss,

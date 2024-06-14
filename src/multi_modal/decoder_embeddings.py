@@ -42,9 +42,10 @@ class DecoderEmbeddingLayer(nn.Module):
 
     def forward(self, d : Dict[str, torch.Tensor]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
 
-        targets, targets_timestamp, targets_modality  = d['targets'], d['targets_timestamp'], d['targets_modality']
+        # Hack: Change to different sampled target tokens later
+        targets, targets_timestamp, targets_modality  = d['inputs'], d['inputs_timestamp'], d['inputs_modality']
         
-        B, _, _ = targets.size()
+        B, N, _ = targets.size()
 
         x = self.token_embed(targets)
 
@@ -60,6 +61,7 @@ class DecoderEmbeddingLayer(nn.Module):
         return self.dropout(x), x_embed
 
 
+# TO DO: Add forward_logits() for detokenizer 
 class DecoderEmbedding(nn.Module):
     def __init__(
         self, 
@@ -76,13 +78,13 @@ class DecoderEmbedding(nn.Module):
 
         self.embedder = DecoderEmbeddingLayer(self.hidden_size, self.n_channel, config.embedder)
     
-    def forward(self, d : Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:    
+    def forward_embed(self, d : Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:    
                         
         x, x_emb = self.embedder(d)
 
         d['x'] = x
         d['emb'] = x_emb
-        d['gt'] = d['targets']
+        d['gt'] = d['inputs']
 
         return d
 
