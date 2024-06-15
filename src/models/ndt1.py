@@ -697,7 +697,7 @@ class NDT1(nn.Module):
         # Encode neural data
         targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
         x, new_mask = self.encoder(spikes, time_attn_mask, spikes_timestamps, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron, eid)
-        targets_mask = targets_mask | new_mask
+        targets_mask = targets_mask | new_mask.to(torch.int64)
         spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
 
         _, T, _ = x.size()

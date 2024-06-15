@@ -867,7 +867,7 @@ def behavior_decoding(**kwargs):
         print("(behave decoding) masking mode: ", model.encoder.masker.mode)
         print("(behave decoding) masking ratio: ", model.encoder.masker.ratio)
         print("(behave decoding) masking active: ", model.encoder.masker.force_active)
-        if args.mask_mode == 'causal':
+        if mask_mode == 'causal':
             model.encoder.context_forward = 0
             print("(train) context forward: ", model.encoder.context_forward)
 
