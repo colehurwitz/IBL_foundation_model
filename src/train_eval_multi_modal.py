@@ -26,7 +26,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--eid", type=str, default='671c7ea7-6726-4fbe-adeb-f89c2c8e489b')
 ap.add_argument("--mask_ratio", type=float, default=0.1)
 ap.add_argument("--mask_mode", type=str, default="temporal")
-ap.add_argument("--cont_target", type=str, default="left-whisker-motion-energy")
+ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--overwrite", action='store_true')
 ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/yzhang39/temp_project")
@@ -161,7 +161,6 @@ if args.train:
             avail_mod=avail_mod,
             config=config.model, 
             share_modality_embeddings=True,
-            use_session=False,
             **config.method.model_kwargs, 
             **meta_data
         )

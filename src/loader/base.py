@@ -335,7 +335,7 @@ class BaseDataset(torch.utils.data.Dataset):
             include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)
             self.max_space_length = len(include_neuron_ids)
         else:
-            include_neuron_ids = np.ones(binned_spikes_data.shape[-1]).flatten().astype(np.int64)
+            include_neuron_ids = np.arange(binned_spikes_data.shape[-1]).flatten().astype(np.int64)
             nemo_rep = np.array([np.nan])
         
         binned_spikes_data = binned_spikes_data[:,include_neuron_ids].squeeze()

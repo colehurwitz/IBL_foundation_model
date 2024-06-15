@@ -42,8 +42,8 @@ class DecoderEmbeddingLayer(nn.Module):
 
     def forward(self, d : Dict[str, torch.Tensor]) -> Tuple[torch.FloatTensor, torch.FloatTensor]:  
 
-        # Hack: Change to different sampled target tokens later
-        targets, targets_timestamp, targets_modality  = d['inputs'], d['inputs_timestamp'], d['inputs_modality']
+        # TO DO: Change to different sampled target tokens later
+        targets, targets_timestamp, targets_modality  = d['targets'], d['targets_timestamp'], d['targets_modality']
         
         B, N, _ = targets.size()
 
@@ -61,7 +61,7 @@ class DecoderEmbeddingLayer(nn.Module):
         return self.dropout(x), x_embed
 
 
-# TO DO: Add forward_logits() for detokenizer 
+
 class DecoderEmbedding(nn.Module):
     def __init__(
         self, 
@@ -77,6 +77,8 @@ class DecoderEmbedding(nn.Module):
         self.n_channel = n_channel
 
         self.embedder = DecoderEmbeddingLayer(self.hidden_size, self.n_channel, config.embedder)
+
+        self.out = nn.Linear(self.hidden_size, self.n_channel)
     
     def forward_embed(self, d : Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:    
                         
@@ -84,21 +86,37 @@ class DecoderEmbedding(nn.Module):
 
         d['x'] = x
         d['emb'] = x_emb
-        d['gt'] = d['inputs']
+        d['gt'] = d['targets']
 
+        return d
+
+    def out_proj(self, 
+        mod_idx : int,
+        d : Dict[str, torch.Tensor],
+        y : torch.Tensor, 
+        decoder_mod_mask : torch.Tensor,
+        n_mod : int,
+    ) -> Dict[str, torch.Tensor]:   
+        
+        B, N, _ = y.size()
+        
+        y_mod = y[decoder_mod_mask == mod_idx]
+        
+        d['preds'] = self.out(y_mod).reshape((-1, N//n_mod, self.n_channel))
+        
         return d
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, idx, max_F, config: DictConfig):
+    def __init__(self, idx, config: DictConfig):
         super().__init__()
 
         self.idx = idx
     
         self.ln1 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
         
-        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
-        self.cross_attn = CrossAttention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
+        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout)
+        self.cross_attn = CrossAttention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout)
         
         self.query_norm = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
         self.context_norm = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 

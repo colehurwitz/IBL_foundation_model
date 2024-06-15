@@ -74,7 +74,7 @@ class FactorsProjection(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout, max_F=1024):
+    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout):
         super().__init__()
         
         self.idx = idx
@@ -97,63 +97,59 @@ class Attention(nn.Module):
     def forward(
         self,       
         x:          torch.FloatTensor,                      
-        attn_mask:  torch.LongTensor,                       
+        mask:       torch.LongTensor,                       
     ) -> torch.FloatTensor:                                
 
         B, T, _  = x.size()    
 
-        attn_mask = attn_mask.unsqueeze(1).expand(B,self.n_heads,T,T).bool()           
+        mask = mask.unsqueeze(1).expand(B,self.n_heads,T,T).bool()  
         
         q = self.query(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)      
         k = self.key(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)        
         v = self.value(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)     
 
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False)
         out = out.transpose(1, 2).contiguous().view(B, T, self.hidden_size) 
 
         return self.out_proj(self.dropout(out)) 
 
 
+
 class CrossAttention(nn.Module):
-    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout, max_F=1024):
+    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout):
         super().__init__()
 
         self.idx = idx
-        
+
         self.hidden_size = hidden_size
         self.n_heads = n_heads
         assert self.hidden_size % self.n_heads == 0, "Hidden dim is not multiple of head size"
         self.head_size = self.hidden_size // self.n_heads
+
+        self.query = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
+        self.key = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
+        self.value  = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
+
+        # torch.backends.cuda.enable_flash_sdp(True)
+        self.attn_dropout = dropout
+
+        self.dropout = nn.Dropout(dropout)
+        self.out_proj = nn.Linear(hidden_size, hidden_size, bias=use_bias)
+
+    def forward(self, x, context, mask=None):
+        B, T, _ = x.size()
+        _, M, _ = context.size()
+
+        mask = mask.unsqueeze(1).expand(B,self.n_heads,T,M).bool()  
         
-        self.scale = self.head_size ** -0.5
+        q = self.query(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)      
+        k = self.key(context).view(B, M, self.n_heads, self.head_size).transpose(1, 2)        
+        v = self.value(context).view(B, M, self.n_heads, self.head_size).transpose(1, 2)     
 
-        self.q = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
-        self.kv = nn.Linear(self.hidden_size, self.hidden_size * 2, bias=use_bias)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False)
+        out = out.transpose(1, 2).contiguous().view(B, T, self.hidden_size) 
 
-        self.attn_drop = nn.Dropout(dropout)
-        self.proj = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
-        self.proj_drop = nn.Dropout(dropout)
-
-    def forward(self, x, context, attn_mask=None):
-        B, N, C = x.shape
-        _, M, _ = context.shape
-
-        q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
-        kv = self.kv(context).reshape(B, M, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        k, v = kv[0], kv[1]
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        if attn_mask is not None:
-            attn_mask = rearrange(attn_mask, "b n m -> b 1 n m") # unsqueeze / reshape for multi-head
-            attn = attn.masked_fill(attn_mask, -torch.finfo(attn.dtype).max)
-        
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
+        return self.out_proj(self.dropout(out)) 
 
 
 

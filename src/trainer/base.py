@@ -321,15 +321,19 @@ class MultiModalTrainer():
         for mod in self.mod_to_indx.keys():
             mod_dict[mod] = {}
             mod_dict[mod]['inputs_modality'] = torch.tensor(self.mod_to_indx[mod]).to(self.accelerator.device)
-            mod_dict[mod]['inputs_mask'] = batch['time_attn_mask']
+            mod_dict[mod]['targets_modality'] = torch.tensor(self.mod_to_indx[mod]).to(self.accelerator.device)
+            mod_dict[mod]['inputs_attn_mask'] = batch['time_attn_mask']
             mod_dict[mod]['inputs_timestamp'] = batch['spikes_timestamps']
+            mod_dict[mod]['targets_timestamp'] = batch['spikes_timestamps']
             mod_dict[mod]['eid'] = batch['eid'][0]  # each batch is from the same eid
             mod_dict[mod]['num_neuron'] = batch['spikes_data'].shape[2]
             if mod == 'ap':
-                mod_dict[mod]['inputs'] = batch['spikes_data']
+                mod_dict[mod]['inputs'] = batch['spikes_data'].clone()
+                mod_dict[mod]['targets'] = batch['spikes_data'].clone()
                 mod_dict[mod]['inputs_regions'] = batch['neuron_regions']
             elif mod == 'behavior':
-                mod_dict[mod]['inputs'] = batch['target']
+                mod_dict[mod]['inputs'] = batch['target'].clone()
+                mod_dict[mod]['targets'] = batch['target'].clone()
             else:
                raise Exception(f"Modality not implemented yet.")
         return self.model(mod_dict)
@@ -383,8 +387,8 @@ class MultiModalTrainer():
                     )
                     if self.config.wandb.use:
                         wandb.log({
-                            "gt_pred_fig_{mod}": wandb.Image(gt_pred_fig['plot_gt_pred']),
-                            "r2_fig_{mod}": wandb.Image(gt_pred_fig['plot_r2'])
+                            f"gt_pred_fig_{mod}": wandb.Image(gt_pred_fig['plot_gt_pred']),
+                            f"r2_fig_{mod}": wandb.Image(gt_pred_fig['plot_r2'])
                         })
                     else:
                         gt_pred_fig['plot_gt_pred'].savefig(
@@ -455,13 +459,12 @@ class MultiModalTrainer():
             for idx, num_neuron in enumerate(self.num_neurons):
                 gt[idx], preds[idx] = {}, {}
                 for mod in self.mod_to_indx.keys():
-                    gt[idx][mod], preds[idx][mod] = [], []
                     _gt = torch.cat(session_results[num_neuron][mod]["gt"], dim=0)
                     _preds = torch.cat(session_results[num_neuron][mod]["preds"], dim=0)
                     if mod == 'ap':
                         _preds = torch.exp(_preds)
-                    gt[idx][mod].append(_gt)
-                    preds[idx][mod].append(_preds)
+                    gt[idx][mod] = _gt
+                    preds[idx][mod] = _preds
 
                 if len(self.session_active_neurons) < len(self.num_neurons):
                     active_neurons = np.argsort(gt[idx]['ap'].cpu().numpy().sum((0,1)))[::-1][:50].tolist()

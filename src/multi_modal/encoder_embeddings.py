@@ -90,13 +90,13 @@ class EncoderEmbedding(nn.Module):
 
 class EncoderLayer(nn.Module):
     
-    def __init__(self, idx, max_F, config: DictConfig):
+    def __init__(self, idx, config: DictConfig):
         super().__init__()
 
         self.idx = idx
     
         self.ln1 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
-        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout, max_F)
+        self.attn = Attention(idx, config.hidden_size, config.n_heads, config.attention_bias, config.dropout)
         self.ln2 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(config.hidden_size) 
         self.mlp = MLP(config.hidden_size, config.inter_size, config.act, config.mlp_bias, config.dropout)
 
