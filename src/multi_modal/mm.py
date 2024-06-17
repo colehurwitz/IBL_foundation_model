@@ -246,7 +246,7 @@ class MultiModal(nn.Module):
                 mask = mod_dict[mod]['inputs_attn_mask']
                 
             mod_dict[mod]['inputs_mask'] = mask
-            mod_dict[mod]['targets_mask'] = 1 - mask
+            mod_dict[mod]['targets_mask'] = mask
             mod_dict[mod]['encoder_attn_mask'] = mod_dict[mod]['inputs_attn_mask']
             mod_dict[mod]['decoder_attn_mask'] = mod_dict[mod]['inputs_attn_mask']
 
