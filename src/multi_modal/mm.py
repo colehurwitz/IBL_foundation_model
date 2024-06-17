@@ -213,7 +213,7 @@ class MultiModal(nn.Module):
             targets = target_gts[mod]
             B, T, N = targets.size()
             preds = decoder_mod_dict[mod]['preds']
-            targets_mask = 1 - decoder_mod_dict[mod]['targets_mask'].unsqueeze(-1).expand(B,T,N)
+            targets_mask = decoder_mod_dict[mod]['targets_mask'].unsqueeze(-1).expand(B,T,N)
             loss = (self.loss_mod[mod](preds, targets) * targets_mask).sum()
             n_examples = targets_mask.sum()
             mod_loss[mod] = loss
