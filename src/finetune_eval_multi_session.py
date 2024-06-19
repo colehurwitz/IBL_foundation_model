@@ -30,12 +30,13 @@ ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--use_nemo", action='store_true')
 ap.add_argument("--embed_nemo", action='store_true')
 ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
-ap.add_argument("--train", type=str, default="True")
-ap.add_argument("--eval", type=str, default="True")
-ap.add_argument("--zero_shot", type=str, default="True")
+ap.add_argument("--train", action='store_true')
+ap.add_argument("--eval", action='store_true')
+ap.add_argument("--zero_shot", action='store_true')
 ap.add_argument("--base_path", type=str, default='/expanse/lustre/scratch/yzhang39/temp_project')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument("--overwrite", action='store_true')
+ap.add_argument("--save_plot", action='store_true')
 args = ap.parse_args()
 
 eid = args.test_eid
@@ -74,7 +75,7 @@ if config.wandb.use:
         project=config.wandb.project, entity=config.wandb.entity, config=config, 
         name="finetune_num_session_{}_model_{}_method_{}_mask_{}_stitch_{}_NEMO_{}_{}".format(
             num_train_sessions, config.model.model_class, config.method.model_kwargs.method_name, args.mask_mode, 
-            config.model.encoder.stitching, args.embed_nemo, eid
+            stitching, args.embed_nemo, eid
         )
     )
 
@@ -82,6 +83,8 @@ set_seed(config.seed)
 
 last_ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'model_last.pt'
 best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
+
+pretrain_model_path = f'{base_path}/results/train/multi_sessions/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/stitch_{stitching}/NEMO_{args.embed_nemo}/{num_train_sessions}_sessions/{best_ckpt_path}'
 
 if args.train and not args.zero_shot:
 
@@ -95,7 +98,7 @@ if args.train and not args.zero_shot:
                             "model_{}".format(config.model.model_class), 
                             "method_{}".format(config.method.model_kwargs.method_name), 
                             "mask_{}".format(args.mask_mode),
-                            "stitch_{}".format(config.model.encoder.stitching),
+                            "stitch_{}".format(stitching),
                             "NEMO_{}".format(args.embed_nemo),
                             "{}".format(eid)
                             )
@@ -174,7 +177,6 @@ if args.train and not args.zero_shot:
         model = accelerator.prepare(model)
         
         # load pretrain model
-        pretrain_model_path = f'{base_path}/results/train/multi_sessions/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/stitch_{stitching}/NEMO_{args.embed_nemo}/{num_train_sessions}_sessions/{best_ckpt_path}'
         if num_train_sessions > 1:
             print('Load pretrain model from:', pretrain_model_path)
             # load weights that can be found in the pretrain model
@@ -184,12 +186,12 @@ if args.train and not args.zero_shot:
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
         lr_scheduler = OneCycleLR(
-                        optimizer=optimizer,
-                        total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
-                        max_lr=config.optimizer.lr,
-                        pct_start=config.optimizer.warmup_pct,
-                        div_factor=config.optimizer.div_factor,
-                    )
+            optimizer=optimizer,
+            total_steps=config.training.num_epochs*len(train_dataloader) //config.optimizer.gradient_accumulation_steps,
+            max_lr=config.optimizer.lr,
+            pct_start=config.optimizer.warmup_pct,
+            div_factor=config.optimizer.div_factor,
+        )
         
         print(config)
         
@@ -248,10 +250,11 @@ if args.eval == "True" or args.zero_shot:
     
     if args.zero_shot:
         model_path = pretrain_model_path
-        save_path = f'{base_path}/results/zero_shot/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}'
+        save_path = f'{base_path}/results/zero_shot/num_session_{num_train_sessions}/model_{args.model_name}/method_ssl/{mask_name}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}'
     else:
         model_path = f'{base_path}/results/finetune/{num_train_sessions}_sessions/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}/{best_ckpt_path}'
-        save_path = f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}'
+        save_path = f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{args.model_name}/method_ssl/{mask_name}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}'
+
     
     configs = {
         'model_config': model_config,
@@ -273,158 +276,191 @@ if args.eval == "True" or args.zero_shot:
     
     # co-smoothing
     if co_smooth:
-        print('Start co-smoothing:')
-        co_smoothing_configs = {
-            'subtract': 'task',
-            'onset_alignment': [40],
-            'method_name': mask_name, 
-            'save_path': f'{save_path}/co_smooth',
-            'mode': 'per_neuron',
-            'n_time_steps': n_time_steps,    
-            'is_aligned': True,
-            'target_regions': None,
-            'n_jobs': 8
-        }
-    
-        results = co_smoothing_eval(model, 
-                        accelerator, 
-                        dataloader, 
-                        dataset, 
-                        **co_smoothing_configs)
-        print(results)
-        wandb.log(results)
+        
+        co_smooth_bps_file = f'{save_path}/co_smooth/bps.npy'
+        co_smooth_r2_file = f'{save_path}/co_smooth/r2.npy'
+        
+        if not os.path.exists(co_smooth_bps_file) or not os.path.exists(co_smooth_r2_file) or args.overwrite:
+            print('Start co-smoothing:')
+            co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [40],
+                'method_name': mask_name, 
+                'save_path': f'{save_path}/co_smooth',
+                'mode': 'per_neuron',
+                'n_time_steps': n_time_steps,    
+                'is_aligned': True,
+                'target_regions': None,
+                'n_jobs': 1
+            }
+        
+            results = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            save_plot=args.save_plot,
+                            **co_smoothing_configs)
+            print(results)
+            wandb.log(results)
     
     # forward prediction
     if forward_pred:
-        print('Start forward prediction:')
-        results = co_smoothing_configs = {
-            'subtract': 'task',
-            'onset_alignment': [],
-            'method_name': mask_name, 
-            'save_path': f'{save_path}/forward_pred',
-            'mode': 'forward_pred',
-            'n_time_steps': n_time_steps,    
-            'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
-            'is_aligned': True,
-            'target_regions': None,
-            'n_jobs': 8
-        }
-    
-        results = co_smoothing_eval(model, 
-                        accelerator, 
-                        dataloader, 
-                        dataset, 
-                        **co_smoothing_configs)
-        print(results)
-        wandb.log(results)
+        
+        forward_pred_bps_file = f'{save_path}/forward_pred/bps.npy'
+        forward_pred_r2_file = f'{save_path}/forward_pred/r2.npy'
+        
+        if not os.path.exists(forward_pred_bps_file) or not os.path.exists(forward_pred_r2_file) or args.overwrite:
+            
+            print('Start forward prediction:')
+            results = co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [],
+                'method_name': mask_name, 
+                'save_path': f'{save_path}/forward_pred',
+                'mode': 'forward_pred',
+                'n_time_steps': n_time_steps,    
+                'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
+                'is_aligned': True,
+                'target_regions': None,
+                'n_jobs': 1
+            }
+        
+            results = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            save_plot=args.save_plot,
+                            **co_smoothing_configs)
+            print(results)
+            wandb.log(results)
         
     
     # inter-region
     if inter_region:
-        print('Start inter-region:')
-        co_smoothing_configs = {
-            'subtract': 'task',
-            'onset_alignment': [40],
-            'method_name': mask_name,
-            'save_path': f'{save_path}/inter_region',
-            'mode': 'inter_region',
-            'n_time_steps': n_time_steps,    
-            'held_out_list': None,
-            'is_aligned': True,
-            'target_regions': ['all'],
-            'n_jobs': 8
-        }
-    
-        results = co_smoothing_eval(model, 
-                        accelerator, 
-                        dataloader, 
-                        dataset, 
-                        **co_smoothing_configs)
-        print(results)
-        wandb.log(results)
+
+        inter_region_bps_file = f'{save_path}/inter_region/bps.npy'
+        inter_region_r2_file = f'{save_path}/inter_region/r2.npy'
+        
+        if not os.path.exists(inter_region_bps_file) or not os.path.exists(inter_region_r2_file) or args.overwrite:
+        
+            print('Start inter-region:')
+            co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [40],
+                'method_name': mask_name,
+                'save_path': f'{save_path}/inter_region',
+                'mode': 'inter_region',
+                'n_time_steps': n_time_steps,    
+                'held_out_list': None,
+                'is_aligned': True,
+                'target_regions': ['all'],
+                'n_jobs': 1
+            }
+        
+            results = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            save_plot=args.save_plot,
+                            **co_smoothing_configs)
+            print(results)
+            wandb.log(results)
 
     
     # intra-region
     if intra_region:
-        print('Start intra-region:')
-        co_smoothing_configs = {
-            'subtract': 'task',
-            'onset_alignment': [40],
-            'method_name': mask_name, 
-            'save_path': f'{save_path}/intra_region',
-            'mode': 'intra_region',
-            'n_time_steps': n_time_steps,    
-            'held_out_list': None,
-            'is_aligned': True,
-            'target_regions': ['all'],
-            'n_jobs': 8
-        }
-    
-        results = co_smoothing_eval(model, 
-                        accelerator, 
-                        dataloader, 
-                        dataset, 
-                        **co_smoothing_configs)
-        print(results)
-        wandb.log(results)
+
+        intra_region_bps_file = f'{save_path}/intra_region/bps.npy'
+        intra_region_r2_file = f'{save_path}/intra_region/r2.npy'
+        
+        if not os.path.exists(intra_region_bps_file) or not os.path.exists(intra_region_r2_file) or args.overwrite:
+        
+            print('Start intra-region:')
+            co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [40],
+                'method_name': mask_name, 
+                'save_path': f'{save_path}/intra_region',
+                'mode': 'intra_region',
+                'n_time_steps': n_time_steps,    
+                'held_out_list': None,
+                'is_aligned': True,
+                'target_regions': ['all'],
+                'n_jobs': 1
+            }
+        
+            results = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            save_plot=args.save_plot,
+                            **co_smoothing_configs)
+            print(results)
+            wandb.log(results)
     
     
     if choice_decoding:
-        print('Start choice_decoding:')
-        configs = {
-            'model_config': model_config,
-            'model_path': model_path,
-            'trainer_config': f'src/configs/ppwang/trainer_sl_choice_{model_acroynm}.yaml',
-            'dataset_path': None,
-            'save_path': f'{save_path}/choice_decoding',
-            'test_size': 0.2,
-            'seed': 42,
-            'mask_name': mask_name,
-            'metric': 'acc',
-            'from_scratch': False,
-            'freeze_encoder': True,
-            'mask_ratio': args.mask_ratio,
-            'eid': eid,
-            'num_sessions': 1,
-            'target': 'choice',
-            'use_trial_filter': False,
-            'use_nemo': args.use_nemo,
-            'wvf_only': False,
-        }  
-        results = behavior_decoding(**configs)
-        print(results)
-        wandb.log(results)
+
+        choice_results_dir = f'{save_path}/choice_decoding'
+        
+        if not os.path.exists(choice_results_dir) or args.overwrite:
+        
+            print('Start choice_decoding:')
+            configs = {
+                'model_config': model_config,
+                'model_path': model_path,
+                'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
+                'dataset_path': None,
+                'save_path': f'{save_path}/choice_decoding',
+                'test_size': 0.2,
+                'seed': 42,
+                'mask_name': mask_name,
+                'metric': 'acc',
+                'from_scratch': False,
+                'freeze_encoder': True,
+                'mask_ratio': args.mask_ratio,
+                'eid': eid,
+                'num_sessions': 1,
+                'target': 'choice',
+                'use_trial_filter': False,
+                'use_nemo': args.use_nemo,
+                'wvf_only': False,
+            }  
+            results = behavior_decoding(**configs)
+            print(results)
+            wandb.log(results)
     
     
     if continuous_decoding:
-        print('Start continuous_decoding:')
-        configs = {
-            'model_config': model_config,
-            'model_path': model_path,
-            'trainer_config': f'src/configs/ppwang/trainer_sl_continuous_{model_acroynm}.yaml',
-            'dataset_path': None, 
-            'save_path': f'{save_path}/continuous_decoding',
-            'test_size': 0.2,
-            'seed': 42,
-            'mask_name': mask_name,
-            'metric': 'rsquared',
-            'from_scratch': False,
-            'freeze_encoder': True,
-            'mask_ratio': args.mask_ratio,
-            'eid': eid,
-            'num_sessions': 1,
-            'target': args.cont_target,
-            'use_trial_filter': False,
-            'use_nemo': args.use_nemo,
-            'wvf_only': False,
-        }  
-        results = behavior_decoding(**configs)
-        print(results)
-        wandb.log(results)
+        
+        continuous_results_dir = f'{save_path}/continuous_decoding'
+        
+        if not os.path.exists(continuous_results_dir) or args.overwrite:
+            
+            print('Start continuous_decoding:')
+            configs = {
+                'model_config': model_config,
+                'model_path': model_path,
+                'trainer_config': f'src/configs/{model_acroynm}/trainer_{model_acroynm}.yaml',
+                'dataset_path': None, 
+                'save_path': f'{save_path}/continuous_decoding',
+                'test_size': 0.2,
+                'seed': 42,
+                'mask_name': mask_name,
+                'metric': 'rsquared',
+                'from_scratch': False,
+                'freeze_encoder': True,
+                'mask_ratio': args.mask_ratio,
+                'eid': eid,
+                'num_sessions': 1,
+                'target': args.cont_target,
+                'use_trial_filter': False,
+                'use_nemo': args.use_nemo,
+                'wvf_only': False,
+            }  
+            results = behavior_decoding(**configs)
+            print(results)
+            wandb.log(results)
 
-print('Finish model evaluation.')
-print('=======================')
-print('Finish model training.')
-print('=====================')
-    
+
 

@@ -64,7 +64,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 154   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
@@ -74,8 +74,10 @@ data:
 
   load_meta: true
 
-  num_sessions: 40
-  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
+  num_sessions: 10
+  train_session_eid: [
+  '51e53aff-1d5d-4182-a684-aba783d50ae5', '72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '88224abb-5746-431f-9c17-17d7ef806e6a', 'a66f1593-dafd-4982-9b66-f9554b6c86b5', 
+  'c4432264-e1ae-446f-8a07-6280abade813',  'd2832a38-27f6-452d-91d6-af72d794136c', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'db4df448-e449-4a6f-a0e7-288711e7a75a', 'ecb5520d-1358-434c-95ec-93687ecd1396', 'f312aaec-3b6f-44b3-86b4-3a0c119c0438'] 
   test_session_eid: [] 
 
   split_method: predefined # random_split/session_based/predefined

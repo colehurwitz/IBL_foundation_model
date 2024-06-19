@@ -449,10 +449,18 @@ class iTransformer(nn.Module):
         # experiment on 1.the order of heads and batch, 2.(solved!)the orientation of the attn mask. ***********
         pad_mask = space_attn_mask.unsqueeze(1).repeat_interleave(n_heads, dim=0).to(torch.bool).to(spikes.device)  # (bs*n_heads, 1, n_channels)
 
-        attn_mask_inter = create_attn_mask(neuron_regions_np, "inter-region", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
-        attn_mask_intra = create_attn_mask(neuron_regions_np, "intra-region", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
-        attn_mask_none = create_attn_mask(neuron_regions_np, "all", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
+        # attn_mask_inter = create_attn_mask(neuron_regions_np, "inter-region", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
+        # attn_mask_intra = create_attn_mask(neuron_regions_np, "intra-region", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
+        # attn_mask_none = create_attn_mask(neuron_regions_np, "all", use_prompt=self.use_prompt, use_session=self.use_session).to(spikes.device)
 
+        _N = spikes.size()[-1]
+        if self.use_prompt:
+           _N += 1
+        if self.use_session:
+           _N += 1
+        attn_mask_none = torch.zeros((_N, _N), dtype=torch.bool).to(spikes.device)
+
+        
         if attn_mode == "mix_sample":
             p = self.encoder.attn_mix_ratio
             mode_list = ['inter-region', 'intra-region', 'all']

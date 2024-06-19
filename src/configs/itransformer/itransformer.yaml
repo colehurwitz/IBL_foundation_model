@@ -35,7 +35,7 @@ encoder:
   dropout: 0.4
   n_heads: 8
   n_layers: 5
-  embed_region: true
+  embed_region: false
   neuron_regions: null       # set this to the list of all regions in the dataset before initialisation
   embed_nemo: false
   embed_channel: true

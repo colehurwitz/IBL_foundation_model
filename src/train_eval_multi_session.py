@@ -274,7 +274,7 @@ if args.eval:
                 'n_time_steps': n_time_steps,    
                 'is_aligned': True,
                 'target_regions': None,
-                'n_jobs': 8
+                'n_jobs': 1
             }
         
             results = co_smoothing_eval(model, 
@@ -305,7 +305,7 @@ if args.eval:
                 'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
                 'is_aligned': True,
                 'target_regions': None,
-                'n_jobs': 8
+                'n_jobs': 1
             }
         
             results = co_smoothing_eval(model, 
@@ -336,7 +336,7 @@ if args.eval:
                 'held_out_list': None,
                 'is_aligned': True,
                 'target_regions': ['all'],
-                'n_jobs': 8
+                'n_jobs': 1
             }
         
             results = co_smoothing_eval(model, 
@@ -367,7 +367,7 @@ if args.eval:
                 'held_out_list': None,
                 'is_aligned': True,
                 'target_regions': ['all'],
-                'n_jobs': 8
+                'n_jobs': 1
             }
         
             results = co_smoothing_eval(model, 

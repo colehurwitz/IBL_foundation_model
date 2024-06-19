@@ -141,9 +141,12 @@ if args.train:
 
             if args.use_nemo:
                 neuron_uuids = np.array(train_dataset['cluster_uuids'][0]).astype('str')
-                with open('data/MtM_unit_embed.pkl','rb') as file:
-                    nemo_data = pickle.load(file)
-                nemo_uuids = nemo_data['uuids']
+                nemo_uuids = []
+                for fname in ['data/MtM_unit_embed.pkl', 'data/MtM_unit_embed_Jun_11.pkl']:
+                    with open(fname, 'rb') as file:
+                        nemo_data = pickle.load(file)
+                        nemo_uuids.append(nemo_data['uuids'])
+                nemo_uuids = np.concatenate(nemo_uuids)
                 include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
                 n_neurons = len(include_uuids)
                 print('Use NEMO cell-type embeddings.')
