@@ -33,6 +33,7 @@ ap.add_argument("--cont_target", type=str, default="whisker-motion-energy")
 ap.add_argument("--train", action='store_true')
 ap.add_argument("--eval", action='store_true')
 ap.add_argument("--zero_shot", action='store_true')
+ap.add_argument("--in_session", action='store_true')
 ap.add_argument("--base_path", type=str, default='/expanse/lustre/scratch/yzhang39/temp_project')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument("--overwrite", action='store_true')
@@ -85,6 +86,7 @@ last_ckpt_path = 'last' if config.model.model_class == 'iTransformer' else 'mode
 best_ckpt_path = 'best' if config.model.model_class == 'iTransformer' else 'model_best.pt'
 
 pretrain_model_path = f'{base_path}/results/train/multi_sessions/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/stitch_{stitching}/NEMO_{args.embed_nemo}/{num_train_sessions}_sessions/{best_ckpt_path}'
+
 
 if args.train and not args.zero_shot:
 
@@ -215,7 +217,7 @@ if args.train and not args.zero_shot:
 
 #########################
 
-if args.eval == "True" or args.zero_shot:
+if args.eval or args.zero_shot or args.in_session:
 
     print('Start model evaluation.')
     print('=======================')
@@ -250,12 +252,16 @@ if args.eval == "True" or args.zero_shot:
     
     if args.zero_shot:
         model_path = pretrain_model_path
-        save_path = f'{base_path}/results/zero_shot/num_session_{num_train_sessions}/model_{args.model_name}/method_ssl/{mask_name}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}'
+        eval_path = 'zero_shot'
+    if args.in_session:
+        model_path = pretrain_model_path
+        eval_path = 'in_session'
     else:
         model_path = f'{base_path}/results/finetune/{num_train_sessions}_sessions/model_{args.model_name}/method_ssl/mask_{args.mask_mode}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}/{best_ckpt_path}'
-        save_path = f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{args.model_name}/method_ssl/{mask_name}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}'
+        eval_path = 'eval'
 
-    
+    save_path = f'{base_path}/results/{eval_path}/num_session_{num_train_sessions}/model_{args.model_name}/method_ssl/{mask_name}/stitch_{stitching}/NEMO_{args.embed_nemo}/{eid}'
+
     configs = {
         'model_config': model_config,
         'model_path': model_path,

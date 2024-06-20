@@ -95,7 +95,7 @@ def load_model_data_local(**kwargs):
             set(str(b) for a in [row["cluster_regions"] for rows in r_dataset.values() for row in rows] for b in a)
         )
         
-    if config.model.model_class in ["NDT1", "iTransformer"]:
+    if config.model.model_class in ["NDT1"]:
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
         max_space_F = config.model.encoder.embedder.max_space_F
@@ -836,7 +836,7 @@ def behavior_decoding(**kwargs):
         test_dataset = test_dataset.select(test_filter_idx)
         print(f"Filtered trials: train {len(train_dataset)}, val {len(val_dataset)}, test {len(test_dataset)}")
 
-    if config.model.model_class in ["NDT1", "iTransformer"]:
+    if config.model.model_class in ["NDT1"]:
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
         max_space_F = config.model.encoder.embedder.max_space_F
@@ -1099,7 +1099,7 @@ def region_wise_behavior_decoding(**kwargs):
         if region not in ['root']:
             brain_regions.append(region)
 
-    if config.model.model_class in ["NDT1", "iTransformer"]:
+    if config.model.model_class in ["NDT1"]:
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
         max_space_F = config.model.encoder.embedder.max_space_F
