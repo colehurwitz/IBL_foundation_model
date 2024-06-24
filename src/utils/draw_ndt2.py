@@ -7,11 +7,11 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='NDT1')
 parser.add_argument('--base_path', type=str, default='/mnt/home/yzhang1/ceph/results/eval')
-parser.add_argument('--num_train_sessions', type=int, default=10)
+parser.add_argument('--num_train_sessions', type=int, default=1)
 args = parser.parse_args()
 
 model = args.model
-num_train_sessions = args.num_train_sessions
+num_train_sessions = 1
 
 if model == "NDT1":
     stitch = 'True'
@@ -35,9 +35,14 @@ else:
 save_path = os.path.join(args.base_path, 
                          'results', 
                          'eval',
-                         f'num_session_{num_train_sessions}',
+                         f'single-session',
                          f'model_{model_name}', 
                          'method_ssl')
+
+save_path = os.path.join(args.base_path, 
+                         'results', 
+                         'eval',
+                         f'single-session')
 # get eids under save_path
 def get_test_re_eids(eids_path):
     with open(eids_path) as file:
@@ -59,13 +64,13 @@ for eid in eids:
         for eval in eval_methods:
             metrics_dict[eid][mask][eval] = {}
             try:
-                r2_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'r2.npy')
+                r2_path = os.path.join(save_path, eid, 'model_STPatch','method_ssl',fname, 'ratio_0.3', 'mask_token_False', f'prompt_{prompt}',eval, 'r2.npy')
                 r2 = np.load(r2_path)
             except:
                 print(f'Failed to load: {eid}, {mask}, {eval}')
                 r2 = np.zeros(2)
             try:
-                bps_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'bps.npy')
+                bps_path = os.path.join(save_path, eid, 'model_STPatch','method_ssl',fname, 'ratio_0.3', 'mask_token_False', f'prompt_{prompt}',eval, 'bps.npy')
                 bps = np.load(bps_path)
             except:
                 print(f'Failed to load: {eid}, {mask}, {eval}')
@@ -77,7 +82,7 @@ for eid in eids:
             metrics_dict[eid][mask][eval] = {}
             if eval == "choice_decoding":                
                 try:
-                    acc_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'choice_results.npy')
+                    acc_path = os.path.join(save_path, eid, 'model_STPatch','method_ssl',fname, 'ratio_0.3', 'mask_token_False', f'prompt_{prompt}',eval, 'choice_results.npy')
                     _temp = np.load(acc_path, allow_pickle=True).item()
                     if model == "NDT2":
                         acc = _temp['acc']
@@ -95,7 +100,7 @@ for eid in eids:
                 metrics_dict[eid][mask][eval]['metric'] = acc
             elif eval == "continuous_decoding":
                 try:
-                    r2_path = os.path.join(save_path, fname, f'stitch_{stitch}', eid, eval, 'whisker-motion-energy_results.npy')
+                    r2_path = os.path.join(save_path, eid, 'model_STPatch','method_ssl',fname, 'ratio_0.3', 'mask_token_False', f'prompt_{prompt}',eval, 'whisker-motion-energy_results.npy')
                     r2_list = {}
                     _temp = np.load(r2_path, allow_pickle=True).item()
                     if model == "NDT2":
