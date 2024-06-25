@@ -72,11 +72,6 @@ You are all set now.
 - **Training Logs:**
   Training logs will be uploaded to Weights & Biases (wandb) and saved in the `results` folder.
 
-
-Here's a cleaned-up and well-organized version of the markdown documentation for running fine-tuning and evaluation scripts:
-
----
-
 ## Fine-Tuning and Evaluating the Pre-trained Model
 
 ### Notes
