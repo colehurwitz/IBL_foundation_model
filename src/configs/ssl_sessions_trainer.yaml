@@ -74,7 +74,7 @@ data:
 
   load_meta: true
 
-  num_sessions: 40
+  num_sessions: 10
   train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
   test_session_eid: [] 
 
