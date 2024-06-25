@@ -175,3 +175,4 @@ data
 *.out
 
 *gz
+*results*
