@@ -10,6 +10,7 @@
 #SBATCH -t 3-12:00:00 
 #SBATCH --mem=64g
 
+. ~/.bashrc
 conda activate ibl-fm
 
 cd ..
