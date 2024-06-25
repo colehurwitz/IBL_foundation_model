@@ -1,6 +1,13 @@
 #!/bin/bash
-# 
-conda activate ibl-fm
+
+#SBATCH --job-name=run-finetune-multi
+#SBATCH --output=run-finetune-multi-%j.out
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH -t 2:00:00 
+#SBATCH --mem=64g
 
 MODEL_NAME=${1} # Model name
 MASK_MODE=${2} # Mask mode e.g. all,temporal
@@ -11,6 +18,4 @@ while IFS= read -r line
 do
     echo "Evaluate on test eid: $line"
     sbatch finetune_eval_multi_session.sh $MODEL_NAME $MASK_MODE $NUM_TRAIN_SESSIONS $line $MODE
-done < "../../data/test_re_eids.txt"
-
-# conda deactivate
+done < "../data/test_re_eids.txt"
