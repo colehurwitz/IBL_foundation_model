@@ -9,7 +9,7 @@
 #SBATCH -t 2:00:00 
 #SBATCH --mem=64g
 
-MODEL_NAME=${1} # Model name
+MODEL_NAME=${1} # Model name e.g. NDT1, NDT2
 MASK_MODE=${2} # Mask mode e.g. all,temporal
 NUM_TRAIN_SESSIONS=${3} # Number of training sessions, e.g. 1, 10, 34
 MODE=${4} # train,eval,train-eval
