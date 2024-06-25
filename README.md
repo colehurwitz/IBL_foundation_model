@@ -2,7 +2,9 @@
 
 # International Brain Laboratory (IBL) Foundation Model
 
-  
+<p align="center">
+    <img src=assets/figure_1.jpg />
+</p>
 
 ## Environment setup
 
@@ -19,22 +21,6 @@ conda activate ibl-fm
   
 
 ## Datasets
-
-**Lorenz dataset**
-
-  
-
-To use the lorenz dataset from the [NDT1](https://arxiv.org/abs/2108.01210) paper, please download the dataset from this [link](https://drive.google.com/file/d/1O5GxtX90uCgP9xlcmalHmVgC7DjNKO0j/view?usp=sharing).
-
-In `src/configs/trainer.yaml`, set the following path and dataset names:
-
-```
-
-dataset_dir: PATH_TO_DATA_DIR
-
-dataset_name: lorenz
-
-```
 
 **IBL datasets**
 
