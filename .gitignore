@@ -173,3 +173,5 @@ results
 *.pt
 data
 *.out
+
+*gz

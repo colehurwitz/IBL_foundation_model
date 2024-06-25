@@ -1,15 +1,5 @@
 #!/bin/bash
 
-#SBATCH --job-name=finetune-eval-multi
-#SBATCH --output=finetune-eval-multi-%j.out
-#SBATCH -N 1
-#SBATCH -n 1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
-#SBATCH -t 12:00:00 
-#SBATCH --mem=64g
-
 MODEL_NAME=${1}
 MASK_MODE=${2}
 NUM_TRAIN_SESSIONS=${3}
@@ -41,7 +31,7 @@ echo "Prompting: $PROMPTING"
 
 conda activate ibl-fm
 
-cd ../../
+cd ../
 
 python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --mask_mode $MASK_MODE \
@@ -54,6 +44,6 @@ python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --test_eid $TEST_EID \
                          --use_dummy
 
-cd script/hpc
+cd script
 
 conda deactivate
