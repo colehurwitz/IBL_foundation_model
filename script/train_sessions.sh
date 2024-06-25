@@ -12,10 +12,10 @@
 
 conda activate ibl-fm
 
-cd ../../
+cd ..
 
 python src/train_sessions.py
 
-cd script/hpc
+cd script
 
 conda deactivate
