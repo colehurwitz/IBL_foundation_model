@@ -88,15 +88,15 @@ The scripts provided are designed for use on a High-Performance Computing (HPC) 
 1. **Script for a Single Session:**
    To execute fine-tuning and evaluation for a specific test session, use the command below. Replace the placeholder for EID with the actual unique ID of the test session.
    ```bash
-   source finetune_eval_multi_session.sh NDT1 all 10 train-eval 5dcee0eb-b34d-4652-acc3-d10afc6eae68
+   source finetune_eval_multi_session.sh NDT1 all 10 5dcee0eb-b34d-4652-acc3-d10afc6eae68 train-eval
    ```
 
 ### Parameters Explanation
 - `MODEL_NAME`: The name of the model (e.g., NDT1, NDT2).
 - `MASK_MODE`: The masking mode to apply (e.g., all, temporal).
 - `NUM_TRAIN_SESSIONS`: Number of training sessions to be used (e.g., 1, 10, 34).
-- `MODE`: The operation mode (e.g., train, eval, train-eval).
 - `EID`: Unique identifier for a specific test session.
+- `MODE`: The operation mode (e.g., train, eval, train-eval).
 
 ### Output
 Both scripts load the pre-trained model from the `results` folder and save the evaluation results in `.npy` files.
