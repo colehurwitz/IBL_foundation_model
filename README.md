@@ -8,17 +8,15 @@
 
 Create conda environment
 
-```
-
+```bash
 conda env create -f env.yaml
 ```
+
 Activate the environment
-```
+
+```bash
 conda activate ibl-fm
-
 ```
-
-  
 
 ## Datasets
 
@@ -111,10 +109,10 @@ Both scripts load the pre-trained model from the `results` folder and save the e
 
 2. **Run the visualization script:**
    ```bash
-   source draw.sh
+   source draw.sh NUM_TRAIN_SESSIONS
    ```
 
-   This script outputs images visualizing results metrics, which are stored in the `results` folder.
+   This script outputs images visualizing results metrics, which are stored in the `results/table` folder.
   
 
 ## Models
