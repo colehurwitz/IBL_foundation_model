@@ -14,7 +14,15 @@ conda activate ibl-fm
 
 cd ../
 
-python src/draw_table.py
+NUM_TRAIN_SESSIONS=${1}
+
+# default model is NDT1
+# path to the data is in IBL_foundation_models/results
+
+python src/draw_table.py --model NDT1 \
+                         --base_path ./ \
+                         --num_train_sessions ${NUM_TRAIN_SESSIONS} 
+
 
 cd script
 
