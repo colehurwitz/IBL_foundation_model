@@ -14,7 +14,7 @@ conda activate ibl-fm
 
 cd ../
 
-NUM_TRAIN_SESSIONS=${1}
+NUM_TRAIN_SESSIONS=1
 
 # default model is NDT1
 # path to the data is in IBL_foundation_models/results
