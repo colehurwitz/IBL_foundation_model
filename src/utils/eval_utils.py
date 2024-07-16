@@ -85,7 +85,7 @@ def load_model_data_local(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
+    dataset = load_dataset(f'ibl-foundation-model/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)["test"]
 
     n_neurons = len(dataset['cluster_regions'][0])
 
@@ -765,7 +765,7 @@ def behavior_decoding(**kwargs):
     model = accelerator.prepare(model)
 
     # load the dataset
-    dataset = load_dataset(f'neurofm123/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
+    dataset = load_dataset(f'ibl-foundation-model/{eid}_aligned', cache_dir=config.dirs.dataset_cache_dir)
     train_dataset = dataset["train"]
     val_dataset = dataset["val"]
     test_dataset = dataset["test"]
