@@ -24,7 +24,7 @@ conda activate ibl-fm
 
   
 
-We included 100 sessions IBL dataset and upload to huggingface. Please look at the dataset [here](https://huggingface.co/neurofm123?message=You%27re%20already%20a%20member%20of%20neurofm123!), and ask a team member to invite you.
+We included 100 sessions IBL dataset and upload to huggingface. Please look at the dataset [here](https://huggingface.co/ibl-foundation-model?message=You%27re%20already%20a%20member%20of%20ibl-foundation-model!), and ask a team member to invite you.
 
 Please create a access token using to download the dataset. You can generate the token through huggingface User `settings/Access Token`, the type of token is Read.
 

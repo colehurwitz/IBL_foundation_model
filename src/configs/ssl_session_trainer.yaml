@@ -22,8 +22,8 @@ dirs:
   pretrained_model_path: checkpoints/train/multi_sessions/model_NDT1/method_ssl/mask_combined/model_best.pt
   # dataset_dir: berkott/ibl_ssl_data
   aligned_data_dir:  null
-  huggingface_org: neurofm123
-  dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  huggingface_org: ibl-foundation-model
+  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   
 
 
