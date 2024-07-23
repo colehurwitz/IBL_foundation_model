@@ -36,12 +36,12 @@ CONFIGS
 """
 
 kwargs = {
-    "model": "include:src/configs/decoder.yaml"
+    "model": "include:src/configs/behavior_decoder/decoder.yaml"
 }
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/decoder.yaml", config)
-config = update_config("src/configs/decoder_trainer.yaml", config)
+config = update_config("src/configs/behavior_decoder/decoder.yaml", config)
+config = update_config("src/configs/behavior_decoder/decoder_trainer.yaml", config)
 
 # Need user inputs: choice of dataset & behavior
 ap = argparse.ArgumentParser()
@@ -89,7 +89,7 @@ if model_class == "linear":
     dm = SingleSessionDataModule(search_space)
     dm.setup()
     if config.model.target == 'reg':
-        model = GridSearchCV(Ridge(), {"alpha": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1]})
+        model = GridSearchCV(Ridge(), {"alpha": [1e-4, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4]})
     elif config.model.target == 'clf':
         model = GridSearchCV(LogisticRegression(), {"C": [1, 1e1, 1e2, 1e3, 1e4]})
     else:

@@ -195,7 +195,12 @@ class NeuralEmbeddingLayer(nn.Module):
 
         # Embed position
         if self.pos:
-            x += self.embed_pos(spikes_timestamp)
+            embed = self.embed_pos(spikes_timestamp)
+
+        encoder_mask = torch.argwhere(targets_mask[0,:,0] == 1).squeeze()
+        x[:,encoder_mask,:] = 0
+        # embed[:,encoder_mask,:] = 0
+        x = x + embed
 
         # Prepend prompt token 
         if self.use_prompt:
@@ -463,7 +468,7 @@ class NeuralEncoder(nn.Module):
 
     def forward(
             self, 
-            spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
+            input_spikes:     torch.FloatTensor,  # (bs, seq_len, n_channels)
             spikes_mask:      torch.LongTensor,   # (bs, seq_len)
             spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
             block_idx:        Optional[torch.LongTensor] = None,   # (bs)
@@ -474,6 +479,8 @@ class NeuralEncoder(nn.Module):
             num_neuron:       Optional[torch.LongTensor] = None,
             eid:              Optional[str] = None,
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
+
+        spikes = input_spikes.clone()
         
         B, _T, N = spikes.size() # batch size, fea len, n_channels
         
@@ -491,7 +498,7 @@ class NeuralEncoder(nn.Module):
 
         # Mask neural data
         if self.mask:
-            spikes, targets_mask = self.masker(spikes, neuron_regions)
+            _, targets_mask = self.masker(input_spikes, neuron_regions)
             targets_mask = targets_mask.to(torch.int64) & spikes_mask.unsqueeze(-1).expand(B,_T,N).to(torch.int64)
         else:
             targets_mask = torch.zeros_like(spikes).to(torch.int64).to(spikes.device)

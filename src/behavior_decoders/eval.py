@@ -3,7 +3,7 @@ import numpy as np
 from torch.nn.functional import softmax
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import r2_score, accuracy_score
-
+from utils.eval_utils import compute_R2_main
 
 def eval_model(
     train, 
@@ -69,7 +69,7 @@ def eval_model(
         raise NotImplementedError
 
     if target == 'reg':
-        metric = r2_score(test_y.flatten(), test_pred.flatten())
+        metric = compute_R2_main(test_y.reshape(-1, 1), test_pred.reshape(-1, 1), clip=False)[0]
     elif target == 'clf':
         metric = accuracy_score(test_y.argmax(1), test_pred)
         
