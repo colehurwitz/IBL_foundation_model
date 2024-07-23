@@ -1,4 +1,4 @@
-# International Brain Laboratory (IBL) Foundation Model
+# Towards an International Brain Laboratory (IBL) Foundation Model
 
 We provide a codebase for [Towards a "universal translator" for neural dynamics at single-cell, single-spike resolution](https://arxiv.org/abs/2407.14668). Neuroscience research has made immense progress over the last decade, but our understanding of the brain remains fragmented and piecemeal: the dream of probing an arbitrary brain region and automatically reading out the information encoded in its neural activity remains out of reach. In this work, we build towards a first foundation model for neural spiking data that can solve a diverse set of tasks across multiple brain areas.
 
