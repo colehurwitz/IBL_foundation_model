@@ -52,7 +52,10 @@ def eval_model(
 
     elif model_class == 'linear':
         train_x, test_x = train_x.numpy(), test_x.numpy()
-        model.fit(train_x.reshape((train_x.shape[0], -1)), train_y.argmax(1))
+        if target == 'clf':
+            model.fit(train_x.reshape((train_x.shape[0], -1)), train_y.argmax(1))
+        else:
+            model.fit(train_x.reshape((train_x.shape[0], -1)), train_y)
         test_pred = model.predict(test_x.reshape((test_x.shape[0], -1)))
         
     elif model_class in ['mlp', 'lstm']:
@@ -83,7 +86,7 @@ def eval_multi_session_model(
     metric_lst, test_pred_lst, test_y_lst = [], [], []
     for idx, (train, test) in enumerate(zip(train_lst, test_lst)):
         metric, test_pred, test_y = eval_model(
-            train, test, model, target='reg', 
+            train, test, model, target=target, 
             model_class=model_class, training_type='multi-sess',
             session_idx=idx
         )

@@ -1,0 +1,65 @@
+model_class: STPatch
+
+
+encoder:
+
+  from_pt: null
+
+  # Mask spikes
+  masker:
+    force_active: true         
+    mode: random        # masking mode: random_token / ...
+    ratio: 0.1          # ratio of data to predict
+    zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
+    random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
+    expand_prob: 0.0    # probability of expanding the mask in ``temporal`` mode
+    max_timespan: 1     # max span of mask if expanded
+    channels: null
+    # [579, 21, 486, 316, 521, 71, 32, 561, 445, 470, 205, 41, 230, 306, 592, 148, 484, 592, 181, 94, 120, 601, 414, 497, 263, 447, 16, 537, 396, 323, 68, 444, 325, 137, 223, 434, 131, 363, 280, 419, 332, 218, 130, 580, 381, 560, 576, 145, 280, 234, 258, 37, 9, 324, 199, 610, 529, 196, 164, 348]     # neurons to mask in ``co-smooth`` mode
+    timesteps: null          # time steps to mask in ``forward-pred`` mode
+    mask_regions: null       # brain regions to mask in ``region`` mode
+    target_regions: null
+    n_mask_regions: 1       # number of regions to choose from the list of mask_regions or target_regions
+
+  patcher:
+    active: true       
+    time_stride: 0
+
+  # Context available for each timestep
+  context:
+    forward: -1
+    backward: -1
+
+  # Embedding layer
+  embedder:
+    n_neurons: 704        # n_neurons has to be a multiple of max_space_F 
+    n_timesteps: 100      # n_timesteps has to be a multiple of max_time_F
+    max_time_F: 1
+    max_space_F: 64
+    max_spikes: 0         # max number of spikes in a single time bin
+
+    mode: linear          # linear/embed/identity
+    mult: 2               # embedding multiplier. hiddden_sizd = n_channels * mult
+    act: softsign         # activation for the embedding layers
+    scale: 1              # scale the embedding multiplying by this number
+    bias: true            # use bias in the embedding layer
+    dropout: 0.2          # dropout in embedding layer
+
+
+  # Transformer
+  transformer:
+    n_layers: 5           # number of transformer layers
+    hidden_size: 256      # hidden space of the transformer
+
+    n_heads: 8            # number of attentiomn heads
+    attention_bias: true  # learn bias in the attention layers
+
+    act: gelu             # activiation function in mlp layers
+    inter_size: 1024      # intermediate dimension in the mlp layers
+    mlp_bias: true        # learn bias in the mlp layers
+    
+    dropout: 0.2          # dropout in transformer layers
+    fixup_init: true      # modify weight initialization
+
+decoder:
+  from_pt: null

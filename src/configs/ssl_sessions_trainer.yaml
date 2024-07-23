@@ -1,0 +1,129 @@
+seed: 42
+
+savestring: test
+wandb_project: multi-session
+log_to_wandb: false
+
+verbosity: 0
+
+# wandb configuration
+wandb:
+  use: true
+  entity: null
+  project: multi-session
+  run_name: 671c7ea7
+
+# Logging directories
+dirs:
+  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: results  # save tensorboard logs
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
+  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
+  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
+  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  huggingface_org: ibl-foundation-model
+  
+
+
+# Training configuration
+training:
+  num_epochs: 1000
+  train_batch_size: 16
+  test_batch_size: 16  
+  shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
+
+  save_plot_every_n_epochs: 10  # Plot the model output every n epochs
+  save_every: 50  # Save checkpoint
+  eval_every: null  # Eval model
+
+  dummy: true  # Use dummy data
+
+
+# Model configuration. 
+# Will be passed to the model __init__  method if a model is not passed to the Trainer __init__ method.
+model: 
+  model_class: null   # Any registered model class name. 
+
+# Data configuration.
+data:
+  # dataset_name: lorenz # Any registered dataset name.
+  dataset_name: ibl # Any registered dataset name.
+  dataset_class: ssl # Any registered dataset class name.
+
+  # Load raw dataset if a dataset is not passed to the Trainer __init__ method. 
+  hf_dataset_name: null   # from huggingface
+  json_dataset_name: null # from json file
+
+  train_name: train   # name of the train split in the raw datasete
+  test_name: test     # name of the test split in the raw datasete
+  train_len: null     # used length of the train dataset. null to use all
+  test_len: null      # used length of the test dataset. null to use all
+
+  LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
+  use_lograte: True # use lograte
+
+  max_time_length: 100    # max_time_length has to be a multiple of time patch size
+  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  patching: true # patching the neurons
+  sort_by_depth: false
+  brain_region: all
+
+  include_behav: false # include behavior data
+  target: null
+
+  load_meta: true
+
+  num_sessions: 10
+  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
+  test_session_eid: [] 
+
+  split_method: predefined # random_split/session_based/predefined
+
+  use_aligned_test: False
+
+  sort_by_depth: false
+  sort_by_region: false
+  brain_region: all
+
+  spike_augmentation: false
+
+  use_re: true
+
+# Method configuration. Contains kwargs that are specific to the training method.
+method:
+
+  # Passed to the model __init__ method together with the model config
+  model_kwargs: 
+    method_name: ssl #ssl 
+
+    use_lograte: true
+    loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
+    output_size: 2
+    clf: false
+    reg: false
+
+  # Passed to the Dataset __init__ method together with the raw dataset. 
+  dataset_kwargs: {}
+
+  # Passed to the DataLoader __init__ method.
+  dataloader_kwargs:
+    # Contains which keys to pad, along which dimension with which value
+    pad_dict: 
+      spikes:
+          dim: 0
+          side: right
+          value: 0
+          truncate: null
+          min_length: null
+      
+
+optimizer:
+  gradient_accumulation_steps: 1
+  lr: 1.e-4
+  wd: 0.01
+  eps: 1.e-8
+  warmup_pct: 0.15 # cosine/linear
+  gamma: 0.95     # step
+  div_factor: 10  # cosine
+  scheduler: cosine # step/cosine/linear

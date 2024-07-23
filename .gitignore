@@ -170,5 +170,9 @@ wandb
 results
 
 *.pth
-*pt
+*.pt
 data
+*.out
+
+*gz
+*results*

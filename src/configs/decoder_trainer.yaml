@@ -3,8 +3,8 @@ seed: 42
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
   log_dir: train_logs  # save tensorboard logs
-  data_dir: /mnt/3TB/yizi/huggingface/decoding_datasets
-  output_dir: /mnt/3TB/yizi/ibl_fm/results
+  data_dir: /mnt/home/yzhang1/ceph/checkpoints/datasets_cache
+  output_dir: /mnt/home/yzhang1/ceph/results/decoding
 
 training:
   num_epochs: 500
@@ -17,8 +17,8 @@ training:
 
 model: 
   model_class: DECODER   # Any registered model class name. 
-  target: clf           # reg
-  output_size: 2       # 100 
+  target: reg           # clf
+  output_size: 100       # 2 
 
 data:
   dataset_class: decoding # Any registered dataset class name. 
@@ -31,9 +31,9 @@ data:
   num_workers: 1
 
 optimizer:
-  lr: 0.001
+  lr: 0.01
   scheduler: cosine # step/cosine/linear
-  weight_decay: 0.001
+  weight_decay: 0.1
 
 tuner:
   num_epochs: 10 # change later when running on clusters
@@ -45,7 +45,7 @@ tuner:
   enable_progress_bar: false
 
 wandb:
-  use: true
+  use: false
   
 
   
