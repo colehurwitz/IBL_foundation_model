@@ -1,8 +1,7 @@
-import pickle
 import numpy as np
 from scipy.sparse import csr_array
 from datasets import Dataset, DatasetInfo, list_datasets, load_dataset, concatenate_datasets,DatasetDict, load_from_disk
-import h5py
+# import h5py
 import os
 import torch
 from tqdm import tqdm
@@ -43,7 +42,15 @@ def get_binned_spikes_from_sparse(spikes_sparse_data_list, spikes_sparse_indices
 
     return binned_spikes
 
-def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_behaviors=None):
+def create_dataset(
+    binned_spikes, 
+    bwm_df, 
+    eid, 
+    params, 
+    meta_data=None, 
+    binned_behaviors=None,
+    binned_lfp=None
+):
 
     # Scipy sparse matrices can't be directly loaded into HuggingFace Datasets so they are converted to lists
     sparse_binned_spikes, spikes_sparse_data_list, spikes_sparse_indices_list, spikes_sparse_indptr_list, spikes_sparse_shape_list = get_sparse_from_binned_spikes(binned_spikes)
@@ -59,6 +66,9 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
         # Store choice behaviors more efficiently (save this option for later)
         # binned_behaviors["choice"] = np.where(binned_behaviors["choice"] > 0, 0, 1).astype(bool)
         data_dict.update(binned_behaviors)
+
+    if binned_lfp is not None:
+        data_dict.update({"lfp": binned_lfp})
         
     if meta_data is not None:
         meta_dict = {
@@ -66,8 +76,6 @@ def create_dataset(binned_spikes, bwm_df, eid, params, meta_data=None, binned_be
             'interval_len': [params['interval_len']] * len(sparse_binned_spikes),
             'eid': [meta_data['eid']] * len(sparse_binned_spikes),
             'probe_name': [meta_data['probe_name']] * len(sparse_binned_spikes),
-            'subject': [meta_data['subject']] * len(sparse_binned_spikes),
-            'lab': [meta_data['lab']] * len(sparse_binned_spikes),
             'sampling_freq': [meta_data['sampling_freq']] * len(sparse_binned_spikes),
             'cluster_regions': [meta_data['cluster_regions']] * len(sparse_binned_spikes),
             'cluster_channels': [meta_data['cluster_channels']] * len(sparse_binned_spikes),
@@ -175,7 +183,6 @@ def load_ibl_dataset(cache_dir,
                      mode = "train",
                      batch_size=16,
                      use_re=False,
-                     use_nemo=False,
                      seed=42):
     if aligned_data_dir:
         dataset = load_from_disk(aligned_data_dir)
@@ -251,9 +258,9 @@ def load_ibl_dataset(cache_dir,
 
         num_neuron_set = set()
         eids_set = set()
-        target_eids = get_target_eids()
-        test_re_eids = get_test_re_eids()
         if use_re:
+            target_eids = get_target_eids()
+            test_re_eids = get_test_re_eids()
             train_session_eid_dir = [eid for eid in train_session_eid_dir if eid.split('_')[0].split('/')[1] in target_eids]
             # remove the test_re_eids from the train_session_eid_dir
             train_session_eid_dir = [eid for eid in train_session_eid_dir if eid.split('_')[0].split('/')[1] not in test_re_eids]
@@ -261,21 +268,6 @@ def load_ibl_dataset(cache_dir,
             try:
                 # print("Loading dataset: ", dataset_eid)
                 session_dataset = load_dataset(dataset_eid, cache_dir=cache_dir)
-
-                if use_nemo:
-                    print('Use NEMO cell-type embeddings.')
-                    neuron_uuids = np.array(session_dataset["train"]['cluster_uuids'][0]).astype('str')
-                    nemo_uuids = []
-                    for fname in ['data/MtM_unit_embed.pkl', 'data/MtM_unit_embed_Jun_11.pkl']:
-                        with open(fname, 'rb') as file:
-                            nemo_data = pickle.load(file)
-                            nemo_uuids.append(nemo_data['uuids'])
-                    nemo_uuids = np.concatenate(nemo_uuids)
-                    include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
-                    n_neurons = len(include_uuids)
-                else:
-                    n_neurons = len(session_dataset["train"]['cluster_regions'][0])
-
                 train_trials = len(session_dataset["train"]["spikes_sparse_data"])
                 train_trials = train_trials - train_trials % batch_size
                 session_train_datasets.append(session_dataset["train"].select(list(range(train_trials))))
@@ -292,7 +284,7 @@ def load_ibl_dataset(cache_dir,
                                                                     [session_dataset["train"]["spikes_sparse_indptr"][0]],
                                                                     [session_dataset["train"]["spikes_sparse_shape"][0]])
 
-                num_neuron_set.add(n_neurons)
+                num_neuron_set.add(binned_spikes_data.shape[2])
                 eid_prefix = dataset_eid.split('_')[0] if train_aligned else dataset_eid
                 eid_prefix = eid_prefix.split('/')[1]
                 eids_set.add(eid_prefix)

@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: ibl-ndt1-100
+wandb_project: lfp
 log_to_wandb: false
 
 verbosity: 0
@@ -10,7 +10,7 @@ verbosity: 0
 wandb:
   use: true
   entity: null
-  project: ibl-ndt1-100
+  project: lfp
   run_name: 671c7ea7
 
 # Logging directories
@@ -62,8 +62,8 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_time_length: 5    # max_time_length has to be a multiple of time patch size
+  max_space_length: 384   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   sort_by_region: false
@@ -90,7 +90,7 @@ method:
     method_name: ssl #ssl 
 
     use_lograte: true
-    loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
+    loss: mse  # poisson_nll # mse/other distirbutions (todo)
     output_size: 2
     clf: false
     reg: false

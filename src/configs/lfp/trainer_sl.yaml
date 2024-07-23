@@ -1,7 +1,7 @@
 seed: 42
 
 savestring: test
-wandb_project: single-session
+wandb_project: lfp
 log_to_wandb: false
 
 verbosity: 0
@@ -10,25 +10,21 @@ verbosity: 0
 wandb:
   use: false
   entity: null
-  project: single-session
+  project: lfp
   run_name: 671c7ea7
 
 # Logging directories
 dirs:
-  checkpoint_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: /expanse/lustre/scratch/yzhang39/temp_project/results  # save tensorboard logs
-  dataset_cache_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints/datasets_cache  # save dataset cache
-  # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
+  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: results  # save tensorboard logs
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
-
-
 # Training configuration
 training:
-  num_epochs: 200
+  num_epochs: 1000
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -62,9 +58,9 @@ data:
   LOG_EPSILON: 1.e-7 # epsilon for log transformation, to prevent log(0)
   use_lograte: True # use lograte
 
-  max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
-  patching: true # patching the neurons
+  max_time_length: 5    # max_time_length has to be a multiple of time patch size
+  max_space_length: 384   # max_space_length has to be a multiple of space patch size
+  patching: true  # patching the neurons
   sort_by_depth: false
   sort_by_region: false
   brain_region: all
