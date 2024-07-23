@@ -17,7 +17,7 @@ from models.masker import Masker
 
 DEFAULT_CONFIG = "src/configs/ndt1/ndt1.yaml"
 
-with open('data/target_eids.txt') as file:
+with open('data/repro_ephys_release.txt') as file:
     include_eids = [line.rstrip() for line in file]
 
 @dataclass

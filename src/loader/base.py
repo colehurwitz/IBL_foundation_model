@@ -268,6 +268,7 @@ class BaseDataset(torch.utils.data.Dataset):
         stitching = False,
         use_nemo = False,
         wvf_only = False,
+        lfp_only = False,
     ) -> None:
         self.dataset = dataset
         self.target = target
@@ -284,6 +285,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.dataset_name = dataset_name
         self.stitching = stitching
         self.use_nemo = use_nemo
+        self.lfp_only = lfp_only
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -364,6 +366,11 @@ class BaseDataset(torch.utils.data.Dataset):
                 neuron_depths = neuron_depths[region_idxs]   
             if self.use_nemo:
                 nemo_rep = nemo_rep[region_idxs]
+
+        # Load LFP
+        # Hack: Do not support loading spikes and LFP together. Extend later. 
+        if self.lfp_only:
+            binned_spikes_data = np.array(data["lfp"])
 
         pad_time_length, pad_space_length = 0, 0
 

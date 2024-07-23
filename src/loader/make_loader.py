@@ -18,6 +18,7 @@ def make_loader(dataset,
                  dataset_name = "ibl",
                  stitching = False,
                  multi_session = False,
+                 lfp_only = False,
                  shuffle = True):
     
     dataset = BaseDataset(dataset=dataset, 
@@ -34,7 +35,8 @@ def make_loader(dataset,
                           load_meta=load_meta,
                           use_nemo=use_nemo,
                           wvf_only=wvf_only,
-                          stitching=stitching
+                          stitching=stitching,
+                          lfp_only = lfp_only
             )
     
     print(f"len(dataset): {len(dataset)}")

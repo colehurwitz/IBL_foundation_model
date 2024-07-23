@@ -1,40 +1,40 @@
 seed: 42
 
 savestring: test
-wandb_project: single-session
+wandb_project: ndt1
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
-  project: single-session
+  project: ndt1
   run_name: 671c7ea7
 
 # Logging directories
 dirs:
-  checkpoint_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints  # save model state dicts (todo optimizer states)
-  log_dir: /expanse/lustre/scratch/yzhang39/temp_project/results  # save tensorboard logs
-  dataset_cache_dir: /expanse/lustre/scratch/yzhang39/temp_project/checkpoints/datasets_cache  # save dataset cache
+  checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
+  log_dir: results  # save tensorboard logs
+  dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
   dataset_dir: neurofm123/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
-  behav_dir:  /home/exouser/Documents/IBL_foundation_model/data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  behav_dir:  data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: neurofm123
   
 
 
 # Training configuration
 training:
-  num_epochs: 200
+  num_epochs: 1000
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 5  # Plot the model output every n epochs
-  save_every: 50  # Save checkpoint
+  save_every: 100  # Save checkpoint
   eval_every: null  # Eval model
 
 
@@ -70,13 +70,13 @@ data:
   brain_region: all
   spike_augmentation: false
 
-  include_behav: true # include behavior data
-  target: wheel-speed
+  include_behav: false # include behavior data
+  target: null
 
   load_meta: true
 
   num_sessions: 3
-  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
 
   split_method: session_based # random_split/session_based
 
@@ -87,13 +87,13 @@ method:
 
   # Passed to the model __init__ method together with the model config
   model_kwargs: 
-    method_name: sl #ssl 
+    method_name: ssl #ssl 
 
     use_lograte: true
-    loss: mse  # poisson_nll # mse/other distirbutions (todo)
-    output_size: 100
+    loss: poisson_nll  # poisson_nll # mse/other distirbutions (todo)
+    output_size: 2
     clf: false
-    reg: true
+    reg: false
 
   # Passed to the Dataset __init__ method together with the raw dataset. 
   dataset_kwargs: {}
@@ -112,8 +112,8 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 5.e-4
-  wd: 0.1
+  lr: 1.e-4
+  wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear
   gamma: 0.95     # step
