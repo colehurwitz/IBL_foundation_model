@@ -20,19 +20,11 @@ Activate the environment
 conda activate ibl-fm
 ```
 
-## Datasets
+## Datasets and Models
 
-**IBL datasets**
+### Hugging Face
 
-  
-
-We included 100 sessions IBL dataset and upload to huggingface. Please look at the dataset [here](https://huggingface.co/ibl-foundation-model?message=You%27re%20already%20a%20member%20of%20ibl-foundation-model!), and ask a team member to invite you.
-
-Please create a access token using to download the dataset. You can generate the token through huggingface User `settings/Access Token`, the type of token is Read.
-
-Use `huggingface-cli login` to login. 
-
-You are all set now.
+We have uploaded both the processed sessions from the IBL dataset and the pre-trained multi-session models to Hugging Face. You can access these resources [here](https://huggingface.co/ibl-foundation-model). Downloading them is straightforward and allows you to integrate these models and datasets seamlessly into your projects.
 
 ## Training Multi/Single Session Models (SSL)
 
@@ -79,7 +71,7 @@ The scripts provided are designed for use on a High-Performance Computing (HPC) 
 
 ### Running Multi-Session Fine-Tuning and Evaluation
 1. **Script for Multiple Sessions:**
-   To submit all test sessions listed in `data/test_re_eids.txt` for fine-tuning and evaluation, use the following command:
+   To submit jobs for all test sessions listed in `data/test_re_eids.txt` for fine-tuning and evaluation, use the following command:
    ```bash
    source run_finetune_multi_session.sh NDT1 all 10 train-eval
    ```
