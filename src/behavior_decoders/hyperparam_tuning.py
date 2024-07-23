@@ -6,7 +6,7 @@ from ray.train import RunConfig, ScalingConfig, CheckpointConfig
 from ray.train.torch import TorchTrainer
 
 def tune_decoder(
-    train_func, search_space, save_dir='/mnt/home/yzhang1/ceph/ray_results',
+    train_func, search_space, save_dir='/scratch/bcxj/yzhang39',
     max_epochs=500, num_samples=10, use_gpu=False, num_workers=1, 
     metric="val_loss", mode="min", 
 ):

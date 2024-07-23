@@ -41,6 +41,7 @@ ap.add_argument("--eval", action='store_true')
 ap.add_argument("--overwrite", action='store_true')
 ap.add_argument("--save_plot", action='store_true')
 ap.add_argument("--base_path", type=str, default="/expanse/lustre/scratch/yzhang39/temp_project")
+ap.add_argument('--seed', type=int, default=42)
 args = ap.parse_args()
 
 base_path = args.base_path
@@ -164,7 +165,7 @@ if args.train:
             test_dataset = get_data_from_h5("val", config.dirs.dataset_dir, config=config)
 
         if args.model_name in ["NDT1", "iTransformer"]:
-            max_space_length = n_neurons  
+            max_space_length = n_neurons 
         elif args.model_name in ["NDT2", "STPatch"]:
             max_space_F = config.model.encoder.embedder.max_space_F
             max_space_length = ceil(n_neurons/max_space_F) * max_space_F
@@ -175,7 +176,7 @@ if args.train:
 
         meta_data['max_space_length'] = max_space_length
         
-        meta_data['num_neurons'] = [n_neurons]
+        meta_data['num_neurons'] = [max_space_length]
         print(meta_data)
 
         # make the dataloader
@@ -293,12 +294,12 @@ if args.eval:
         
     n_time_steps = 100
     
-    co_smooth = True
+    co_smooth = False
     forward_pred = True
-    inter_region = True
-    intra_region = True
-    choice_decoding = True
-    continuous_decoding = True
+    inter_region = False
+    intra_region = False
+    choice_decoding = False
+    continuous_decoding = False
     
     print(mask_name)
 
@@ -332,6 +333,7 @@ if args.eval:
     }  
     
     # load your model and dataloader
+    set_seed(args.seed)
     model, accelerator, dataset, dataloader = load_model_data_local(**configs)
     
     # co-smoothing
@@ -351,7 +353,8 @@ if args.eval:
                 'target_regions': None,
                 'n_jobs': 1
             }
-    
+
+            set_seed(args.seed)
             results = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
@@ -382,7 +385,8 @@ if args.eval:
                 'target_regions': None,
                 'n_jobs': 1
             }
-    
+
+            set_seed(args.seed)
             results = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
@@ -413,7 +417,8 @@ if args.eval:
                 'target_regions': ['all'],
                 'n_jobs': 1
             }
-    
+
+            set_seed(args.seed)
             results = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
@@ -444,7 +449,8 @@ if args.eval:
                 'target_regions': ['all'],
                 'n_jobs': 1
             }
-    
+
+            set_seed(args.seed)
             results = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 

@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 from sklearn import preprocessing
 from sklearn.preprocessing import OneHotEncoder
+from scipy.ndimage import gaussian_filter1d
 import torch
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch.utilities import CombinedLoader
@@ -16,7 +17,7 @@ def to_tensor(x, device):
 
 def standardize_spike_data(spike_data, means=None, stds=None):
     K, T, N = spike_data.shape
-
+    
     if (means is None) and (stds == None):
         means, stds = np.empty((T, N)), np.empty((T, N))
 
@@ -30,7 +31,16 @@ def standardize_spike_data(spike_data, means=None, stds=None):
             std_spike_data[:, t*N:(t+1)*N] /= std
         means[t], stds[t] = mean, std
     std_spike_data = std_spike_data.reshape(K, T, N)
-    return std_spike_data, means, stds
+
+    smooth_spike_data = []
+    for k in range(K):
+        tmp = []
+        for n in range(N):
+            tmp.append(gaussian_filter1d(std_spike_data[k,:,n], sigma=2))
+        smooth_spike_data.append(tmp)
+    smooth_spike_data = np.array(smooth_spike_data).transpose(0,2,1)
+            
+    return smooth_spike_data, means, stds
 
 
 def get_binned_spikes(dataset):

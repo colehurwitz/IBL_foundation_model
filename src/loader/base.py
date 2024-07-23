@@ -284,7 +284,6 @@ class BaseDataset(torch.utils.data.Dataset):
         self.dataset_name = dataset_name
         self.stitching = stitching
         self.use_nemo = use_nemo
-        self.wvf_only = wvf_only
 
     def _preprocess_h5_data(self, data, idx):
         spike_data, rates, _, _ = data
@@ -323,29 +322,25 @@ class BaseDataset(torch.utils.data.Dataset):
                 target_behavior = target_behavior.astype(np.float32)
         else:
             target_behavior = np.array([np.nan])
+
+        choice = np.array(data['choice']).astype(np.float32)
+        block = np.array(data['block']).astype(np.float32)
+        reward = np.array(data['reward']).astype(np.float32)
             
         binned_spikes_data = binned_spikes_data[0]
 
         if self.use_nemo:
             neuron_uuids = np.array(data['cluster_uuids']).astype('str')
-            nemo_uuids, nemo_rep = [], []
-            for fname in ['data/MtM_unit_embed.pkl', 'data/MtM_unit_embed_Jun_11.pkl']:
-                with open(fname, 'rb') as file:
-                    nemo_data = pickle.load(file)
-                    nemo_uuids.append(nemo_data['uuids'])
-                    if self.wvf_only:
-                        nemo_rep.append(np.asarray(nemo_data['wvf_rep']))
-                    else:
-                        nemo_rep.append(np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1))
-            nemo_uuids = np.concatenate(nemo_uuids)
-            nemo_rep = np.concatenate(nemo_rep)
-            
+            with open('data/MtM_unit_embed.pkl','rb') as file:
+                nemo_data = pickle.load(file)
+            nemo_uuids = nemo_data['uuids']
+            nemo_rep = np.concatenate((nemo_data['wvf_rep'], nemo_data['acg_rep']), axis=1)
             include_uuids = np.intersect1d(neuron_uuids, nemo_uuids)
             nemo_rep = nemo_rep[np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in nemo_uuids]).flatten() == 1).astype(np.int64)].squeeze()
             include_neuron_ids = np.argwhere(np.array([1 if uuid in include_uuids else 0 for uuid in neuron_uuids]).flatten() == 1).astype(np.int64)
             self.max_space_length = len(include_neuron_ids)
         else:
-            include_neuron_ids = np.arange(binned_spikes_data.shape[-1]).flatten().astype(bool)
+            include_neuron_ids = np.arange(binned_spikes_data.shape[-1]).flatten().astype(np.int64)
             nemo_rep = np.array([np.nan])
         
         binned_spikes_data = binned_spikes_data[:,include_neuron_ids].squeeze()
@@ -450,6 +445,9 @@ class BaseDataset(torch.utils.data.Dataset):
             "neuron_regions": list(neuron_regions),
             "eid": data['eid'],
             "nemo_rep": nemo_rep,
+            "choice": choice,
+            "block": block,
+            "reward": reward,
         }
     
     def __len__(self):

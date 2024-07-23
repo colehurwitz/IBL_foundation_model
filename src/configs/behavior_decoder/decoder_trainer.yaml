@@ -3,8 +3,8 @@ seed: 42
 dirs:
   checkpoint_dir: checkpoints  # save model state dicts (todo optimizer states)
   log_dir: train_logs  # save tensorboard logs
-  data_dir: /mnt/home/yzhang1/ceph/checkpoints/datasets_cache
-  output_dir: /mnt/home/yzhang1/ceph/results/decoding
+  data_dir: checkpoints/datasets_cache
+  output_dir: results/decoding
 
 training:
   num_epochs: 500
