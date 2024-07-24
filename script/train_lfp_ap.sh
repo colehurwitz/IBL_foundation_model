@@ -24,7 +24,11 @@ wandb login 3ec2f93e55245d103845fc9e0ad8a81aa3d44f7c
 
 huggingface-cli login --token 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  --add-to-git-credential
 
-python src/train_lfp_ap.py --eid 5dcee0eb-b34d-4652-acc3-d10afc6eae68 --modality lfp --task ssl --train --base_path /scratch/bcxj/yzhang39
+# python src/train_lfp_ap.py --eid 5dcee0eb-b34d-4652-acc3-d10afc6eae68 --modality lfp --task ssl --train --base_path /scratch/bcxj/yzhang39
+
+# python src/train_lfp_ap.py --eid 5dcee0eb-b34d-4652-acc3-d10afc6eae68 --modality lfp --task sl --train --base_path /scratch/bcxj/yzhang39
+
+python src/train_lfp_ap.py --eid 5dcee0eb-b34d-4652-acc3-d10afc6eae68 --modality ap --task sl --train --base_path /scratch/bcxj/yzhang39
 
 conda deactivate
 
