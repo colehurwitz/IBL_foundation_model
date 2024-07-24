@@ -108,7 +108,11 @@ if args.train:
         # Load data
         dataset = load_dataset(f'neurofm123/{eid}_aligned_4s', cache_dir=config.dirs.dataset_cache_dir)
         train_dataset, val_dataset, test_dataset = dataset["train"], dataset["val"], dataset["test"]
-        n_timesteps, n_neurons = np.array(train_dataset['lfp'][0]).shape
+        if args.modality == "lfp":
+            n_neurons, n_timesteps = np.array(train_dataset['lfp'][0]).shape
+        else:
+            n_timesteps = config.data.max_time_length
+            n_neurons = len(train_dataset['cluster_regions'][0])
         meta_data['max_space_length'] = n_neurons
         meta_data['num_neurons'] = [n_neurons]
         print("Meta data:")

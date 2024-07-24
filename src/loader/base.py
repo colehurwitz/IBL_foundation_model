@@ -370,13 +370,13 @@ class BaseDataset(torch.utils.data.Dataset):
         # Load LFP
         # Hack: Do not support loading spikes and LFP together. Extend later. 
         if self.lfp_only:
-            binned_spikes_data = np.array(data["lfp"])
+            binned_spikes_data = np.array(data["lfp"]).T
 
         pad_time_length, pad_space_length = 0, 0
 
         num_time_steps, num_neurons = binned_spikes_data.shape
 
-        if self.load_meta:
+        if self.load_meta and not self.lfp_only:  # Hack
             neuron_idxs = np.arange(num_neurons)
             assert (self.sort_by_depth and self.sort_by_region) == False, "Can only sort either by depth or neuron."
             if self.sort_by_depth:
