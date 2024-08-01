@@ -38,7 +38,7 @@ ap.add_argument('--use_dummy', action='store_true')
 ap.add_argument('--use_nlb', action='store_true')
 args = ap.parse_args()
 
-eid = args.test_eid
+eid = args.test_eid if not args.use_nlb else "nlb-rtt"
 base_path = args.base_path
 model_acroynm = args.model_name.lower()
 num_train_sessions = args.num_train_sessions
@@ -174,13 +174,12 @@ try:
             model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
         elif not args.use_nlb:
             print('Train from scratch.')
-        if args.use_nlb and config.dirs.pretrain_model_path:
-            assert num_train_sessions > 1, "NLB RTT data, num_train_sessions should be greater than 1."
+        if args.use_nlb and config.dirs.pretrain_model_path and num_train_sessions > 1:
             print("load pretrained 34-session IBL model")
             pretrain_model_path = config.dirs.pretrain_model_path
             model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
             print("load pretrained 34-session IBL model, start finetune for NLB RTT data")
-        else:
+        elif args.use_nlb:
             print("NLB RTT data, train from scratch.")
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
