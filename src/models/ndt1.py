@@ -153,6 +153,7 @@ class NeuralEmbeddingLayer(nn.Module):
         self.use_session = config.use_session
         if self.use_session:
             self.eid_lookup = include_eids
+            self.eid_lookup[-1] = "nlb-rtt"
             self.eid_to_indx = {r: i for i,r in enumerate(self.eid_lookup)}
             self.embed_session = nn.Embedding(len(self.eid_lookup), hidden_size) 
 
