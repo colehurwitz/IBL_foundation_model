@@ -2,6 +2,7 @@ import argparse
 from math import ceil
 from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
+from utils.nlb_data_utils import load_nlb_dataset
 import argparse
 from datasets import load_dataset, load_from_disk, concatenate_datasets
 from utils.dataset_utils import load_ibl_dataset
@@ -34,6 +35,7 @@ ap.add_argument("--eval", type=str, default="True")
 ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
+ap.add_argument('--use_nlb', action='store_true')
 args = ap.parse_args()
 
 eid = args.test_eid
@@ -76,15 +78,18 @@ try:
     if args.train == "True":
         print('Start model training.')
         print('=====================')
-        train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
-                            config.dirs.huggingface_org,
-                            eid=None,
-                            num_sessions=config.data.num_sessions,
-                            split_method=config.data.split_method,
-                            train_session_eid=[eid],
-                            test_session_eid=config.data.test_session_eid,
-                            batch_size=config.training.train_batch_size,
-                            seed=config.seed)
+        if args.use_nlb:
+            train_dataset, val_dataset, test_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy")
+        else:
+            train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+                                config.dirs.huggingface_org,
+                                eid=None,
+                                num_sessions=config.data.num_sessions,
+                                split_method=config.data.split_method,
+                                train_session_eid=[eid],
+                                test_session_eid=config.data.test_session_eid,
+                                batch_size=config.training.train_batch_size,
+                                seed=config.seed)
 
         log_dir = os.path.join(base_path, config.dirs.log_dir, 
                             "finetune", 
@@ -95,8 +100,7 @@ try:
                             "stitch_{}".format(config.model.encoder.stitching),
                             "{}".format(eid)
                             )
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
         print(meta_data)
 
         if config.wandb.use:
@@ -132,6 +136,7 @@ try:
                                 sort_by_depth=config.data.sort_by_depth,
                                 sort_by_region=config.data.sort_by_region,
                                 stitching=config.model.encoder.stitching,
+                                use_nlb=args.use_nlb,
                                 shuffle=True)
         
         val_dataloader = make_loader(val_dataset, 
@@ -146,6 +151,7 @@ try:
                                 sort_by_depth=config.data.sort_by_depth,
                                 sort_by_region=config.data.sort_by_region,
                                 stitching=config.model.encoder.stitching,
+                                use_nlb=args.use_nlb,
                                 shuffle=False)
         
         # Initialize the accelerator

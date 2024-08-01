@@ -15,6 +15,7 @@ def make_loader(dataset,
                  load_meta=False,
                  dataset_name = "ibl",
                  stitching = False,
+                 use_nlb=False,
                  shuffle = True):
     
     dataset = BaseDataset(dataset=dataset, 
@@ -29,7 +30,8 @@ def make_loader(dataset,
                           sort_by_region = sort_by_region,
                           brain_region = brain_region,
                           load_meta=load_meta,
-                          stitching=stitching
+                          stitching=stitching,
+                          use_nlb=use_nlb,
             )
     print(f"len(dataset): {len(dataset)}")
     if stitching:
