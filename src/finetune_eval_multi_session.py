@@ -63,8 +63,9 @@ else:
             "model": f"include:src/configs/{model_acroynm}.yaml"
         }
 
+trainer_config_path = f"src/configs/finetune_nlb_trainer.yaml" if args.use_nlb else f"src/configs/finetune_sessions_trainer.yaml"
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/finetune_sessions_trainer.yaml", config)
+config = update_config(trainer_config_path, config)
 
 set_seed(config.seed)
 # Shared variable to signal the dummy load to stop
@@ -79,7 +80,7 @@ try:
         print('Start model training.')
         print('=====================')
         if args.use_nlb:
-            train_dataset, val_dataset, test_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy")
+            train_dataset, val_dataset, test_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
         else:
             train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                                 config.dirs.huggingface_org,
@@ -91,7 +92,8 @@ try:
                                 batch_size=config.training.train_batch_size,
                                 seed=config.seed)
 
-        log_dir = os.path.join(base_path, config.dirs.log_dir, 
+        log_dir = os.path.join(base_path, 
+                            config.dirs.log_dir, 
                             "finetune", 
                             "num_session_{}".format(num_train_sessions),
                             "model_{}".format(config.model.model_class), 
@@ -166,12 +168,20 @@ try:
         model = accelerator.prepare(model)
         # load pretrain model
         pretrain_model_path = f'{base_path}/results/train/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/model_best.pt'
-        if num_train_sessions > 1:
+        if num_train_sessions > 1 and not args.use_nlb:
             print('Load pretrain model from:', pretrain_model_path)
             # load weights that can be found in the pretrain model
             model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
-        else:
+        elif not args.use_nlb:
             print('Train from scratch.')
+        if args.use_nlb and config.dirs.pretrain_model_path:
+            assert num_train_sessions > 1, "NLB RTT data, num_train_sessions should be greater than 1."
+            print("load pretrained 34-session IBL model")
+            pretrain_model_path = config.dirs.pretrain_model_path
+            model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
+            print("load pretrained 34-session IBL model, start finetune for NLB RTT data")
+        else:
+            print("NLB RTT data, train from scratch.")
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
         lr_scheduler = OneCycleLR(
