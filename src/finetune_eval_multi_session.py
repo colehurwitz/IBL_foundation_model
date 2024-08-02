@@ -236,8 +236,8 @@ try:
         forward_pred = True
         inter_region = True
         intra_region = True
-        choice_decoding = True
-        continuous_decoding = True
+        choice_decoding = True if not args.use_nlb else False
+        continuous_decoding = True if not args.use_nlb else False
         
         print(mask_name)
         
@@ -249,20 +249,22 @@ try:
         configs = {
             'model_config': model_config,
             'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
-            'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
+            'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml' if not args.use_nlb else f'src/configs/trainer_nlb.yaml',
             'dataset_path': None, 
             'test_size': 0.2,
             'seed': 42,
             'mask_name': mask_name,
             'eid': eid,
             'stitching': True,
-            'num_sessions': 1 
+            'num_sessions': 1 ,
+            'use_nlb': args.use_nlb,
         }  
         
         
         # load your model and dataloader
         model, accelerator, dataset, dataloader = load_model_data_local(**configs)
-        
+        if args.use_nlb:
+            from utils.eval_utils import co_smoothing_eval_nlb as co_smoothing_eval
         # co-smoothing
         if co_smooth:
             print('Start co-smoothing:')
@@ -296,7 +298,7 @@ try:
                 'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/forward_pred',
                 'mode': 'forward_pred',
                 'n_time_steps': n_time_steps,    
-                'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
+                'held_out_list': list(range(90, 100)) if not args.use_nlb else list(range(27,30)),       # NLB uses 200 ms for fp
                 'is_aligned': True,
                 'target_regions': None,
                 'n_jobs': 8

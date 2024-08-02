@@ -401,8 +401,7 @@ class BaseDataset(torch.utils.data.Dataset):
         # add attention mask
         time_attn_mask = _attention_mask(self.max_time_length, pad_time_length).astype(np.int64)
         binned_spikes_data = binned_spikes_data.astype(np.float32)
-        print(list(neuron_regions))
-        exit()
+
         return {
             "spikes_data": binned_spikes_data,
             "time_attn_mask": time_attn_mask,
