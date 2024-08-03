@@ -663,10 +663,10 @@ def co_smoothing_eval_nlb(
     #                                   (1.,): "reward", }}
     #     var_tasklist = ['block', 'choice', 'reward']
     #     var_behlist = []
-
     if mode == 'per_neuron':
         
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        population_bps_result_list = [float('nan')] * tot_num_neurons
         # loop through all the neurons
         counter = 0
         for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
@@ -687,6 +687,7 @@ def co_smoothing_eval_nlb(
                                 mode='manual',
                                 heldout_idxs=np.array([n_i+i])
                             )
+                            # print("heldout_idxs:",np.array([n_i+i]))
                             mask_spikes_lst.append(mask_result['spikes'])
                             eval_mask_lst.append(mask_result['eval_mask'])
                             gt_spikes_lst.append(gt_spike_data)
@@ -720,13 +721,25 @@ def co_smoothing_eval_nlb(
             gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
 
             pred_spikes = outputs.preds.detach().cpu().numpy()
+            print(f"gt_spikes shape: {gt_spikes.shape}, pred_spikes shape: {pred_spikes.shape}")
             tot_num_trials = len(batch['spikes_data'])
-
+            print(f"tot_num_trials: {tot_num_trials}, tot_num_neurons: {tot_num_neurons}")
             # compute co-bps
             for i in range(n_jobs):
                 if n_i+i < tot_num_neurons:
+                    # polulatio neuron bps
+                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :,:]
+                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :,:]
+                    bps = bits_per_spike(pred_held_out, gt_held_out)
+                    if np.isinf(bps):
+                        bps = np.nan
+                    population_bps_result_list[n_i+i] = bps
+
+                    # held_out neuron bps, ours
                     gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
                     pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
+                    
+                    # print(gt_held_out.shape, pred_held_out.shape)
                     bps = bits_per_spike(pred_held_out, gt_held_out)
                     if np.isinf(bps):
                         bps = np.nan
@@ -753,7 +766,9 @@ def co_smoothing_eval_nlb(
                         r2_result_list[n_i+i] = r2
                 else:
                     break
-
+        population_bps_result_list = np.array(population_bps_result_list)
+        print("pop_bps shape: ", population_bps_result_list.shape)
+        print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
     elif mode == 'forward_pred':
 
         held_out_list = kwargs['held_out_list']
@@ -763,6 +778,7 @@ def co_smoothing_eval_nlb(
         held_out_list = [held_out_list]
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        population_bps_result_list = [float('nan')] * tot_num_neurons
         for hd_idx in held_out_list:
            
             hd = np.array([hd_idx])
@@ -814,6 +830,11 @@ def co_smoothing_eval_nlb(
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
 
+            pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+            if np.isinf(pop_bps):
+                pop_bps = np.nan
+            population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps
+
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
             y_preds = pred_spikes[:, target_time_idxs]
@@ -840,6 +861,7 @@ def co_smoothing_eval_nlb(
                         method=method_name, save_path=kwargs['save_path']
                     )
                     r2_result_list[idxs[i]] = r2
+        print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
 
     elif mode == 'inter_region':
 
@@ -851,6 +873,7 @@ def co_smoothing_eval_nlb(
         assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        population_bps_result_list = [float('nan')] * tot_num_neurons
         for region in tqdm(target_regions, desc='region'):
             print(region)
             hd = np.argwhere(region_list==region).flatten() 
@@ -904,6 +927,10 @@ def co_smoothing_eval_nlb(
                 if np.isinf(bps):
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
+            pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+            if np.isinf(pop_bps):
+                pop_bps = np.nan
+            population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps
 
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
@@ -930,6 +957,7 @@ def co_smoothing_eval_nlb(
                         method=method_name, save_path=kwargs['save_path']
                     )
                     r2_result_list[idxs[i]] = r2
+        print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
                         
     elif mode == 'intra_region':
 
@@ -940,6 +968,7 @@ def co_smoothing_eval_nlb(
         assert held_out_list is None, 'intra_region does LOO for all neurons in the target region'
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
+        population_bps_result_list = [float('nan')] * tot_num_neurons
         for region in tqdm(target_regions, desc='region'):
             print(region)
             target_neuron_idxs = np.argwhere(region_list==region).flatten() 
@@ -1031,13 +1060,21 @@ def co_smoothing_eval_nlb(
                             method=method_name, save_path=kwargs['save_path']
                         )
                         r2_result_list[heldout_idxs[i]] = r2
+                pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+                if np.isinf(pop_bps):
+                    pop_bps = np.nan
+                population_bps_result_list[heldout_idxs[i]] = pop_bps
+        print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
     else:
         raise NotImplementedError('mode not implemented')
 
     # save co-bps
     os.makedirs(kwargs['save_path'], exist_ok=True)
     bps_all = np.array(bps_result_list)
+    print("bps_all shape: ", bps_all.shape)
     bps_mean = np.nanmean(bps_all)
+    print("bps_mean: ", bps_mean)
+
     bps_std = np.nanstd(bps_all)
     plt.hist(bps_all, bins=30, alpha=0.75, color='red', edgecolor='black')
     plt.xlabel('bits per spike')
