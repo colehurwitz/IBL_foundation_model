@@ -664,9 +664,10 @@ def co_smoothing_eval_nlb(
     #     var_tasklist = ['block', 'choice', 'reward']
     #     var_behlist = []
     if mode == 'per_neuron':
-        
+        gt_result_list, pred_result_list = [], []
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         population_bps_result_list = [float('nan')] * tot_num_neurons
+        bps_per_region = []; region = 'CA1'
         # loop through all the neurons
         counter = 0
         for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
@@ -744,6 +745,10 @@ def co_smoothing_eval_nlb(
                     if np.isinf(bps):
                         bps = np.nan
                     bps_result_list[n_i+i] = bps
+                    gt_result_list.append(gt_held_out)
+                    pred_result_list.append(pred_held_out)
+
+                    bps_per_region.append(bps)
         
                     # compute R2
                     if False:
@@ -767,8 +772,10 @@ def co_smoothing_eval_nlb(
                 else:
                     break
         population_bps_result_list = np.array(population_bps_result_list)
+        print(f'{region} bps: ', np.nanmean(bps_per_region))
         print("pop_bps shape: ", population_bps_result_list.shape)
         print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
+   
     elif mode == 'forward_pred':
 
         held_out_list = kwargs['held_out_list']
@@ -825,15 +832,17 @@ def co_smoothing_eval_nlb(
             pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
     
             for n_i in tqdm(range(len(target_neuron_idxs)), desc='co-bps'): 
+                pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+                population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps if not np.isinf(pop_bps) else np.nan
                 bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                 if np.isinf(bps):
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
 
-            pop_bps = bits_per_spike(pred_held_out, gt_held_out)
-            if np.isinf(pop_bps):
-                pop_bps = np.nan
-            population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps
+            # pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+            # if np.isinf(pop_bps):
+            #     pop_bps = np.nan
+            # population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps
 
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
@@ -874,6 +883,8 @@ def co_smoothing_eval_nlb(
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         population_bps_result_list = [float('nan')] * tot_num_neurons
+        gt_result_list, pred_result_list = [], []
+        y_list, y_pred_list, y_residual_list = [], [], []
         for region in tqdm(target_regions, desc='region'):
             print(region)
             hd = np.argwhere(region_list==region).flatten() 
@@ -923,14 +934,12 @@ def co_smoothing_eval_nlb(
             pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
     
             for n_i in range(len(target_neuron_idxs)): 
+                pop_bps = bits_per_spike(pred_held_out[:,:,], gt_held_out[:,:,])
+                population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps if not np.isinf(pop_bps) else np.nan
                 bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
                 if np.isinf(bps):
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
-            pop_bps = bits_per_spike(pred_held_out, gt_held_out)
-            if np.isinf(pop_bps):
-                pop_bps = np.nan
-            population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps
 
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
@@ -939,6 +948,8 @@ def co_smoothing_eval_nlb(
             # choose the neuron to plot
             idxs = target_neuron_idxs
             for i in range(idxs.shape[0]):
+                gt_result_list.append(ys[:, :, idxs[i]])
+                pred_result_list.append(y_preds[:, :, idxs[i]])
                 if False:
                     X = behavior_set[:, target_time_idxs, :]  # [#trials, #timesteps, #variables]
                     _r2_psth, _r2_trial = viz_single_cell(X, ys[:, :, idxs[i]], y_preds[:, :, idxs[i]],
@@ -969,6 +980,8 @@ def co_smoothing_eval_nlb(
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         population_bps_result_list = [float('nan')] * tot_num_neurons
+        gt_result_list, pred_result_list = [], []
+        y_list, y_pred_list, y_residual_list = [], [], []
         for region in tqdm(target_regions, desc='region'):
             print(region)
             target_neuron_idxs = np.argwhere(region_list==region).flatten() 
@@ -1032,8 +1045,13 @@ def co_smoothing_eval_nlb(
                 tot_num_trials = len(batch['spikes_data'])
 
                 heldout_idxs = np.stack(heldout_idxs_lst).flatten()
-                
                 for i in range(len(heldout_idxs)):
+                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, ]
+                    pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, ]
+                    pop_bps = bits_per_spike(pred_held_out, gt_held_out)
+                    if np.isinf(pop_bps):
+                        pop_bps = np.nan
+                    population_bps_result_list[heldout_idxs[i]] = pop_bps
                     gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
                     pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [heldout_idxs[i]]]
     
@@ -1041,6 +1059,8 @@ def co_smoothing_eval_nlb(
                     if np.isinf(bps):
                         bps = np.nan
                     bps_result_list[heldout_idxs[i]] = bps
+                    gt_result_list.append(gt_held_out.squeeze())
+                    pred_result_list.append(pred_held_out.squeeze())
 
                     if False:
                         X = behavior_set  # [#trials, #timesteps, #variables]
@@ -1060,10 +1080,6 @@ def co_smoothing_eval_nlb(
                             method=method_name, save_path=kwargs['save_path']
                         )
                         r2_result_list[heldout_idxs[i]] = r2
-                pop_bps = bits_per_spike(pred_held_out, gt_held_out)
-                if np.isinf(pop_bps):
-                    pop_bps = np.nan
-                population_bps_result_list[heldout_idxs[i]] = pop_bps
         print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
     else:
         raise NotImplementedError('mode not implemented')
