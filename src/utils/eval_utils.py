@@ -935,7 +935,8 @@ def co_smoothing_eval_nlb(
             # compute co-bps
             gt_held_out = gt_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
             pred_held_out = pred_spikes[:, target_time_idxs][:,:,target_neuron_idxs]
-    
+
+            bps_per_region = []
             for n_i in range(len(target_neuron_idxs)): 
                 pop_bps = bits_per_spike(pred_held_out[:,:,], gt_held_out[:,:,])
                 population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps if not np.isinf(pop_bps) else np.nan
@@ -943,7 +944,9 @@ def co_smoothing_eval_nlb(
                 if np.isinf(bps):
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
-
+                bps_per_region.append(bps)
+            bps_per_region = [bits_per_spike(pred_held_out, gt_held_out)]
+            print(f'{region} bps: ', np.nanmean(bps_per_region))
             # compute R2
             ys = gt_spikes[:, target_time_idxs]
             y_preds = pred_spikes[:, target_time_idxs]
@@ -989,6 +992,7 @@ def co_smoothing_eval_nlb(
             print(region)
             target_neuron_idxs = np.argwhere(region_list==region).flatten() 
             held_out_list = list(range(0, len(target_neuron_idxs)+n_jobs, n_jobs))
+            bps_per_region = []
 
             for hd_idx in held_out_list:
                 
@@ -1083,12 +1087,12 @@ def co_smoothing_eval_nlb(
                             method=method_name, save_path=kwargs['save_path']
                         )
                         r2_result_list[heldout_idxs[i]] = r2
+            bps_per_region = [bits_per_spike(
+                    np.array(pred_result_list).transpose(1,2,0), 
+                    np.array(gt_result_list).transpose(1,2,0)
+                )]
+            print(print(f'{region} bps: ', np.nanmean(bps_per_region)))
         print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
-        bps_per_region = [bits_per_spike(
-                np.array(pred_result_list).transpose(1,2,0), 
-                np.array(gt_result_list).transpose(1,2,0)
-            )]
-        print(print(f'{region} bps: ', np.nanmean(bps_per_region)))
     else:
         raise NotImplementedError('mode not implemented')
 
