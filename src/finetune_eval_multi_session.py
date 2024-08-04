@@ -280,12 +280,15 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+
+            print(f"co_smooth shape of gt_result: {gt_result.shape}")
+            print(f"co_smooth shape of pred_result: {pred_result.shape}")
             wandb.log(results)
         
         # forward prediction
@@ -304,12 +307,14 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"forward_pred shape of gt_result: {gt_result.shape}")
+            print(f"forward_pred shape of pred_result: {pred_result.shape}")
             wandb.log(results)
             
         
@@ -329,12 +334,14 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"inter_region shape of gt_result: {gt_result.shape}")
+            print(f"inter_region shape of pred_result: {pred_result.shape}")
             wandb.log(results)
 
         
@@ -354,12 +361,14 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"intra_region shape of gt_result: {gt_result.shape}")
+            print(f"intra_region shape of pred_result: {pred_result.shape}")
             wandb.log(results)
         
         

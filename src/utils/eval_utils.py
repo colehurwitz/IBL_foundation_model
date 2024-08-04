@@ -786,6 +786,7 @@ def co_smoothing_eval_nlb(
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         population_bps_result_list = [float('nan')] * tot_num_neurons
+        gt_result_list, pred_result_list = [], []
         for hd_idx in held_out_list:
            
             hd = np.array([hd_idx])
@@ -835,6 +836,8 @@ def co_smoothing_eval_nlb(
                 pop_bps = bits_per_spike(pred_held_out, gt_held_out)
                 population_bps_result_list[target_neuron_idxs[n_i]] = pop_bps if not np.isinf(pop_bps) else np.nan
                 bps = bits_per_spike(pred_held_out[:,:,[n_i]], gt_held_out[:,:,[n_i]])
+                gt_result_list.append(gt_held_out[:,:,[n_i]])
+                pred_result_list.append(pred_held_out[:,:,[n_i]])
                 if np.isinf(bps):
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
@@ -1081,6 +1084,11 @@ def co_smoothing_eval_nlb(
                         )
                         r2_result_list[heldout_idxs[i]] = r2
         print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
+        bps_per_region = [bits_per_spike(
+                np.array(pred_result_list).transpose(1,2,0), 
+                np.array(gt_result_list).transpose(1,2,0)
+            )]
+        print(print(f'{region} bps: ', np.nanmean(bps_per_region)))
     else:
         raise NotImplementedError('mode not implemented')
 
@@ -1103,6 +1111,11 @@ def co_smoothing_eval_nlb(
     r2_all = np.array(r2_result_list)
     np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
     print(f"mean bps: {bps_mean}, std bps: {bps_std}")
+    gt_result = np.stack(gt_result_list,-1).squeeze()
+    pred_result = np.stack(pred_result_list,-1).squeeze()
+    # save gt and pred
+    np.save(os.path.join(kwargs['save_path'], f'gt.npy'), gt_result)
+    np.save(os.path.join(kwargs['save_path'], f'pred.npy'), pred_result)
     return {
         f"{mode}_mean_bps": bps_mean,
         f"{mode}_std_bps": bps_std,
@@ -1110,7 +1123,7 @@ def co_smoothing_eval_nlb(
         f"{mode}_std_r2_psth": np.nanstd(r2_all[:, 0]) if len(r2_all.shape)> 1 else np.nan,
         f"{mode}_mean_r2_trial": np.nanmean(r2_all[:, 1]) if len(r2_all.shape)> 1 else np.nanmean(r2_all),
         f"{mode}_std_r2_trial": np.nanstd(r2_all[:, 1]) if len(r2_all.shape)> 1 else np.nanstd(r2_all)
-    }
+    }, gt_result, pred_result
 
 def draw_threshold_table(
         mask_methods: list,
