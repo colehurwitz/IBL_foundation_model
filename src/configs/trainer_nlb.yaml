@@ -20,6 +20,7 @@ dirs:
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
+  pretrained_model_path: /scratch/yl6624/IBL_foundation_model/results_/train/num_session_34/model_NDT1/method_ssl/mask_all/stitch_True/model_best.pt
   dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   behav_dir:  data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: ibl-foundation-model

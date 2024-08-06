@@ -442,7 +442,10 @@ class BaseDataset(torch.utils.data.Dataset):
             binned_spikes_data = binned_spikes_data[:,sorted_neuron_idxs]
             # neuron_depths = neuron_depths[sorted_neuron_idxs]
         # make neuron regions a list of strings, first 0.2 be m1, next 0.2 be m2, etc.
-        neuron_regions = np.array([f'r{i+1}' for i in range(5) for _ in range(num_neurons//5)])
+        # neuron_regions = np.array([f'r{i+1}' for i in range(5) for _ in range(num_neurons//5)])
+        neuron_regions = np.array(["xx" for i in range(num_neurons)])
+        neuron_regions[:98] = "HI"
+        neuron_regions[98:] = "HO"
         # neuron_regions from np.array to list of strings
         neuron_regions = list(neuron_regions)
 

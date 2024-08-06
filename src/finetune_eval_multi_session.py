@@ -46,18 +46,28 @@ assert num_train_sessions > 0, 'num_train_sessions should be greater than 0.'
 
 if args.prompting == "True":
     if args.model_name == 'NDT1':
-        kwargs = {
-            "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
-        }
+        if args.mask_mode == "all":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
+            }
+        elif args.mask_mode == "temporal":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_prompting_temporal.yaml"
+            }
     elif args.model_name == 'NDT2':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}_prompting.yaml"
         }
 else:
     if args.model_name == 'NDT1':
-        kwargs = {
-            "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
-        }
+        if args.mask_mode == "all":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
+            }
+        elif args.mask_mode == "temporal":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_temporal.yaml"
+            }
     elif args.model_name == 'NDT2':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}.yaml"
@@ -175,8 +185,12 @@ try:
         elif not args.use_nlb:
             print('Train from scratch.')
         if args.use_nlb and config.dirs.pretrain_model_path and num_train_sessions > 1:
-            print("load pretrained 34-session IBL model")
             pretrain_model_path = config.dirs.pretrain_model_path
+            if args.mask_mode == "temporal":
+                print("load pretrained 34-session IBL temporal model, start finetune for NLB RTT data")
+                pretrain_model_path = pretrain_model_path.replace("mask_all", "mask_temporal")
+            else:
+                print("load pretrained 34-session IBL MtM model, start finetune for NLB RTT data")
             model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
             print("load pretrained 34-session IBL model, start finetune for NLB RTT data")
         elif args.use_nlb:

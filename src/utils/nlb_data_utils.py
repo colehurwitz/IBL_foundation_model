@@ -1,6 +1,7 @@
 
 import numpy as np
 import pandas as pd
+import torch
 
 from nlb_tools.make_tensors import (
         make_train_input_tensors,
@@ -26,7 +27,7 @@ behavior_fields = ["cursor_pos", "finger_pos","finger_vel","target_pos"]
 
 def create_rtt_dataset(dataset, trial_mask, behavior_make_params):
     # Retrieve neural data from indicated source
-    data_dict = make_stacked_array(dataset, ["spikes"], spike_params, trial_mask)
+    data_dict = make_stacked_array(dataset, ["spikes", "heldout_spikes"], spike_params, trial_mask)
     # Retrieve behavior data from indicated source
     data_behavior_dict = {}
     if behavior_source == 'data':
@@ -34,10 +35,11 @@ def create_rtt_dataset(dataset, trial_mask, behavior_make_params):
             data_behavior_dict[behavior_field] = make_jagged_array(dataset, [behavior_field], behavior_make_params, trial_mask)[0][behavior_field]
 
     data_dict = {**data_dict, **data_behavior_dict}
+    data_dict['spikes'] = np.concatenate([data_dict['spikes'], data_dict['heldout_spikes']], axis=2)
     return data_dict
 
 def load_nlb_dataset(dataset_path, bin_size_ms=6):
-    dataset = NWBDataset(dataset_path, "*train", split_heldout=False)
+    dataset = NWBDataset(dataset_path, "*train", split_heldout=True)
     # resample to bin_size_ms
     dataset.resample(bin_size_ms)
     # Prep mask

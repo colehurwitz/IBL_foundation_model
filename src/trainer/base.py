@@ -47,6 +47,7 @@ class Trainer():
             self.masking_schemes += ['intra-region', 'inter-region']
 
         if self.masking_mode in ["combined", "all"]:
+            print("holy shit")
             print("(train) switch between masking modes: ", self.masking_schemes)
 
     def train(self):

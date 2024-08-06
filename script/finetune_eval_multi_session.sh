@@ -46,7 +46,7 @@ conda activate ibl-fm
 
 cd ../
 
-python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
+python src/finetune_eval_multi_session.py --mask_ratio 0.2 \
                          --mask_mode $MASK_MODE \
                          --model_name $MODEL_NAME \
                          --prompting $PROMPTING \

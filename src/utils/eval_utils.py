@@ -945,6 +945,8 @@ def co_smoothing_eval_nlb(
                     bps = np.nan
                 bps_result_list[target_neuron_idxs[n_i]] = bps
                 bps_per_region.append(bps)
+            print(pred_held_out.shape)
+            print(gt_held_out.shape)
             bps_per_region = [bits_per_spike(pred_held_out, gt_held_out)]
             print(f'{region} bps: ', np.nanmean(bps_per_region))
             # compute R2
@@ -975,7 +977,7 @@ def co_smoothing_eval_nlb(
                     )
                     r2_result_list[idxs[i]] = r2
         print(f"{mode} pop_bps: {np.nanmean(population_bps_result_list)}")
-                        
+              
     elif mode == 'intra_region':
 
         if 'all' in target_regions:
