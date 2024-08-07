@@ -47,6 +47,7 @@ class Trainer():
             self.masking_schemes += ['intra-region', 'inter-region']
 
         if self.masking_mode in ["combined", "all"]:
+            print("holy shit")
             print("(train) switch between masking modes: ", self.masking_schemes)
 
     def train(self):
@@ -160,6 +161,7 @@ class Trainer():
     
     def _forward_model_outputs(self, batch, masking_mode):
         batch = move_batch_to_device(batch, self.accelerator.device)
+
         return self.model(
             batch['spikes_data'], 
             time_attn_mask=batch['time_attn_mask'],

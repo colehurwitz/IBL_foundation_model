@@ -8,7 +8,7 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
   project: multi-session
   run_name: 671c7ea7
@@ -23,6 +23,7 @@ dirs:
   dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: ibl-foundation-model
+  pretrain_model_path: /scratch/yl6624/IBL_foundation_model/results_/train/num_session_34/model_NDT1/method_ssl/mask_all/stitch_True/model_best.pt
   
 
 
