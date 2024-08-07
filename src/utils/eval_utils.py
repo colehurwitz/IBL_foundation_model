@@ -21,6 +21,7 @@ import matplotlib.colors as colors
 import os
 from trainer.make import make_trainer
 from pathlib import Path
+from nlb_tools.make_tensors import save_to_h5
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
 
@@ -46,6 +47,7 @@ def load_model_data_local(**kwargs):
     stitching = kwargs['stitching']
     num_sessions = kwargs['num_sessions']
     use_nlb = kwargs['use_nlb']
+    use_leaderboard = kwargs['use_leaderboard']
 
     # set seed
     set_seed(seed)
@@ -58,7 +60,13 @@ def load_model_data_local(**kwargs):
 
     accelerator = Accelerator()
     if use_nlb:
-        _, _, dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
+        if use_leaderboard:
+            from utils.nlb_data_utils import load_nlb_dataset_test as load_nlb_dataset
+        else:
+            from utils.nlb_data_utils import load_nlb_dataset
+        print(use_leaderboard)
+        train_dataset, eval_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
+        dataset = [train_dataset, eval_dataset]
     else:  
         _, _, _, meta_data = load_ibl_dataset(
                                 cache_dir=config.dirs.dataset_cache_dir,
@@ -106,9 +114,9 @@ def load_model_data_local(**kwargs):
     print('encoder max space length:', max_space_length)
 
     dataloader = make_loader(
-        dataset,
+        dataset if not use_nlb else dataset[1],
         target=config.data.target,
-        batch_size=dataset['spikes'].shape[0] if use_nlb else len(dataset),
+        batch_size=dataset[1]['spikes'].shape[0] if use_nlb else len(dataset),
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,
@@ -600,7 +608,7 @@ def co_smoothing_eval_nlb(
         model,
         accelerator,
         test_dataloader,
-        test_dataset,
+        dataset_list,
         n=1,
         **kwargs
 ):
@@ -663,7 +671,185 @@ def co_smoothing_eval_nlb(
     #                                   (1.,): "reward", }}
     #     var_tasklist = ['block', 'choice', 'reward']
     #     var_behlist = []
-    if mode == 'per_neuron':
+    if mode == "save_h5":
+        train_dataset, eval_dataset = dataset_list[0], dataset_list[1]
+        print(len(dataset_list))
+        train_rates_heldin, train_rates_heldout = [], []
+        train_dataloader = make_loader(
+            train_dataset,
+            target=None,
+            batch_size=train_dataset['spikes'].shape[0],
+            pad_to_right=True,
+            pad_value=-1.,
+            max_time_length=30,
+            max_space_length=668,
+            dataset_name="ibl",
+            load_meta=True,
+            use_nlb=True,
+            stitching=True,
+            shuffle=False,
+        )
+        eval_dataloader = make_loader(
+            eval_dataset,
+            target=None,
+            batch_size=eval_dataset['spikes'].shape[0],
+            pad_to_right=True,
+            pad_value=-1.,
+            max_time_length=30,
+            max_space_length=668,
+            dataset_name="ibl",
+            load_meta=True,
+            use_nlb=True,
+            stitching=True,
+            shuffle=False,
+        )
+        if 'all' in target_regions:
+            target_regions = list(np.unique(region_list))
+        held_out_list = kwargs['held_out_list']
+        assert held_out_list is None, 'inter_region does LOO for all neurons in the target region'
+        # mask heldout neurons region
+        region="HO"
+        hd = np.argwhere(region_list==region).flatten()
+        held_out_list = np.arange(len(hd))
+        held_out_list = [held_out_list]   
+        hd = np.array([held_out_list]).flatten()
+        heldout_ids = np.argwhere(region_list==region).flatten()
+
+        heldin_ids = np.argwhere(region_list=="HI").flatten()
+
+        for batch in train_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            gt_spike_data = batch['spikes_data'].clone()
+            mask_result = heldout_mask(
+                batch['spikes_data'].clone(),
+                mode='inter_region',
+                heldout_idxs=hd,
+                target_regions=[region],
+                neuron_regions=region_list
+            )              
+            trial_id = batch['trial_id']
+            # sort the trial_id
+            trial_id = np.argsort(trial_id.cpu().numpy())
+            gt_spike_data = gt_spike_data[trial_id]
+            # sort mask_result['spikes'] based on trial_id
+            mask_result['spikes'] = mask_result['spikes'][trial_id]
+            batch['time_attn_mask'] = batch['time_attn_mask'][trial_id]
+            batch['space_attn_mask'] = batch['space_attn_mask'][trial_id]
+            batch['spikes_timestamps'] = batch['spikes_timestamps'][trial_id]
+            batch['spikes_spacestamps'] = batch['spikes_spacestamps'][trial_id]
+            batch['target'] = batch['target'][trial_id]
+            mask_result['eval_mask'] = mask_result['eval_mask'][trial_id]
+
+            masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+            model.encoder.mask = False
+            outputs = model(
+                mask_result['spikes'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions'],
+                eval_mask=mask_result['eval_mask'],
+                masking_mode=masking_mode,
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0]  # each batch consists of data from the same eid
+            )
+        train_heldin_gt_spike = gt_spike_data.detach().cpu().numpy()
+        train_heldin_gt_spike = train_heldin_gt_spike[:, :, heldin_ids]
+        
+        outputs.preds = torch.exp(outputs.preds)
+        pred_spikes = outputs.preds.detach().cpu().numpy()
+        train_heldout_pred_spike = pred_spikes[:, :, heldout_ids]
+        train_heldin_pred_spike = pred_spikes[:, :, heldin_ids]
+        
+        for batch in test_dataloader:
+            batch = move_batch_to_device(batch, accelerator.device)
+            gt_spike_data = batch['spikes_data'].clone()
+            mask_result = heldout_mask(
+                batch['spikes_data'].clone(),
+                mode='inter_region',
+                heldout_idxs=hd,
+                target_regions=[region],
+                neuron_regions=region_list
+            )              
+            trial_id = batch['trial_id']
+            # sort the trial_id
+            trial_id = np.argsort(trial_id.cpu().numpy())
+            gt_spike_data = gt_spike_data[trial_id]
+            # sort mask_result['spikes'] based on trial_id
+            mask_result['spikes'] = mask_result['spikes'][trial_id]
+            batch['time_attn_mask'] = batch['time_attn_mask'][trial_id]
+            batch['space_attn_mask'] = batch['space_attn_mask'][trial_id]
+            batch['spikes_timestamps'] = batch['spikes_timestamps'][trial_id]
+            batch['spikes_spacestamps'] = batch['spikes_spacestamps'][trial_id]
+            batch['target'] = batch['target'][trial_id]
+            
+            mask_result['eval_mask'] = mask_result['eval_mask'][trial_id]
+            masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+            model.encoder.mask = False
+            outputs = model(
+                mask_result['spikes'],
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions'],
+                eval_mask=mask_result['eval_mask'],
+                masking_mode=masking_mode,
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0]  # each batch consists of data from the same eid
+            )
+        eval_heldin_gt_spike = gt_spike_data.detach().cpu().numpy()
+        eval_heldin_gt_spike = eval_heldin_gt_spike[:, :, heldin_ids]
+        eval_heldout_gt_spike = gt_spike_data.detach().cpu().numpy()
+        eval_heldout_gt_spike = eval_heldout_gt_spike[:, :, heldout_ids]
+
+        outputs.preds = torch.exp(outputs.preds)
+        pred_spikes = outputs.preds.detach().cpu().numpy()
+        eval_heldout_pred_spike = pred_spikes[:, :, heldout_ids]
+        eval_heldin_pred_spike = pred_spikes[:, :, heldin_ids]
+        
+        print(f"heldin_ids: {heldin_ids}, heldout_ids: {heldout_ids}")
+
+        print(train_heldin_pred_spike.shape,train_heldout_pred_spike.shape)
+        print(eval_heldin_pred_spike.shape,eval_heldout_pred_spike.shape)
+        print(train_heldin_gt_spike.shape,eval_heldin_gt_spike.shape)
+        plt.figure(figsize=(10, 10))
+        plt.subplot(2, 2, 1)
+        plt.imshow(train_heldin_gt_spike.mean(0).T, aspect='auto')
+        plt.title('train heldin gt')
+        plt.subplot(2, 2, 2)
+        plt.imshow(train_heldin_pred_spike.mean(0).T, aspect='auto')
+        plt.title('train heldin pred')
+        plt.subplot(2, 2, 3)
+        plt.imshow(eval_heldin_gt_spike.mean(0).T, aspect='auto')
+        plt.title('eval heldin gt')
+        plt.subplot(2, 2, 4)
+        plt.imshow(eval_heldin_pred_spike.mean(0).T, aspect='auto')
+        plt.title('eval heldin pred')
+        os.makedirs(kwargs['save_path'], exist_ok=True)
+        plt.savefig(os.path.join(kwargs['save_path'], f'train.png'), dpi=200)
+        
+        output_dict  = {
+            "mc_rtt_20": {
+                'train_rates_heldin': train_heldin_pred_spike,
+                'train_rates_heldout': train_heldout_pred_spike,
+                'eval_rates_heldin': eval_heldin_gt_spike,
+                'eval_rates_heldout': eval_heldout_pred_spike
+            }
+        }
+        
+        save_to_h5(output_dict, os.path.join(kwargs['save_path'], '..',f'submission.h5'))
+        # calculate bps for eval_heldout_pred_spike
+        bps = bits_per_spike(eval_heldout_pred_spike, eval_heldout_gt_spike)
+        print(eval_heldout_gt_spike[0])
+        print(f"eval heldout bps: {bps}")
+        bps = bits_per_spike(eval_heldin_pred_spike, eval_heldin_gt_spike)
+        print(f"eval heldin bps: {bps}")
+        exit()
+    elif mode == 'per_neuron':
         gt_result_list, pred_result_list = [], []
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         population_bps_result_list = [float('nan')] * tot_num_neurons
@@ -894,7 +1080,8 @@ def co_smoothing_eval_nlb(
             held_out_list = np.arange(len(hd))
             held_out_list = [held_out_list]   
             hd = np.array([held_out_list]).flatten()
-
+            print(f"hd: {hd}, target_regions: {target_regions}, region_list: {region_list}")
+            exit()
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:

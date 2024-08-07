@@ -36,6 +36,8 @@ ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
 ap.add_argument('--use_nlb', action='store_true')
+ap.add_argument('--use_leaderboard', action='store_true')
+ap.add_argument('--seed', type=int, default=42)
 args = ap.parse_args()
 
 eid = args.test_eid if not args.use_nlb else "nlb-rtt"
@@ -77,7 +79,7 @@ trainer_config_path = f"src/configs/finetune_nlb_trainer.yaml" if args.use_nlb e
 config = config_from_kwargs(kwargs)
 config = update_config(trainer_config_path, config)
 
-set_seed(config.seed)
+set_seed(args.seed)
 # Shared variable to signal the dummy load to stop
 stop_dummy_load = threading.Event()
 if args.use_dummy:
@@ -90,7 +92,9 @@ try:
         print('Start model training.')
         print('=====================')
         if args.use_nlb:
-            train_dataset, val_dataset, test_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
+            if args.use_leaderboard:
+                from utils.nlb_data_utils import load_nlb_dataset_test as load_nlb_dataset
+            train_dataset, val_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
         else:
             train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
                                 config.dirs.huggingface_org,
@@ -246,10 +250,10 @@ try:
             
         n_time_steps = 100
         
-        co_smooth = True
-        forward_pred = True
+        co_smooth = False
+        forward_pred = False
         inter_region = True
-        intra_region = True
+        intra_region = False
         choice_decoding = True if not args.use_nlb else False
         continuous_decoding = True if not args.use_nlb else False
         
@@ -272,13 +276,38 @@ try:
             'stitching': True,
             'num_sessions': 1 ,
             'use_nlb': args.use_nlb,
+            'use_leaderboard': args.use_leaderboard,
         }  
         
         
         # load your model and dataloader
         model, accelerator, dataset, dataloader = load_model_data_local(**configs)
+        from utils.eval_utils import co_smoothing_eval_nlb as co_smoothing_eval
         if args.use_nlb:
             from utils.eval_utils import co_smoothing_eval_nlb as co_smoothing_eval
+            print("NLB RTT data, save h5")
+            co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [40],
+                'method_name': mask_name, 
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/co_smooth',
+                'mode': 'save_h5',
+                'n_time_steps': n_time_steps,    
+                'held_out_list': None,
+                'is_aligned': True,
+                'target_regions': ['all'],
+                'n_jobs': 8,
+            }
+            results, gt_result, pred_result = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            **co_smoothing_configs)
+            print(results)
+
+            print(f"co_smooth shape of gt_result: {gt_result.shape}")
+            print(f"co_smooth shape of pred_result: {pred_result.shape}")
+            wandb.log(results)
         # co-smoothing
         if co_smooth:
             print('Start co-smoothing:')

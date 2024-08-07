@@ -55,7 +55,8 @@ python src/finetune_eval_multi_session.py --mask_ratio 0.2 \
                          --base_path $SCRATCH/IBL_foundation_model \
                          --num_train_sessions $NUM_TRAIN_SESSIONS \
                          --test_eid $TEST_EID \
-                         --use_nlb
+                         --use_nlb \
+                         --seed 42
 
 cd script
 
