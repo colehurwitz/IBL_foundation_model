@@ -507,7 +507,8 @@ class BaseDataset(torch.utils.data.Dataset):
             "target": target_behavior,
             # "neuron_depths": neuron_depths, 
             "neuron_regions": list(neuron_regions),
-            "eid": 'nlb-rtt'
+            "eid": 'nlb-rtt',
+            "trial_id": data['trial_id'][idx]
         }
     
     def __len__(self):
