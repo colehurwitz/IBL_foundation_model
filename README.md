@@ -24,7 +24,7 @@ conda activate ibl-fm
 
 ### Hugging Face
 
-We have uploaded both the processed sessions from the IBL dataset and the pre-trained multi-session models to Hugging Face. You can access these resources [here](https://huggingface.co/ibl-foundation-model). Downloading them is straightforward and allows you to integrate these models and datasets seamlessly into your projects.
+We have uploaded both the processed sessions from the IBL dataset and the pre-trained multi-session models to Hugging Face. You can access these resources [here](https://huggingface.co/ibl-foundation-model). Datasets are only visible to members of the organization, so please click to join the org to access the datasets. Downloading them is straightforward and allows you to integrate these models and datasets seamlessly into your projects. 
 
 ## Training Multi/Single Session Models (SSL)
 
