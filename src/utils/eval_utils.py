@@ -8,6 +8,7 @@ from utils.config_utils import config_from_kwargs, update_config
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
 from models.itransformer import iTransformer
+from models.neurotoken import Neurotokenizer
 from torch.optim.lr_scheduler import OneCycleLR
 from sklearn.metrics import r2_score
 from scipy.special import gammaln
@@ -21,7 +22,7 @@ import os
 from trainer.make import make_trainer
 from pathlib import Path
 
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer, "NeuroToken": Neurotokenizer}
 
 import logging
 
@@ -71,6 +72,7 @@ def load_model_data_local(**kwargs):
     model_class = NAME2MODEL[config.model.model_class]
     model = model_class(config.model, **config.method.model_kwargs, **meta_data)    
     model = torch.load(model_path)['model']
+    print('MODEL LOADED')
 
     model.encoder.masker.mode = mask_mode
     model.encoder.masker.force_active = False
@@ -102,6 +104,7 @@ def load_model_data_local(**kwargs):
         dataset,
         target=config.data.target,
         batch_size=len(dataset),
+        # batch_size=1,
         pad_to_right=True,
         pad_value=-1.,
         max_time_length=config.data.max_time_length,

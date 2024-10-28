@@ -28,7 +28,8 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000
+  # num_epochs: 1000
+  num_epochs: 500
   train_batch_size: 16
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
@@ -63,7 +64,8 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  # max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 862
   patching: true # patching the neurons
   sort_by_depth: false
   sort_by_region: false
@@ -75,7 +77,7 @@ data:
 
   load_meta: true
 
-  num_sessions: 3
+  num_sessions: 1
   test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
 
   split_method: session_based # random_split/session_based

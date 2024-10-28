@@ -1,16 +1,16 @@
 seed: 42
 
 savestring: test
-wandb_project: multi-session
+wandb_project: new_architecture
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: true
+  use: false
   entity: null
-  project: multi-session
+  project: new_architecture
   run_name: 671c7ea7
 
 # Logging directories
@@ -28,9 +28,10 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 1000
-  train_batch_size: 16
-  test_batch_size: 16  
+  num_epochs: 2
+  # num_epochs: 500
+  train_batch_size: 1
+  test_batch_size: 1
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 10  # Plot the model output every n epochs
@@ -64,7 +65,7 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 862   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
@@ -74,7 +75,8 @@ data:
 
   load_meta: true
 
-  num_sessions: 40
+  # num_sessions: 40
+  num_sessions: 1
   train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
   test_session_eid: [] 
 

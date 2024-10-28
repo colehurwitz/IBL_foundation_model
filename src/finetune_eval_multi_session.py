@@ -12,6 +12,7 @@ from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
 from models.ndt1 import NDT1
 from models.stpatch import STPatch
+from models.neurotoken import Neurotokenizer
 from models.itransformer import iTransformer
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
@@ -23,25 +24,40 @@ import threading
 import warnings
 warnings.simplefilter("ignore")
 
+import argparse
+
+# Set up argument parser
 ap = argparse.ArgumentParser()
 ap.add_argument("--test_eid", type=str, default='51e53aff-1d5d-4182-a684-aba783d50ae5')
 ap.add_argument("--mask_ratio", type=float, default=0.3)
 ap.add_argument("--mask_mode", type=str, default="all")
-ap.add_argument("--model_name", type=str, default="NDT1")
+ap.add_argument("--model_name", type=str, default="NeuroToken")
 ap.add_argument("--prompting", type=str, default="False")
 ap.add_argument("--train", type=str, default="True")
-ap.add_argument("--eval", type=str, default="True")
-ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
+ap.add_argument("--eval", type=str, default="False")
+ap.add_argument("--base_path", type=str, default='/u/csanthirasegaran')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
-args = ap.parse_args()
 
+# Optional arguments for hyperparameter search, suppressed if not provided
+ap.add_argument("--n_pre_layers", type=int, default=argparse.SUPPRESS)
+ap.add_argument("--n_layers", type=int, default=argparse.SUPPRESS)
+ap.add_argument("--small_hidden_size", type=int, default=argparse.SUPPRESS)
+ap.add_argument("--hidden_size", type=int, default=argparse.SUPPRESS)
+ap.add_argument("--inter_size", type=int, default=argparse.SUPPRESS)
+ap.add_argument("--dropout", type=float, default=argparse.SUPPRESS)
+
+args = ap.parse_args()
+args_dict = vars(args)
+print(f'args_dict: {args_dict}')
+# Set base variables
 eid = args.test_eid
 base_path = args.base_path
 model_acroynm = args.model_name.lower()
 num_train_sessions = args.num_train_sessions
 assert num_train_sessions > 0, 'num_train_sessions should be greater than 0.'
 
+# Determine the YAML file to use based on model and prompting arguments
 if args.prompting == "True":
     if args.model_name == 'NDT1':
         kwargs = {
@@ -54,15 +70,33 @@ if args.prompting == "True":
 else:
     if args.model_name == 'NDT1':
         kwargs = {
-            "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
+            "model": f"include:src/configs/{model_acroynm}.yaml"
         }
     elif args.model_name == 'NDT2':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}.yaml"
         }
+    elif args.model_name == 'NeuroToken':
+        kwargs = {
+            "model": f"include:src/configs/neurotoken.yaml"
+        }
 
+# Load and update configuration from YAML
 config = config_from_kwargs(kwargs)
 config = update_config("src/configs/finetune_sessions_trainer.yaml", config)
+
+# Update configuration dynamically with command-line hyperparameters if provided
+print(f'Config: {config.model.encoder.transformer}')
+for key, value in args_dict.items():
+    # Only update the hyperparameters that are part of the model config
+    if key in config.model.encoder.get('transformer', {}):
+        print(f"Updating {key} with {value}")
+        print(f'Before: {config.model.encoder.transformer[key]}')
+        config['model']['encoder']['transformer'][key] = value
+        print(f'after: {config.model.encoder.transformer[key]}')
+    else:
+        print(f"Key {key} not found in config.model.encoder")
+print(f'Config: {config.model.encoder.transformer}')
 
 set_seed(config.seed)
 # Shared variable to signal the dummy load to stop
@@ -97,19 +131,27 @@ try:
                             )
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        print(meta_data)
-
+        # print(meta_data)
+        # print(f'Log dir: {log_dir}')
+        # print(f'Wandb run name: HPSearch3_NT_dropout{config.model.encoder.transformer.dropout}_pre{config.model.encoder.transformer.n_pre_layers}layer_post{config.model.encoder.transformer.n_layers}layer_inter{config.model.encoder.transformer.inter_size}_premixAttn_maxT{config.model.encoder.embedder.max_time_F}_smallHidden{config.model.encoder.transformer.small_hidden_size}_hidden{config.model.encoder.transformer.hidden_size}_MLP2decoder_lr1e-4_posembedmega_patchermaskall_notempembed_finetune_num_session_{num_train_sessions}_model_{config.model.model_class}_method_{config.method.model_kwargs.method_name}_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}')
         if config.wandb.use:
             import wandb
-            wandb.init(project=config.wandb.project, 
-                    entity=config.wandb.entity, 
+            if args.model_name == "NeuroToken":
+                wandb.init(project=config.wandb.project, 
+                        entity=config.wandb.entity, 
                     config=config, 
-                    name="finetune_num_session_{}_model_{}_method_{}_mask_{}_stitch_{}_{}".format(num_train_sessions,config.model.model_class, config.method.model_kwargs.method_name,args.mask_mode, config.model.encoder.stitching,eid)
+                    name=f"model_{config.model.model_class}_RandomMasking_RoPE_NT_dropout{config.model.encoder.transformer.dropout}_pre{config.model.encoder.transformer.n_pre_layers}layer_post{config.model.encoder.transformer.n_layers}layer_inter{config.model.encoder.transformer.inter_size}_premixAttn_maxT{config.model.encoder.embedder.max_time_F}_smallHidden{config.model.encoder.transformer.small_hidden_size}_hidden{config.model.encoder.transformer.hidden_size}_MLP2decoder_lr1e-4_posembedmega_patchermaskall_notempembed_finetune_num_session_{num_train_sessions}_method_{config.method.model_kwargs.method_name}_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
                     )
+            else:
+                wandb.init(project=config.wandb.project, 
+                        entity=config.wandb.entity, 
+                        config=config, 
+                        name=f"RandomMasking_model_{args.model_name}_method_{config.method.model_kwargs.method_name}_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
+                        )
 
         if args.model_name in ["NDT1", "iTransformer"]:
             max_space_length = config.data.max_space_length
-        elif args.model_name in ["NDT2", "STPatch"]:
+        elif args.model_name in ["NDT2", "STPatch", "NeuroToken"]:
             max_space_F = config.model.encoder.embedder.max_space_F
             max_num_neurons = max(meta_data['num_neurons'])
             max_space_length = ceil(max_num_neurons/max_space_F) * max_space_F
@@ -152,7 +194,7 @@ try:
         accelerator = Accelerator()
         
         # load model
-        NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+        NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "NeuroToken": Neurotokenizer}
         
         config = update_config(config, meta_data)
         model_class = NAME2MODEL[config.model.model_class]
@@ -167,6 +209,21 @@ try:
         else:
             print('Train from scratch.')
         
+
+        
+        # Count parameters for all layers
+        layer_params = {}
+        for name, module in model.named_modules():
+            # Count only layers that have parameters
+            param_count = sum(p.numel() for p in module.parameters() if p.requires_grad)
+            if param_count > 0:
+                layer_params[name] = param_count
+        sorted_layer_params = sorted(layer_params.items(), key=lambda item: item[1], reverse=True)
+        for layer_name, count in sorted_layer_params:
+            print(f'{layer_name}: {count} parameters')
+
+
+
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
         lr_scheduler = OneCycleLR(
                         optimizer=optimizer,
@@ -176,7 +233,7 @@ try:
                         div_factor=config.optimizer.div_factor,
                     )
         
-        print(config)
+        # print(config)
         
         trainer_kwargs = {
             "log_dir": log_dir,
@@ -204,7 +261,7 @@ try:
         wandb.init(project=config.wandb.project, 
                 entity=config.wandb.entity, 
                 config=config, 
-                name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_True_{eid}"
+                name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
                 )
         print('Start model evaluation.')
         print('=======================')
@@ -229,18 +286,19 @@ try:
         if args.prompting == "True":
             model_config = f"src/configs/{model_acroynm}_stitching_prompting_eval.yaml"
         else:
-            model_config = f"src/configs/{model_acroynm}_stitching_eval.yaml"
+            # model_config = f"src/configs/{model_acroynm}_stitching_eval.yaml"
+            model_config = f"src/configs/{model_acroynm}_eval.yaml"
         
         configs = {
             'model_config': model_config,
-            'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
+            'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/model_best.pt',
             'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
             'dataset_path': None, 
             'test_size': 0.2,
             'seed': 42,
             'mask_name': mask_name,
             'eid': eid,
-            'stitching': True,
+            'stitching': config.model.encoder.stitching,
             'num_sessions': 1 
         }  
         
@@ -255,12 +313,13 @@ try:
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/co_smooth',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/co_smooth',
                 'mode': 'per_neuron',
-                'n_time_steps': n_time_steps,    
-                'is_aligned': True,
+                'n_time_steps': n_time_steps,  
+                'is_aligned': True,   
                 'target_regions': None,
-                'n_jobs': 8
+                # 'n_jobs': 8
+                'n_jobs': 4
             }
         
             results = co_smoothing_eval(model, 
@@ -278,7 +337,7 @@ try:
                 'subtract': 'task',
                 'onset_alignment': [],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/forward_pred',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/forward_pred',
                 'mode': 'forward_pred',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
@@ -303,7 +362,7 @@ try:
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name,
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/inter_region',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/inter_region',
                 'mode': 'inter_region',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': None,
@@ -328,13 +387,13 @@ try:
                 'subtract': 'task',
                 'onset_alignment': [40],
                 'method_name': mask_name, 
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/intra_region',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/intra_region',
                 'mode': 'intra_region',
                 'n_time_steps': n_time_steps,    
                 'held_out_list': None,
                 'is_aligned': True,
                 'target_regions': ['all'],
-                'n_jobs': 8
+                'n_jobs': 2
             }
         
             results = co_smoothing_eval(model, 
@@ -350,10 +409,10 @@ try:
             print('Start choice_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
+                'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/model_best.pt',
                 'trainer_config': f'src/configs/ppwang/trainer_sl_choice_{model_acroynm}.yaml',
                 'dataset_path': None,
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/choice_decoding',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/choice_decoding',
                 'test_size': 0.2,
                 'seed': 42,
                 'mask_name': mask_name,
@@ -376,10 +435,10 @@ try:
             print('Start continuous_decoding:')
             configs = {
                 'model_config': model_config,
-                'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
+                'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/model_best.pt',
                 'trainer_config': f'src/configs/ppwang/trainer_sl_continuous_{model_acroynm}.yaml',
                 'dataset_path': None, 
-                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/continuous_decoding',
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/continuous_decoding',
                 'test_size': 0.2,
                 'seed': 42,
                 'mask_name': mask_name,
@@ -406,4 +465,5 @@ finally:
     print('Finish model training.')
     print('=====================')
     
+
 

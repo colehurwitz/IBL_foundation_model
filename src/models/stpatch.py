@@ -20,6 +20,7 @@ from models.region_lookup import RegionLookup
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 
+#DEFAULT_CONFIG = "src/configs/neurotoken_test.yaml" 
 DEFAULT_CONFIG = "src/configs/stpatch.yaml"
 
 with open('data/target_eids.txt') as file:
