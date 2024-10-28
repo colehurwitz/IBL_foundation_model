@@ -64,7 +64,8 @@ data:
   use_lograte: True # use lograte
 
   max_time_length: 100    # max_time_length has to be a multiple of time patch size
-  max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  # max_space_length: 668   # max_space_length has to be a multiple of space patch size
+  max_space_length: 693  #NEW ADDED
   patching: true # patching the neurons
   sort_by_depth: false
   brain_region: all
@@ -74,7 +75,8 @@ data:
 
   load_meta: true
 
-  num_sessions: 10
+  # num_sessions: 10
+  num_sessions: 1
   train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
   test_session_eid: [] 
 
@@ -120,7 +122,7 @@ method:
 
 optimizer:
   gradient_accumulation_steps: 1
-  lr: 1.e-4
+  lr: 1.e-5
   wd: 0.01
   eps: 1.e-8
   warmup_pct: 0.15 # cosine/linear

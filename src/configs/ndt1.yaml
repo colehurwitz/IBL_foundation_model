@@ -10,7 +10,7 @@ encoder:
   # Mask spikes
   masker:
     force_active: true         
-    mode: temporal      # masking mode
+    mode: random      # masking mode
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
     random_ratio: 1.0   # of the not zeroed, ratio of randomly replaced
@@ -40,7 +40,8 @@ encoder:
 
   # Embedding layer
   embedder:
-    n_channels: 668       # number of neurons recorded 
+    # n_channels: 668       # number of neurons recorded 
+    n_channels: 862
     n_blocks: 24          # number of blocks of experiments
     n_dates: 24           # number of days of experiments
     max_F: 100           # max feature len in timesteps

@@ -5,8 +5,9 @@ from loader.make_loader import make_loader
 from utils.utils import set_seed, dummy_load
 from utils.config_utils import config_from_kwargs, update_config
 from utils.dataset_utils import get_data_from_h5
-from models.ndt1 import NDT1
+from models.ndt1 import NDT1      #changed
 from models.stpatch import STPatch
+from models.neurotoken import Neurotokenizer  
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
 import numpy as np
@@ -16,12 +17,13 @@ import threading
 
 # load config
 kwargs = {
-    "model": "include:src/configs/ndt1_stitching.yaml"
+    "model": "include:src/configs/neurotoken.yaml"
 }
 
 
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/ndt1_stitching.yaml", config)
+# config = update_config("src/configs/ndt1_stitching.yaml", config)
+config = update_config("src/configs/neurotoken.yaml", config)
 config = update_config("src/configs/ssl_sessions_trainer.yaml", config)
 
 # set seed for reproducibility
@@ -101,7 +103,7 @@ val_dataloader = make_loader(val_dataset,
 accelerator = Accelerator()
 
 # load model
-NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch}
+NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "NeuroToken": Neurotokenizer}
 
 config = update_config(config, meta_data)
 model_class = NAME2MODEL[config.model.model_class]
@@ -124,6 +126,8 @@ trainer_kwargs = {
     "config": config,
     "stitching": config.encoder.stitching,
 }
+
+print(meta_data)
 trainer = make_trainer(
     model=model,
     train_dataloader=train_dataloader,

@@ -19,12 +19,16 @@ dirs:
   log_dir: results  # save tensorboard logs
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
-  pretrained_model_path: checkpoints/train/multi_sessions/model_NDT1/method_ssl/mask_combined/model_best.pt
+  # pretrained_model_path: checkpoints/train/multi_sessions/model_NDT1/method_ssl/mask_combined/model_best.pt
   # dataset_dir: berkott/ibl_ssl_data
   aligned_data_dir:  null
+  # huggingface_org: ibl-foundation-model
+  # # dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  # dataset_dir: ibl-foundation-model/72cb5550-43b4-4ef0-add5-e4adfdfb5e02 #NEW ADDED
+  # behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b #NEW ADDED
+  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
   huggingface_org: ibl-foundation-model
-  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
-  
 
 
 # Training configuration
@@ -70,10 +74,12 @@ data:
   sort_by_region: false
   brain_region: all
 
-  include_behav: true # include behavior data
+  # include_behav: true # include behavior data
+  include_behav: false 
   target: null
 
   num_sessions: 1
+  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02']
   test_session_eid: [] #["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"]
 
   split_method: predefined # random_split/session_based/predefined
@@ -83,6 +89,8 @@ data:
   load_meta: true
 
   spike_augmentation: false
+
+  use_re: true    #NEW ADDED
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:
