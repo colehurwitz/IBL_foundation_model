@@ -13,7 +13,7 @@ encoder:
   # Mask spikes
   masker:
     force_active: true     
-    mode: neuron      # masking mode
+    mode: random      # masking mode
     # mode: random         # from stpatch config  -- NOTE: maybe needs to be random token for mask_token to be set true in the transformer class 
     ratio: 0.3          # ratio of data to predict
     zero_ratio: 1.0     # of the data to predict, ratio of zeroed out
@@ -56,7 +56,7 @@ encoder:
     n_dates: 24           # number of days of experiments
     #start add
     n_timesteps: 100      # n_timesteps has to be a multiple of max_time_F
-    max_time_F: 20
+    max_time_F: 10
     max_space_F: 1
     max_spikes: 0       #TODO: find correct value for this
     #end add
@@ -91,7 +91,7 @@ encoder:
   transformer:
     n_layers: 1          # number of transformer layers -- ORIGINALLY 5
     n_pre_layers: 1
-    hidden_size: 8     #embedding size of tokens
+    hidden_size: 64     #embedding size of tokens
     small_hidden_size: 64
     MEGA_hidden_size: 1024 # embedding size for megatokens - hidden space of the transformer
     use_scalenorm: false  # use scalenorm  instead of layernorm

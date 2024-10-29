@@ -63,7 +63,7 @@ class Patcher(nn.Module):
 
         # Prepare space and time stamps after accounting for [cls] tokens
         # Majority vote the brain region for each patch
-        if self.embed_region:
+        if self.embed_region: 
             regionstamps = torch.zeros(self.n_space_patches)
             for s in range(self.n_space_patches):
                 if len(region_indx[0, s*self.max_space_F:(s+1)*self.max_space_F]) != 0:

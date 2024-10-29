@@ -9,6 +9,9 @@ import torch.nn.functional as F
 from scipy import signal
 from math import ceil
 
+from pytorch_memlab import profile, MemReporter
+
+
 from transformers.activations import ACT2FN
 ACT2FN["softsign"] = nn.Softsign
 
@@ -289,10 +292,10 @@ class NeuralEncoder(nn.Module):
 
         # Masker
         self.mask = config.masker.force_active
-        self.mask_token = False
-        if config.masker.mode == 'random_token':
-            self.mask = False
-            self.mask_token = True
+        self.mask_token = True
+        # if config.masker.mode == 'random_token':
+        #     self.mask = False
+        #     self.mask_token = True
 
         if self.mask | self.mask_token:
             self.masker = Masker(config.masker)
@@ -348,7 +351,7 @@ class NeuralEncoder(nn.Module):
 
             self.learned_mask = nn.Parameter(torch.randn(1, 1, self.hidden_size))
 
-        
+    @profile
     def forward(
             self, 
             spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
@@ -411,9 +414,14 @@ class NeuralEncoder(nn.Module):
 
         # Mask tokens -- FROM STPATCH
         if self.mask_token:
-            spikes, targets_mask = self.masker(spikes)
-            targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-            targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N)
+            # spikes, targets_mask = self.masker(spikes)
+            #TODO: hack to make masking tokens and then reverting to timepoints work -- need to fix 
+            _, token_targets_mask = self.masker(spikes.clone()[:,:,0].squeeze().view(B, self.n_time_patches, self.n_space_patches), neuron_regions)
+            targets_mask = token_targets_mask.repeat_interleave(self.max_time_F, dim=1)
+            targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,self.n_space_patches).to(torch.int64)
+            targets_mask = targets_mask.to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,self.n_space_patches).to(torch.int64)
+            # targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
+            # targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N)
 
         if eval_mask is not None:
             targets_mask = eval_mask.clone()
@@ -425,10 +433,12 @@ class NeuralEncoder(nn.Module):
         #Create tokens
         spikes_embed = self.embedding_layer(spikes)
 
-        # Combine time and space masks
-        combined_mask = _space_attn_mask & _time_attn_mask
-        combined_mask = combined_mask.unsqueeze(-1).expand(-1, -1, spikes_embed.size(-1))
-        replace_mask = ~combined_mask.bool()
+        # Combine time and space masks, TODO: double check that this implementation is right
+        # combined_mask = _space_attn_mask & _time_attn_mask
+        # combined_mask = combined_mask.unsqueeze(-1).expand(-1, -1, spikes_embed.size(-1))
+        # replace_mask = ~combined_mask.bool()
+        replace_mask = ~token_targets_mask.flatten(1,2).unsqueeze(-1).expand(-1,-1,spikes_embed.size(-1))
+        replace_mask = replace_mask.bool()
         expanded_mask_token = self.learned_mask.expand(B, _T, -1)
         x = torch.where(replace_mask, expanded_mask_token, spikes_embed)
 
