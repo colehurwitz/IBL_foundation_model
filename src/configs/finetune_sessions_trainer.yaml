@@ -30,8 +30,8 @@ dirs:
 training:
   num_epochs: 2
   # num_epochs: 500
-  train_batch_size: 1
-  test_batch_size: 1
+  train_batch_size: 32
+  test_batch_size: 32
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 10  # Plot the model output every n epochs
