@@ -1,16 +1,16 @@
 seed: 42
 
 savestring: test
-wandb_project: new_architecture
-log_to_wandb: false
+wandb_project: efficient_architecture
+log_to_wandb: true
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
-  project: new_architecture
+  project: efficient_architecture
   run_name: 671c7ea7
 
 # Logging directories
@@ -28,7 +28,7 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 2
+  num_epochs: 3000
   # num_epochs: 500
   train_batch_size: 32
   test_batch_size: 32

@@ -281,7 +281,7 @@ try:
         choice_decoding = True
         continuous_decoding = True
         
-        print(mask_name)
+        print(f'Mask: {mask_name}')
         
         if args.prompting == "True":
             model_config = f"src/configs/{model_acroynm}_stitching_prompting_eval.yaml"

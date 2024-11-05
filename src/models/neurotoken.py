@@ -5,8 +5,6 @@ from typing import List, Optional, Tuple, Dict
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from scipy import signal
 from math import ceil
 
 from pytorch_memlab import profile, MemReporter
@@ -18,8 +16,12 @@ ACT2FN["softsign"] = nn.Softsign
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 from models.masker import Masker
-from models.patcher import Patcher
+# from models.patcher import Patcher
 from models.region_lookup import RegionLookup 
+
+
+from transformers.models.llama.modeling_llama import LlamaFlashAttention2 # Import the new attention layer
+from transformers import LlamaConfig
 
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
 #TODO: make default config for neurotoken
@@ -116,44 +118,37 @@ class NeuralMLP(nn.Module):
 
 
 
-# Attention module.
 class NeuralAttention(nn.Module):
 
-    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout, use_rope=False, base=10000., max_F=1024):
+    def __init__(self, idx, hidden_size, n_heads, use_bias, dropout, use_rope=False, base=10000., max_F=1024, causal = False):
         super().__init__()
         
-        self.idx = idx
-
-        # Architecture config
-        self.hidden_size = hidden_size
+        # self.idx = idx
+        # self.hidden_size = hidden_size
         self.n_heads = n_heads
-        assert self.hidden_size % self.n_heads == 0, f"Hidden dim is not multiple of head size"
-        self.head_size = self.hidden_size // self.n_heads
-        self.use_rope = use_rope
+        # assert self.hidden_size % self.n_heads == 0, f"Hidden dim is not multiple of head size"
+        # self.head_size = self.hidden_size // self.n_heads
+        # self.use_rope = use_rope
 
-        # Attention parameters
-        self.query = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
-        self.key = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
-        self.value  = nn.Linear(self.hidden_size, self.hidden_size, bias=use_bias)
+        llama_config = LlamaConfig(
+        hidden_size=hidden_size,               # Adjust based on your model’s requirements
+        num_attention_heads=n_heads,          # Number of attention heads
+        attention_dropout=dropout,          # Dropout rate for attention
+        num_key_value_heads=4,          # Set based on model configuration
+        head_dim=hidden_size // n_heads,                    # Dimension of each attention head
+        max_position_embeddings=1024,   # Maximum position embeddings
+        rope_theta=10000,               # Rotary embedding theta
+        attention_bias=True,             # Bias usage in projections
+        is_causal = causal
+            )
 
-        # Flash attention
-        torch.backends.cuda.enable_flash_sdp = False
-        torch.backends.cuda.math_sdp_enabled = False
-        torch.backends.cuda.mem_efficient_sdp_enabled = True
-        
-        self.attn_dropout = dropout
 
-        # Final projection
-        self.dropout = nn.Dropout(dropout)
+        # Replace the existing query, key, value layers with LlamaFlashAttention2
+        self.attention = LlamaFlashAttention2(llama_config, layer_idx=0)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=use_bias)
-
-
-        # RoPE parameters
-        if use_rope or True:
-            cos, sin = get_cos_sin(self.head_size, max_F, base=base, dtype=self.query.weight.dtype, device=self.query.weight.device)
-            self.register_buffer("cos", cos, persistent=False)
-            self.register_buffer("sin", sin, persistent=False)
-
+        self.dropout = nn.Dropout(dropout)
+    
+    # @profile
     def forward(
         self,       
         x:          torch.FloatTensor,                      # (bs, seq_len, hidden_size)
@@ -164,23 +159,18 @@ class NeuralAttention(nn.Module):
         B, T, _  = x.size()     # batch size and fea len
 
         # Create batched bool attention mask 
-        # assert attn_mask.max() == 1 and attn_mask.min() == 0, ["assertion", attn_mask.max(), attn_mask.min()]
-        attn_mask = attn_mask.unsqueeze(1).expand(B,self.n_heads,T,T).bool()            # (B,n_heads,T,T)
-        
-        # Compute query, key, value for attention
-        q = self.query(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)      #(B,n_heads,T,head_size)
-        k = self.key(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)        #(B,n_heads,T,head_size)
-        v = self.value(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)      #(B,n_heads,T,head_size)
+        # attn_mask = attn_mask.unsqueeze(1).expand(B, self.n_heads, T, T).bool()  # (B, n_heads, T, T)
+        # attn_mask = attn_mask[:, 0, :].bool()
+        attn_mask = attn_mask.bool()
 
-        # Apply rotations to encode relative positions
-        if self.use_rope or timestamp is not None:
-            q, k = apply_rotary_pos_emb(q, k, timestamp, self.cos, self.sin, 1)  # (B,n_heads,T,head_size)
+        # Use the LlamaFlashAttention2 layer
+        out = self.attention(x, attn_mask, position_ids=timestamp)  # Adjust this line as per LlamaFlashAttention2's API
+        # Extract the tensor from the tuple
+        if isinstance(out, tuple):
+            out = out[0]  # Get the tensor output
 
-        # Compute attention efficiently
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=(self.attn_dropout if self.training else 0.0), is_causal=False) # (B,n_heads,T,head_size)
-        out = out.transpose(1, 2).contiguous().view(B,T, self.hidden_size)       # (B, T, hidden_size)
-
-        return self.out_proj(self.dropout(out)) # (B, T, hidden_size)
+        return self.out_proj(self.dropout(out))  # (B, T, hidden_size)
+        # return out
 
     
     
@@ -192,7 +182,6 @@ class NeuralEncoderLayer(nn.Module):
         super().__init__()
 
         self.idx = idx
-        
         # Architecture config
         self.use_rope = config.use_rope
 
@@ -201,7 +190,7 @@ class NeuralEncoderLayer(nn.Module):
 
         # Encoder block
         self.ln1 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(hidden_size) 
-        self.attn = NeuralAttention(idx, hidden_size, config.n_heads, config.attention_bias, config.dropout, config.use_rope, config.rope_theta, max_F)
+        self.attn = NeuralAttention(idx, hidden_size, config.n_heads, config.attention_bias, config.dropout, config.use_rope, config.rope_theta, max_F, config.causal)
         self.ln2 = ScaleNorm(config.hidden_size ** 0.5) if config.use_scalenorm else nn.LayerNorm(hidden_size) 
         self.mlp = NeuralMLP(hidden_size, config.inter_size, config.act, config.mlp_bias, config.dropout)
 
@@ -297,24 +286,20 @@ class NeuralEncoder(nn.Module):
         #     self.mask = False
         #     self.mask_token = True
 
-        if self.mask | self.mask_token:
-            self.masker = Masker(config.masker)
+        # if self.mask | self.mask_token:
+        #     self.masker = Masker(config.masker)
 
         self.embed_region = config.embed_region
         self.regionlookup = RegionLookup(config)
 
         # Patcher
-        self.patch = config.patcher.active
-        if self.patch:
-            self.patcher = Patcher(
-                self.max_space_F, self.max_time_F, self.embed_region, config.patcher
-            )
+        # self.patch = config.patcher.active
         
         # Context span mask
         self.context_forward = config.context.forward
         self.context_backward = config.context.backward
-        # context_mask = create_context_mask(self.context_forward, self.context_backward, config.embedder.max_F)
-        # self.register_buffer("context_mask", context_mask, persistent=False)
+        # context_mask = create_context_mask(self.context_forward, self.context_backward, self.n_space_patches, self.n_time_patches)  #NEW
+        # self.register_buffer("context_mask", context_mask, persistent=False)        #NEW
 
         # Build stitcher
         if config.stitching:
@@ -323,13 +308,6 @@ class NeuralEncoder(nn.Module):
 
         self.use_prompt = config.embedder.use_prompt
         self.use_session = config.embedder.use_session
-
-        # Embedding layer
-        if False and config.stitching:
-            self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder.n_channels, config.embedder)
-        else:
-            # self.embedder = NeuralEmbeddingLayer(self.hidden_size, kwargs['num_neurons'][0], self.embed_region, self.regionlookup.max_region_indx, config.embedder)
-            self.embedder = NeuralEmbeddingLayer(self.hidden_size, config.embedder.n_channels, self.embed_region, self.regionlookup.max_region_indx, config.embedder)
 
         # Transformer
         self.embedding_layer = nn.Linear(self.max_time_F, self.hidden_size)
@@ -344,22 +322,22 @@ class NeuralEncoder(nn.Module):
             if self.embed_region:
                 self.region_embeddings = nn.Sequential(
                     nn.Embedding(self.regionlookup.max_region_indx, self.hidden_size),nn.LayerNorm(self.hidden_size),)
-            # self.embed_time = nn.Sequential(
-            #     nn.Embedding(self.n_time_patches, self.hidden_size),nn.LayerNorm(self.hidden_size),)
             self.embed_unit = nn.Sequential(
                 nn.Embedding(self.n_space_patches, self.hidden_size),nn.LayerNorm(self.hidden_size),)
 
-            self.learned_mask = nn.Parameter(torch.randn(1, 1, self.hidden_size))
+        self.learned_mask = nn.Parameter(torch.randn(1, 1, self.hidden_size))
 
-    @profile
+
+    # @profile
     def forward(
             self, 
             spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
-            # spikes_timestamp: torch.LongTensor,   # (bs, seq_len)
             pad_space_len:    int,   # (bs,)
             pad_time_len:     int,
-            # time_attn_mask:   torch.LongTensor,   # (bs, seq_len)
-            time_attn_mask:      torch.LongTensor,   # (bs, seq_len)
+            timestamps:       Optional[torch.LongTensor],  # (bs, seq_len) or None
+            spacestamps:      Optional[torch.LongTensor],  # (bs, seq_len) or None
+            token_masks:       Optional[torch.BoolTensor],
+            time_attn_mask:   torch.LongTensor,   # (bs, seq_len)
             space_attn_mask:  torch.LongTensor,   # (bs, seq_len)
             block_idx:        Optional[torch.LongTensor] = None,   # (bs)
             date_idx:         Optional[torch.LongTensor] = None,   # (bs)
@@ -371,60 +349,19 @@ class NeuralEncoder(nn.Module):
 
     ) -> torch.FloatTensor:                     # (bs, seq_len, hidden_size)
     
-        B, T, N = spikes.size() # batch size, fea len, n_channels
+        # B, T, N = spikes.size() # batch size, fea len, n_channels
         if self.int_spikes:
             spikes = spikes.to(torch.int64)
-        #to make it easier to keep track of the original variables 
-        spikes_mask = time_attn_mask
-        
-        # Masking
-        if masking_mode == 'causal':
-            self.masker.mode = 'temporal'
-            self.context_forward = 0 
-            self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.embedder.n_space_patches, self.embedder.n_time_patches)
-            # self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.max_F)
-        else:
-            self.masker.mode = masking_mode
-            self.context_forward = -1
-            self.context_mask = create_context_mask(self.context_forward, self.context_backward, self.embedder.n_space_patches, self.embedder.n_time_patches) 
 
-        # # Mask spikes  
-        # if self.mask:
-        #     spikes, targets_mask = self.masker(spikes, neuron_regions)
-        # else:
-        #     targets_mask = None
-
-        # if self.mask:
-        #     targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N).to(torch.int64)
-        #     targets_mask = targets_mask.to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N).to(torch.int64)
-
-
-        #Patcher to tokenize along individual neurons
         if self.embed_region:
             region_indx = self.regionlookup(neuron_regions).to(spikes.device)
         else:
             region_indx = None
 
-
         # Patch neural data
-        if self.patch:
-            spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, regionstamps  =\
-            self.patcher(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, region_indx)
+        # if self.patch:    patching is done on CPU in trainer code now
+            
         B, _T, N = spikes.size()        
-
-        # Mask tokens -- FROM STPATCH
-        if self.mask_token:
-            # spikes, targets_mask = self.masker(spikes)
-            #TODO: hack to make masking tokens and then reverting to timepoints work -- need to fix 
-            _, token_targets_mask = self.masker(spikes.clone()[:,:,0].squeeze().view(B, self.n_time_patches, self.n_space_patches), neuron_regions)
-            targets_mask = token_targets_mask.repeat_interleave(self.max_time_F, dim=1)
-            targets_mask = targets_mask.to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,self.n_space_patches).to(torch.int64)
-            targets_mask = targets_mask.to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,self.n_space_patches).to(torch.int64)
-            # targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & time_attn_mask.unsqueeze(-1).expand(B,T,N)
-            # targets_mask = targets_mask.reshape(B,T,N).to(torch.int64) & space_attn_mask.unsqueeze(1).expand(B,T,N)
-
-        if eval_mask is not None:
-            targets_mask = eval_mask.clone()
 
         # stitcher 
         if hasattr(self, 'stitcher'):
@@ -433,48 +370,30 @@ class NeuralEncoder(nn.Module):
         #Create tokens
         spikes_embed = self.embedding_layer(spikes)
 
-        # Combine time and space masks, TODO: double check that this implementation is right
-        # combined_mask = _space_attn_mask & _time_attn_mask
-        # combined_mask = combined_mask.unsqueeze(-1).expand(-1, -1, spikes_embed.size(-1))
-        # replace_mask = ~combined_mask.bool()
-        replace_mask = ~token_targets_mask.flatten(1,2).unsqueeze(-1).expand(-1,-1,spikes_embed.size(-1))
-        replace_mask = replace_mask.bool()
+        # Combine time and space masks, TODO: double check that this method is right
         expanded_mask_token = self.learned_mask.expand(B, _T, -1)
-        x = torch.where(replace_mask, expanded_mask_token, spikes_embed)
+        x = torch.where(token_masks, expanded_mask_token, spikes_embed)
 
-        if self.embed_region:
+        if False and self.embed_region:
             x = x + self.region_embeddings(regionstamps)
         x = x + self.embed_unit(spacestamps)
-        # spikes_embed = spikes_embed + self.embed_time(timestamps) #using RoPE instead
         _, T, N_embed = x.shape
 
-        #Not using embedder class 
-        # # Embed neural data
-        # x, spikes_mask, _space_attn_mask, _time_attn_mask, spikes_timestamp = self.embedder(
-        #     spikes, _space_attn_mask, _time_attn_mask, spacestamps, timestamps, block_idx, date_idx, targets_mask, regionstamps, masking_mode, eid)
-        # _, T, N_embed = x.size() 
-
-
         # Prepare 
-        if self.use_prompt or self.use_session:
+        if self.use_prompt or self.use_session: #TODO: Update this 
             context_mask = torch.cat((torch.ones((_T,T-_T)), self.context_mask[:_T,:_T]), dim=1)
             context_mask = torch.cat((torch.ones((T-_T,T)), context_mask), dim=0)
-            context_mask = context_mask.to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
+            context_mask = context_mask.to(x.device, torch.int64)
         else:
-            context_mask = self.context_mask[:T,:T].to(x.device, torch.int64).unsqueeze(0).expand(B,T,T)
-
-        #make attn mask 
-        attn_mask = torch.eye(T).to(x.device, torch.int64).expand(B,T,T) # hack so that even padded spikes attend to themselves and avoid attention issues
-        attn_mask = attn_mask | context_mask
+            context_mask = torch.ones((B, T), device=x.device)
         
         # Forward transformer
         for idx, layer in enumerate(self.layers):
-            x = layer(x, attn_mask=attn_mask, timestamp = timestamps) 
+            x = layer(x, attn_mask=context_mask, timestamp = timestamps) 
         x = self.out_norm(x)
 
         #NOTE: _T value may be wrong here 
-        return self.out_proj(x), targets_mask, _T     
-        #return x, targets_mask, _T
+        return self.out_proj(x), _T     
 
 
 class NeuralStitcher(nn.Module):
@@ -605,27 +524,31 @@ class Neurotokenizer(nn.Module):
 
     def forward(
         self, 
-        spikes:           torch.FloatTensor,  # (bs, seq_len, n_channels)
-        time_attn_mask:      torch.LongTensor,   # (bs, seq_len)
-        space_attn_mask:      torch.LongTensor,   # (bs, seq_len)
-        spikes_timestamps: torch.LongTensor,   # (bs, seq_len)
-        spikes_spacestamps: torch.LongTensor,   # (bs, seq_len)
-        targets:          Optional[torch.FloatTensor] = None,  # (bs, tar_len)
-        spikes_lengths:   Optional[torch.LongTensor] = None,   # (bs) 
-        targets_lengths:  Optional[torch.LongTensor] = None,   # (bs)
-        block_idx:        Optional[torch.LongTensor] = None,   # (bs)
-        date_idx:         Optional[torch.LongTensor] = None,   # (bs)
-        neuron_regions:   Optional[torch.LongTensor] = None,   # (bs, n_channels)
-        masking_mode:     Optional[str] = None,
+        spikes:             torch.FloatTensor,  # (bs, seq_len, n_channels)
+        time_attn_mask:     torch.LongTensor,   # (bs, seq_len)
+        space_attn_mask:    torch.LongTensor,   # (bs, seq_len)
+        timestamps:         torch.LongTensor,   # (bs, seq_len)
+        spacestamps:        torch.LongTensor,   # (bs, seq_len)
+        token_masks:        torch.BoolTensor,
+        targets_mask:      torch.BoolTensor,
+        targets:            Optional[torch.FloatTensor] = None,  # (bs, tar_len)
+        spikes_lengths:     Optional[torch.LongTensor] = None,   # (bs) 
+        targets_lengths:    Optional[torch.LongTensor] = None,   # (bs)
+        block_idx:          Optional[torch.LongTensor] = None,   # (bs)
+        date_idx:           Optional[torch.LongTensor] = None,   # (bs)
+        neuron_regions:     Optional[torch.LongTensor] = None,   # (bs, n_channels)
+        masking_mode:       Optional[str] = None,
         spike_augmentation: Optional[bool] = False,
-        eval_mask:        Optional[torch.LongTensor] = None,
-        num_neuron:       Optional[torch.LongTensor] = None,
-        eid:              Optional[str] = None,
+        eval_mask:          Optional[torch.LongTensor] = None,
+        num_neuron:         Optional[torch.LongTensor] = None,
+        eid:                Optional[str] = None,
     ) -> NeurotokenizerOutput:  
 
-        # _, _T, _ = spikes.size()  #-- orig from ndt1
         #from stpatch, T_ is for orig seq length, _T is for patched seq length, T is for output length (output: x)
         B, T_, N = spikes.size()    
+
+        if eval_mask is not None:
+            targets_mask = eval_mask.clone()
         
         # if neuron_regions type is list 
         if isinstance(neuron_regions, list):
@@ -661,9 +584,9 @@ class Neurotokenizer(nn.Module):
             pad_space_len = (spikes[0,0,:] == self.pad_value).nonzero().min().item() 
 
         # Encode neural data    TODO: figure out why the targets_mask | new_mask part is needed isntead of just getting targets_mask from encoder 
-        targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
-        x, new_mask, _T = self.encoder(spikes, pad_space_len, pad_time_len, time_attn_mask, space_attn_mask, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron, eid)
-        targets_mask = targets_mask | new_mask
+        # targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
+        x, _T = self.encoder(spikes, pad_space_len, pad_time_len, timestamps, spacestamps, token_masks, time_attn_mask, space_attn_mask, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron, eid)
+        # targets_mask = targets_mask | new_mask
 
         if False:   #TODO: embedder class is not being used atm, need to move other required functions out of that class 
                             #or move embedding funcs into that class
@@ -759,203 +682,6 @@ class MegaTokenizer(nn.Module):
         return megaX
 
 
-#Not using this
-# Embed and stack
-class NeuralEmbeddingLayer(nn.Module):
-
-    def __init__(self, hidden_size, n_neurons, embed_region, max_region_indx, config: DictConfig):
-        super().__init__()
-
-        self.adapt = config.adapt
-        self.bias = config.bias  
-
-        self.tokenize_binary_mask = config.tokenize_binary_mask
-        if self.tokenize_binary_mask:
-            self.n_channels *= 2
-
-        self.n_neurons = n_neurons 
-        self.n_timesteps = config.n_timesteps
-        self.max_time_F = config.max_time_F                             #added
-        self.max_space_F = config.max_space_F                           #added
-
-        self.n_space_patches = ceil(self.n_neurons / self.max_space_F)                        #added
-        self.n_time_patches = ceil(self.n_timesteps/self.max_time_F)    #added
-        self.n_channels = self.max_time_F * self.max_space_F                             #added
-
-        self.input_dim = self.n_channels*config.mult
-
-        # if self.adapt:
-        #      # One embedding layer for each day
-        #     if config.mode == "linear":
-        #         self.embed_spikes = nn.ModuleList([
-        #             nn.Linear(self.n_channels, self.input_dim, bias=config.bias) 
-        #         for i in range(config.n_dates)])
-
-        #     elif config.mode == "embed":
-        #         self.embed_spikes = nn.ModuleList([
-        #             nn.Sequential(
-        #                 nn.Embedding(config.max_spikes, config.mult),
-        #                 nn.Flatten(start_dim=-2)
-        #             )
-        #         for i in range(config.n_dates)])
-        #     else:
-        #         raise Exception(f"Embedding mode {config.mode} cannot be adaptative")
-        # else:
-        #     # One common embedding layer
-        #     if config.mode == "linear":
-        #         self.embed_spikes = nn.Linear(self.n_channels, self.input_dim, bias=config.bias)
-        #     elif config.mode == "embed":
-        #         self.embed_spikes = nn.Sequential(
-        #             nn.Embedding(config.max_spikes, config.mult),
-        #             nn.Flatten(start_dim=-2)
-        #         )
-        #     elif config.mode == "identity":
-        #         self.embed_spikes = nn.Identity()
-        #     else:
-        #         raise Exception(f"Invalid embed mode {config.mode}.")
-
-        # if config.mode == "embed" and config.fixup_init:
-        #     self.fixup_initialization(config.init_range, config.spike_log_init, config.max_spikes, adapt=self.adapt)
-
-        # # Stacking
-        # self.stack = config.stack.active
-        # if self.stack:
-        #     self.stack_size = config.stack.size
-        #     self.stack_stride = config.stack.stride
-        #     self.stacking = nn.Unfold(kernel_size=(config.stack.size, self.input_dim),stride=(config.stack.stride,1))
-        #     self.stacking_mask = nn.Unfold(kernel_size=(config.stack.size, 1),stride=(config.stack.stride,1))
-        #     self.stack_projection = nn.Linear(self.input_dim*config.stack.size,hidden_size)
-        # else:
-        #     # self.projection = nn.Linear(self.input_dim, hidden_size)
-        #     # self.projection = nn.Sequential(
-        #     #     nn.Linear(hidden_size // 3, hidden_size // 2, bias=config.bias),
-        #     #     nn.LayerNorm(hidden_size // 2),
-        #     #     nn.ReLU(),
-        #     #     nn.Linear(hidden_size // 2, hidden_size, bias=config.bias),
-        #     # )
-        #     self.projection = nn.Identity()
-        # # Activation after embedding
-        # self.act = ACT2FN[config.act] if config.act != "identity" else nn.Identity()
-
-        # # Embedding scale
-        # self.scale = hidden_size ** 0.5 if config.scale == None else config.scale
-
-        # # Embed postion
-        # self.pos = config.pos
-        # if self.pos:
-        #     # self.embed_pos = nn.Embedding(config.max_F, hidden_size)      
-        #     #START ADD BLOCK ___________________________________________________
-        #     # embed patch postion
-        #     self.embed_region = embed_region
-        #     if self.embed_region:
-        #         self.region_embeddings = nn.Sequential(
-        #             nn.Embedding(
-        #                 self.n_time_patches * max_region_indx, hidden_size),
-        #             nn.LayerNorm(hidden_size),
-        #         )
-
-        #     self.embed_space_pos = nn.Sequential(
-        #         nn.Embedding(
-        #             self.n_time_patches * self.n_space_patches, hidden_size
-        #         ),
-        #         nn.LayerNorm(hidden_size),
-        #     )
-                
-        #     self.embed_time_pos = nn.Sequential(
-        #         nn.Embedding(
-        #             self.n_time_patches * self.n_space_patches, hidden_size
-        #         ),
-        #         nn.LayerNorm(hidden_size),
-        #     )
-        #     #END ADD BLOCK ____________________________________________________
-
-        # # Embed prompt token
-        # self.use_prompt = config.use_prompt
-        # if self.use_prompt:
-        #     self.mask_types = ['neuron', 'causal', 'inter-region', 'intra-region']
-        #     self.mask_to_indx = {r: i for i,r in enumerate(self.mask_types)}
-        #     self.embed_prompt = nn.Embedding(len(self.mask_types), hidden_size) 
-
-        # # Embed session token
-        # self.use_session = config.use_session
-        # if self.use_session:
-        #     self.eid_lookup = include_eids
-        #     self.eid_to_indx = {r: i for i,r in enumerate(self.eid_lookup)}
-        #     self.embed_session = nn.Embedding(len(self.eid_lookup), hidden_size) 
-
-        # # Regularization
-        # self.dropout = nn.Dropout(config.dropout)
-
-    def forward(
-            self, 
-            spikes:           torch.FloatTensor,      # (bs, seq_len, n_channels) NOW SHOULD BE (bs, n_token, n_timesteps_per_token)
-            # spikes_mask:      Optional[torch.LongTensor],          # (bs, seq_len) 
-            space_attn_mask:      torch.LongTensor,     #added
-            time_attn_mask:       torch.LongTensor,     #added
-            spacestamps:      torch.LongTensor,     #added
-            timestamps:       Optional[torch.LongTensor],          # (bs, seq_len)  
-            block_idx:        Optional[torch.LongTensor] = None,   # (bs)
-            date_idx:         Optional[torch.LongTensor] = None,   # (bs)
-            targets_mask:     Optional[torch.LongTensor] = None,
-            regionstamps:         Optional[torch.LongTensor] = None,     
-            masking_mode:     Optional[str] = None,
-            eid:              Optional[str] = None,
-        ) -> Tuple[torch.FloatTensor,torch.LongTensor,torch.LongTensor]:   # (bs, new_seq_len, hidden_size),  (bs, new_seq_len), (bs, new_seq_len)
-
-        B, T, N = spikes.size()     
-        
-        #TODO: check if they actually should be equivalent
-        spikes_mask = time_attn_mask
-
-        if self.tokenize_binary_mask:
-            spikes = torch.cat((spikes, targets_mask), 2)
-
-        # Embed spikes
-        if self.adapt:
-            x = torch.stack([self.embed_spikes[date_idx[i]](f) for i, f in enumerate(spikes)], 0)
-        else:
-            x = self.embed_spikes(spikes)
-
-        # Rescaling
-        x = self.act(x) * self.scale
-
-        # Stacking
-        if self.stack:
-            x = self.stack_projection(self.stacking(x.unsqueeze(1)).transpose(1,2))
-            timestamps = timestamps[:,:x.size(1)] # keep the first positions
-            spikes_mask = self.stacking_mask(spikes_mask.unsqueeze(-1).unsqueeze(1).float()).transpose(1,2).prod(-1).to(spikes_mask.dtype) # unmask only spikes tha come from unmasked spikes
-        else:
-            x = self.projection(x)
-
-        # Embed position
-        if self.pos:
-            x += self.embed_space_pos(spacestamps)  #added
-            # x += self.embed_time_pos(timestamps)    #changed
-
-        if self.embed_region:                       #added
-            region_embeds = self.region_embeddings(regionstamps)   #added
-            x += region_embeds      #added
-
-        # Prepend prompt token 
-        if self.use_prompt:
-            mask_idx = torch.tensor(self.mask_to_indx[masking_mode], dtype=torch.int64, device=spikes.device)
-            x = torch.cat((self.embed_prompt(mask_idx)[None,None,:].expand(B,-1,-1), x), dim=1) 
-            space_attn_mask = F.pad(space_attn_mask, (1, 0), value=1)   #added
-            time_attn_mask = F.pad(time_attn_mask, (1, 0), value=1)     #changed
-            spacestamps = torch.cat((torch.zeros((spacestamps.size(0), 1), dtype=spacestamps.dtype, device=spacestamps.device), spacestamps+1), dim=1) #added
-            timestamps = torch.cat((torch.zeros((timestamps.size(0), 1), dtype=timestamps.dtype, device=timestamps.device), timestamps+1), dim=1)  #changed
-                
-
-        if self.use_session:
-            session_idx = torch.tensor(self.eid_to_indx[eid], dtype=torch.int64, device=spikes.device)
-            x = torch.cat((self.embed_session(session_idx)[None,None,:].expand(B,-1,-1), x), dim=1)
-            space_attn_mask = F.pad(space_attn_mask, (1, 0), value=1)   #added
-            time_attn_mask = F.pad(time_attn_mask, (1, 0), value=1)     #changed
-            spacestamps = torch.cat((torch.zeros((spacestamps.size(0), 1), dtype=spacestamps.dtype, device=spacestamps.device), spacestamps+1), dim=1) #added
-            timestamps = torch.cat((torch.zeros((timestamps.size(0), 1), dtype=timestamps.dtype, device=timestamps.device), timestamps+1), dim=1)  #changed
-
-        return self.dropout(x), space_attn_mask, time_attn_mask, spikes_mask, timestamps
-
     # Compute new lens after stacking
     def get_stacked_lens(self, lens):
         return lens if not self.stack else (1 + (lens - self.stack_size) / self.stack_stride).to(lens.dtype)
@@ -985,4 +711,5 @@ class NeuralEmbeddingLayer(nn.Module):
                 self.embed_spikes[0].weight.data += log_scale.unsqueeze(1).expand_as(self.embed_spikes[0].weight.data)
             else:
                 self.embed_spikes[0].weight.data.uniform_(-init_range, init_range)
+
 
