@@ -54,13 +54,13 @@ class New_Masker(nn.Module):
     @no_grad
     def forward(
         self, 
-        orig_spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
+        patched_spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
         max_time_F: torch.FloatTensor,
         embedding_dim: torch.FloatTensor,
         neuron_regions: np.ndarray = None,              # (bs, n_channels)     
     ) -> Tuple[torch.FloatTensor,torch.LongTensor]:     # (bs, seq_len, n_channels), (bs, seq_len, n_channels)
 
-        spikes_shape = (orig_spikes.shape[0], orig_spikes.shape[1]//max_time_F, orig_spikes.shape[2])
+        spikes_shape = (patched_spikes.shape[0], patched_spikes.shape[1], patched_spikes.shape[2])
 
         if not self.training and not self.force_active:
             return torch.zeros(spikes_shape)
@@ -107,7 +107,7 @@ class New_Masker(nn.Module):
             mask_regions = random.sample(self.mask_regions, self.n_mask_regions)
             mask_probs = torch.zeros(spikes_shape[0],spikes_shape[2])
             for region in mask_regions:
-                region_indx = torch.tensor(neuron_regions == region, device=orig_spikes.device)
+                region_indx = torch.tensor(neuron_regions == region, device=patched_spikes.device)
                 mask_probs[region_indx] = 1      
         elif self.mode == "intra-region":
             assert neuron_regions is not None, "Can't mask region without brain region information"
@@ -117,14 +117,14 @@ class New_Masker(nn.Module):
             mask_probs = torch.ones(spikes_shape[0],spikes_shape[2])
             targets_mask = torch.zeros(spikes_shape[0],spikes_shape[2])
             for region in target_regions:
-                region_indx = torch.tensor(neuron_regions == region, device=orig_spikes.device)
+                region_indx = torch.tensor(neuron_regions == region, device=patched_spikes.device)
                 mask_probs[region_indx] = mask_ratio
                 targets_mask[region_indx] = 1
         else:
             raise Exception(f"Masking mode {self.mode} not implemented")
         
         # Create mask
-        mask = torch.bernoulli(mask_probs).to(orig_spikes.device)
+        mask = torch.bernoulli(mask_probs).to(patched_spikes.device)
 
         # Expand mask
         if self.mode in ["temporal", "random_token", "causal"]:
@@ -140,18 +140,18 @@ class New_Masker(nn.Module):
         else: # random
             mask = mask.bool()          # (bs, seq_len, n_channels)
             
-        # # Mask data
-        # zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
-        # spikes[zero_idx] = 0
-        # random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
-        # random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device)).to(spikes.dtype)
-        # spikes[random_idx] = random_spikes[random_idx]
+        # Mask data
+        zero_idx = torch.bernoulli(torch.full(patched_spikes.shape[:-1], self.zero_ratio)).to(patched_spikes.device).bool() & mask
+        patched_spikes[zero_idx] = 0
+        random_idx = torch.bernoulli(torch.full(patched_spikes.shape[:-1], self.random_ratio)).to(patched_spikes.device).bool() & mask & ~zero_idx
+        random_spikes = (patched_spikes.max() * torch.rand(patched_spikes.shape, device=patched_spikes.device)).to(patched_spikes.dtype)
+        patched_spikes[random_idx] = random_spikes[random_idx]
 
-        targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(neuron_regions.device)
+        targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(patched_spikes.device)
         #TODO: double check that this method is right and mask == 1 is what should be replaced
-        token_masks = targets_mask.clone().flatten(1,2).unsqueeze(-1).expand(-1,-1,embedding_dim).bool()
-        targets_mask = targets_mask.repeat_interleave(max_time_F, dim=1)
-        return token_masks, targets_mask.to(torch.int64) 
+        token_masks = targets_mask.clone().flatten(1,2).unsqueeze(-1).expand(-1,-1,embedding_dim).bool()    #(B, tokens, embed_dim)
+        targets_mask = targets_mask.repeat_interleave(max_time_F, dim=1)        #(B, time, neurons)
+        return patched_spikes, token_masks, targets_mask.bool()    
 
     @staticmethod
     def expand_timesteps(mask, width=1):
@@ -269,12 +269,12 @@ class Masker(nn.Module):
         else: # random
             mask = mask.bool()          # (bs, seq_len, n_channels)
             
-        # # Mask data
-        # zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
-        # spikes[zero_idx] = 0
-        # random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
-        # random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device)).to(spikes.dtype)
-        # spikes[random_idx] = random_spikes[random_idx]
+        # Mask data
+        zero_idx = torch.bernoulli(torch.full(spikes.shape, self.zero_ratio)).to(spikes.device).bool() & mask
+        spikes[zero_idx] = 0
+        random_idx = torch.bernoulli(torch.full(spikes.shape, self.random_ratio)).to(spikes.device).bool() & mask & ~zero_idx
+        random_spikes = (spikes.max() * torch.rand(spikes.shape, device=spikes.device)).to(spikes.dtype)
+        spikes[random_idx] = random_spikes[random_idx]
 
         targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(spikes.device)
         return spikes, targets_mask.to(torch.int64) 
