@@ -161,7 +161,7 @@ class NeuralAttention(nn.Module):
         # Create batched bool attention mask 
         # attn_mask = attn_mask.unsqueeze(1).expand(B, self.n_heads, T, T).bool()  # (B, n_heads, T, T)
         # attn_mask = attn_mask[:, 0, :].bool()
-        attn_mask = attn_mask.bool()
+        # attn_mask = attn_mask.bool()
 
         # Use the LlamaFlashAttention2 layer
         out = self.attention(x, attn_mask, position_ids=timestamp)  # Adjust this line as per LlamaFlashAttention2's API
@@ -370,7 +370,7 @@ class NeuralEncoder(nn.Module):
         #Create tokens
         spikes_embed = self.embedding_layer(spikes)
 
-        # Combine time and space masks, TODO: double check that this method is right
+        # Replace with learned mask token  TODO: double check that this method is right
         expanded_mask_token = self.learned_mask.expand(B, _T, -1)
         x = torch.where(token_masks, expanded_mask_token, spikes_embed)
 
@@ -379,17 +379,18 @@ class NeuralEncoder(nn.Module):
         x = x + self.embed_unit(spacestamps)
         _, T, N_embed = x.shape
 
-        # Prepare 
-        if self.use_prompt or self.use_session: #TODO: Update this 
-            context_mask = torch.cat((torch.ones((_T,T-_T)), self.context_mask[:_T,:_T]), dim=1)
-            context_mask = torch.cat((torch.ones((T-_T,T)), context_mask), dim=0)
-            context_mask = context_mask.to(x.device, torch.int64)
-        else:
-            context_mask = torch.ones((B, T), device=x.device)
+        # # Prepare 
+        # if self.use_prompt or self.use_session: #TODO: Update this 
+        #     context_mask = torch.cat((torch.ones((_T,T-_T)), self.context_mask[:_T,:_T]), dim=1)
+        #     context_mask = torch.cat((torch.ones((T-_T,T)), context_mask), dim=0)
+        #     context_mask = context_mask.to(x.device, torch.int64)
+        # else:
+        #     context_mask = torch.ones((B, T), device=x.device).bool()
         
         # Forward transformer
-        for idx, layer in enumerate(self.layers):
-            x = layer(x, attn_mask=context_mask, timestamp = timestamps) 
+        # for idx, layer in enumerate(self.layers):
+        for layer in self.layers:
+            x = layer(x, attn_mask=None, timestamp = timestamps) 
         x = self.out_norm(x)
 
         #NOTE: _T value may be wrong here 

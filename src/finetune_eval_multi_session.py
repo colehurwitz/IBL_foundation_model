@@ -30,11 +30,12 @@ import argparse
 ap = argparse.ArgumentParser()
 ap.add_argument("--test_eid", type=str, default='51e53aff-1d5d-4182-a684-aba783d50ae5')
 ap.add_argument("--mask_ratio", type=float, default=0.3)
-ap.add_argument("--mask_mode", type=str, default="all")
-ap.add_argument("--model_name", type=str, default="NeuroToken")
+ap.add_argument("--mask_mode", type=str, default="neuron")
+# ap.add_argument("--model_name", type=str, default="NeuroToken")
+ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--prompting", type=str, default="False")
 ap.add_argument("--train", type=str, default="True")
-ap.add_argument("--eval", type=str, default="False")
+ap.add_argument("--eval", type=str, default="True")
 ap.add_argument("--base_path", type=str, default='/u/csanthirasegaran')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
@@ -140,13 +141,13 @@ try:
                 wandb.init(project=config.wandb.project, 
                         entity=config.wandb.entity, 
                     config=config, 
-                    name=f"model_{config.model.model_class}_RandomMasking_RoPE_NT_dropout{config.model.encoder.transformer.dropout}_pre{config.model.encoder.transformer.n_pre_layers}layer_post{config.model.encoder.transformer.n_layers}layer_inter{config.model.encoder.transformer.inter_size}_premixAttn_maxT{config.model.encoder.embedder.max_time_F}_smallHidden{config.model.encoder.transformer.small_hidden_size}_hidden{config.model.encoder.transformer.hidden_size}_MLP2decoder_lr1e-4_posembedmega_patchermaskall_notempembed_finetune_num_session_{num_train_sessions}_method_{config.method.model_kwargs.method_name}_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
+                    name=f"{config.model.model_class}_{args.mask_mode}_mask_RoPE_NT_hidden{config.model.encoder.transformer.hidden_size}_inter{config.model.encoder.transformer.inter_size}_premixAttn_maxT{config.model.encoder.embedder.max_time_F}_dropout{config.model.encoder.transformer.dropout}_{config.model.encoder.transformer.n_layers}layers_MLP2decoder_finetune_num_session_{num_train_sessions}_method_{config.method.model_kwargs.method_name}_stitch_{config.model.encoder.stitching}_{eid}"
                     )
             else:
                 wandb.init(project=config.wandb.project, 
                         entity=config.wandb.entity, 
                         config=config, 
-                        name=f"RandomMasking_model_{args.model_name}_method_{config.method.model_kwargs.method_name}_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
+                        name=f"{args.model_name}_{args.mask_mode}_mask_method_{config.method.model_kwargs.method_name}_stitch_{config.model.encoder.stitching}_{eid}"
                         )
 
         if args.model_name in ["NDT1", "iTransformer"]:

@@ -50,9 +50,16 @@ class Trainer():
                 
         self.session_active_neurons = []
 
-        self.masker = New_Masker(self.config.model.encoder.masker)
-        self.masking_ratio = self.masker.ratio
-        self.masking_mode = self.masker.mode
+        if self.model_class == 'NeuroToken':
+            self.masker = New_Masker(self.config.model.encoder.masker)
+            self.masking_ratio = self.masker.ratio
+            self.masking_mode = self.masker.mode
+        else: 
+            self.masking_ratio = model.encoder.masker.ratio
+            self.masking_mode = model.encoder.masker.mode
+
+        print(f"MASKING MODE: {self.masking_mode}")
+
         self.masking_schemes = ['neuron', 'causal']
         if self.masking_mode == "all":
             self.masking_schemes += ['intra-region', 'inter-region']
@@ -73,7 +80,7 @@ class Trainer():
         for epoch in range(self.config.training.num_epochs):
             train_epoch_results = self.train_epoch(epoch)
             eval_epoch_results = self.eval_epoch()
-            # print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
+            print(f"epoch: {epoch} train loss: {train_epoch_results['train_loss'] }")
 
             if eval_epoch_results:
                 if eval_epoch_results[f'eval_trial_avg_{self.metric}'] > best_eval_trial_avg_metric:
@@ -157,11 +164,20 @@ class Trainer():
             if self.masking_mode in ["combined", "all"]:
                 masking_mode = random.sample(self.masking_schemes, 1)[0]
                 if masking_mode == 'temporal':
-                    self.masker.ratio = 0.3
+                    if self.model_class == 'NeuroToken':
+                        self.masker.ratio = 0.3
+                    else: 
+                        self.model.encoder.masker.ratio = 0.3
                 elif masking_mode == 'causal':
-                    self.masker.ratio = 0.6
+                    if self.model_class == 'NeuroToken':
+                        self.masker.ratio = 0.6
+                    else: 
+                        self.model.encoder.masker.ratio = 0.6
                 else:
-                    self.masker.ratio = self.masking_ratio
+                    if self.model_class == 'NeuroToken':
+                        self.masker.ratio = self.masking_ratio
+                    else: 
+                        self.model.encoder.masker.ratio = self.masking_ratio
             else:
                 masking_mode = self.masking_mode
             with autocast(dtype=torch.bfloat16):
@@ -183,25 +199,43 @@ class Trainer():
         }
     
     def _forward_model_outputs(self, batch, masking_mode):
-        batch['num_neurons'] = ['spikes_data'].shape[2]
-        batch = self.patch_spikes(batch)
-        batch['token_masks'], batch['target_masks'] = self.masker(batch['spikes_data'], self.config.model.encoder.embedder.max_time_F, self.config.model.encoder.transformer.hidden_size, batch['neuron_regions'])
-        batch = move_batch_to_device(batch, self.accelerator.device)
-        return self.model(
-            batch['spikes_data'], 
-            time_attn_mask=batch['time_attn_mask'],
-            space_attn_mask=batch['space_attn_mask'],
-            timestamps=batch['spikes_timestamps'], 
-            spacestamps=batch['spikes_spacestamps'], 
-            token_masks = batch['token_masks'],
-            targets_mask = batch['target_masks'],
-            targets = batch['target'],
-            neuron_regions=batch['neuron_regions'],
-            masking_mode=masking_mode, 
-            spike_augmentation=self.config.data.spike_augmentation,
-            num_neuron=batch['num_neurons'],
-            eid=batch['eid'][0]  # each batch consists of data from the same eid
-        ) 
+        if self.model_class == "NeuroToken":
+            self.masker.mode = masking_mode
+            batch['num_neurons'] = batch['spikes_data'].shape[2]
+            batch = self.patch_spikes(batch)
+            batch['spikes_data'], batch['token_masks'], batch['target_masks'] = self.masker(batch['spikes_data'], self.config.model.encoder.embedder.max_time_F, self.config.model.encoder.transformer.hidden_size, batch['neuron_regions'])
+            batch['spikes_data'] = batch['spikes_data'].reshape(self.batch_size, self.n_time_patches * batch['num_neurons'], self.config.model.encoder.embedder.max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
+            batch = move_batch_to_device(batch, self.accelerator.device)
+            return self.model(
+                batch['spikes_data'], 
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                timestamps=batch['spikes_timestamps'], 
+                spacestamps=batch['spikes_spacestamps'], 
+                token_masks = batch['token_masks'],
+                targets_mask = batch['target_masks'],
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions'],
+                masking_mode=masking_mode, 
+                spike_augmentation=self.config.data.spike_augmentation,
+                num_neuron=batch['num_neurons'],
+                eid=batch['eid'][0]  # each batch consists of data from the same eid
+            ) 
+        else: 
+            batch = move_batch_to_device(batch, self.accelerator.device)
+            return self.model(
+                batch['spikes_data'], 
+                time_attn_mask=batch['time_attn_mask'],
+                space_attn_mask=batch['space_attn_mask'],
+                spikes_timestamps=batch['spikes_timestamps'], 
+                spikes_spacestamps=batch['spikes_spacestamps'], 
+                targets = batch['target'],
+                neuron_regions=batch['neuron_regions'],
+                masking_mode=masking_mode, 
+                spike_augmentation=self.config.data.spike_augmentation,
+                num_neuron=batch['spikes_data'].shape[2],
+                eid=batch['eid'][0]  # each batch consists of data from the same eid
+            ) 
     
     def eval_epoch(self):
         self.model.eval()
@@ -221,11 +255,20 @@ class Trainer():
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]
                         if masking_mode == 'temporal':
-                            self.masker.ratio = 0.3
+                            if self.model_class == 'NeuroToken':
+                                self.masker.ratio = 0.3
+                            else: 
+                                self.model.encoder.masker.ratio = 0.3
                         elif masking_mode == 'causal':
-                            self.masker.ratio = 0.6
+                            if self.model_class == 'NeuroToken':
+                                self.masker.ratio = 0.6
+                            else: 
+                                self.model.encoder.masker.ratio = 0.6
                         else:
-                            self.masker.ratio = self.masking_ratio
+                            if self.model_class == 'NeuroToken':
+                                self.masker.ratio = self.masking_ratio
+                            else: 
+                                self.model.encoder.masker.ratio = self.masking_ratio
                     else:
                         masking_mode = self.masking_mode
                     with autocast(dtype=torch.bfloat16):
@@ -338,6 +381,9 @@ class Trainer():
         B, T, N = spikes.size()
         device = spikes.device
 
+        self.batch_size = B
+        self.n_time_patches = T // max_time_F
+
         # Track padded values to prevent them from being used
         if (spikes[0,:,0] == pad_value).sum() == 0:
             pad_time_len = T
@@ -360,8 +406,8 @@ class Trainer():
         # Flatten the time dimension to create patches
         patches = spikes.reshape(B, n_time_patches, N, max_time_F)
 
-        # Flatten n_time_patches and N dimensions to create the sequence dimension
-        patches = patches.reshape(B, n_time_patches * N, max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
+        # # Flatten n_time_patches and N dimensions to create the sequence dimension
+        # patches = patches.reshape(B, n_time_patches * N, max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
 
         # Prepare timestamps and spacestamps
         timestamps = torch.arange(n_time_patches, device=device).unsqueeze(1).expand(n_time_patches, N).flatten()
@@ -370,7 +416,7 @@ class Trainer():
         timestamps = timestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
         spacestamps = spacestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
 
-        batch['spike_data'] = patches
+        batch['spikes_data'] = patches
         batch['spikes_spacestamps'] = spacestamps
         batch['spikes_timestamps'] = timestamps
         batch['time_attn_mask'] = time_attn_mask
