@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Dict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from math import ceil
 
 from pytorch_memlab import profile, MemReporter
@@ -15,8 +16,7 @@ ACT2FN["softsign"] = nn.Softsign
 
 from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
-from models.masker import Masker
-# from models.patcher import Patcher
+from models.masker import Masker, New_Masker
 from models.region_lookup import RegionLookup 
 
 
@@ -282,6 +282,8 @@ class NeuralEncoder(nn.Module):
         # Masker
         self.mask = config.masker.force_active
         self.mask_token = True
+        # self.masker = New_Masker(config.masker)
+        # self.patcher = Patcher(self.max_time_F)
         # if config.masker.mode == 'random_token':
         #     self.mask = False
         #     self.mask_token = True
@@ -372,6 +374,7 @@ class NeuralEncoder(nn.Module):
 
         # Replace with learned mask token  TODO: double check that this method is right
         expanded_mask_token = self.learned_mask.expand(B, _T, -1)
+
         x = torch.where(token_masks, expanded_mask_token, spikes_embed)
 
         if False and self.embed_region:
@@ -544,9 +547,12 @@ class Neurotokenizer(nn.Module):
         num_neuron:         Optional[torch.LongTensor] = None,
         eid:                Optional[str] = None,
     ) -> NeurotokenizerOutput:  
-
         #from stpatch, T_ is for orig seq length, _T is for patched seq length, T is for output length (output: x)
-        B, T_, N = spikes.size()    
+        B, T_, _ = spikes.size()    
+
+        N = self.encoder.n_space_patches
+
+        # print(f'INIT Targets shape: {targets.shape}, targets_mask shape: {targets_mask.shape}')
 
         if eval_mask is not None:
             targets_mask = eval_mask.clone()
@@ -607,9 +613,11 @@ class Neurotokenizer(nn.Module):
             outputs = self.stitch_decoder(x, str(num_neuron))
 
         elif self.method == "ssl":
-            outputs = self.decoder(x).reshape((B,T_,-1))[:,:,:pad_space_len]
-            targets = targets.reshape((B,T_,-1))[:,:,:pad_space_len]
-            targets_mask = targets_mask.reshape((B,T_,-1))[:,:,:pad_space_len]
+            data_length = self.encoder.max_time_F * self.encoder.n_time_patches
+            outputs = self.decoder(x)
+            outputs = outputs.reshape((B,data_length,-1))[:,:,:pad_space_len]
+            targets = targets.reshape((B,data_length,-1))[:,:,:pad_space_len]
+            targets_mask = targets_mask.reshape((B,data_length,-1))[:,:,:pad_space_len]
 
 
         # Compute the loss over unmasked outputs
@@ -713,4 +721,73 @@ class MegaTokenizer(nn.Module):
             else:
                 self.embed_spikes[0].weight.data.uniform_(-init_range, init_range)
 
+# class Patcher(nn.Module):
+#     def __init__(self, max_time_F, embed_region = False):
+#         super().__init__()
+#         self.max_time_F = max_time_F
+#         self.pad_value = -1.
+#         self.embed_region = embed_region
 
+#     def forward(self, patched_spikes, time_attn_mask):
+#         """
+#         Efficiently patches neural data by chunking in time, optimized for cases where 
+#         n_space_patches equals the number of neurons (max_space_F = 1).
+
+#         Args:
+#             spikes (torch.FloatTensor): Input spikes tensor of shape (B, T, N).
+#             pad_time_len (int): Padding length for the time dimension.
+#             time_attn_mask (torch.LongTensor): Time attention mask of shape (B, T).
+#             space_attn_mask (torch.LongTensor): Space attention mask of shape (B, N).
+#             max_time_F (int): Maximum number of time frames per patch.
+#             pad_value (float, optional): Value to use for padding. Defaults to -1.0.
+
+#         Returns:
+#             Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+#                 - patches (torch.FloatTensor): Patched spikes of shape (B, new_seq_len, n_channels).
+#                 - patch_mask (torch.LongTensor): Combined attention mask for patches.
+#                 - spacestamps (torch.LongTensor): Spatial indices for patches.
+#                 - timestamps (torch.LongTensor): Temporal indices for patches.
+#         """
+
+#         spikes = patched_spikes
+#         pad_value = -1.
+
+#         B, T, N = spikes.size()
+#         device = spikes.device
+
+#         # Track padded values to prevent them from being used
+#         if (spikes[0,:,0] == pad_value).sum() == 0:
+#             pad_time_len = T
+#         else:
+#             pad_time_len = (spikes[0,:,0] == pad_value).nonzero().min().item() 
+
+#         # Calculate the number of time patches
+#         n_time_patches = ceil(T / self.max_time_F)
+#         total_padded_length = n_time_patches * self.max_time_F
+#         pad_time_len = total_padded_length - T  # Total padding required in time dimension
+
+#         # Pad spikes along the time dimension
+#         spikes = F.pad(spikes, (0, 0, 0, pad_time_len), value=pad_value)  # Shape: (B, total_padded_length, N)
+#         # Pad time attention mask
+#         time_attn_mask = F.pad(time_attn_mask, (0, pad_time_len), value=0)  # Shape: (B, total_padded_length)
+
+#         # Reshape and permute spikes to shape (B, n_time_patches, N, max_time_F)
+#         spikes = spikes.view(B, n_time_patches, self.max_time_F, N).permute(0, 1, 3, 2)
+
+#         # Flatten the time dimension to create patches
+#         patches = spikes.reshape(B, n_time_patches, N, self.max_time_F)
+
+#         # Prepare timestamps and spacestamps
+#         timestamps = torch.arange(n_time_patches, device=device).unsqueeze(1).expand(n_time_patches, N).flatten()
+#         spacestamps = torch.arange(N, device=device).unsqueeze(0).expand(n_time_patches, N).flatten()
+#         # Expand to match batch size
+#         timestamps = timestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
+#         spacestamps = spacestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
+
+#         # batch['spikes_data'] = patches
+#         # batch['spikes_spacestamps'] = spacestamps
+#         # batch['spikes_timestamps'] = timestamps
+#         # batch['time_attn_mask'] = time_attn_mask
+
+#         return patches, spacestamps, timestamps, time_attn_mask
+            
