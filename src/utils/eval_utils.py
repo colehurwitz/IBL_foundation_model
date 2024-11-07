@@ -21,6 +21,9 @@ import matplotlib.colors as colors
 import os
 from trainer.make import make_trainer
 from pathlib import Path
+from math import ceil
+import torch.nn.functional as F
+from torch.cuda.amp import autocast
 
 NAME2MODEL = {"NDT1": NDT1, "STPatch": STPatch, "iTransformer": iTransformer, "NeuroToken": Neurotokenizer}
 
@@ -74,13 +77,15 @@ def load_model_data_local(**kwargs):
     model = torch.load(model_path)['model']
     print('MODEL LOADED')
 
-    model.encoder.masker.mode = mask_mode
-    model.encoder.masker.force_active = False
+    if not isinstance(model, Neurotokenizer):
+        model.encoder.masker.mode = mask_mode
+        model.encoder.masker.force_active = False
 
-    print("(eval) masking mode: ", model.encoder.masker.mode)
-    print("(eval) masking ratio: ", model.encoder.masker.ratio)
-    print("(eval) masking active: ", model.encoder.masker.force_active)
-    if 'causal' in mask_name:
+    # print("(eval) masking mode: ", model.encoder.masker.mode)
+    print("(eval) masking mode: ", mask_mode)
+    # print("(eval) masking ratio: ", model.encoder.masker.ratio)
+    # print("(eval) masking active: ", model.encoder.masker.force_active)
+    if not isinstance(model, Neurotokenizer) and 'causal' in mask_name:
         model.encoder.context_forward = 0
         print("(behave decoding) context forward: ", model.encoder.context_forward)
     
@@ -91,7 +96,7 @@ def load_model_data_local(**kwargs):
 
     n_neurons = len(dataset['cluster_regions'][0])
 
-    if config.model.model_class in ["NDT1", "iTransformer"]:
+    if config.model.model_class in ["NDT1", "iTransformer", "NeuroToken"]:  #CHANGED
         max_space_length = n_neurons  
     elif config.model.model_class == "STPatch":
         max_space_length = config.model.encoder.embedder.n_neurons
@@ -203,13 +208,16 @@ def co_smoothing_eval(
         for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
             if counter >= tot_num_neurons:
                 break
-            gt_spikes_lst, mask_spikes_lst, eval_mask_lst = [], [], []
+            gt_spikes_lst, mask_spikes_lst, eval_mask_lst, token_mask_lst = [], [], [], []
             time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
+                    gt_spike_data = batch['spikes_data'].clone().to(accelerator.device)
+                    if isinstance(model, Neurotokenizer):
+                        batch['num_neurons'] = batch['spikes_data'].shape[-1]
+                        batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
                     batch = move_batch_to_device(batch, accelerator.device)
-                    gt_spike_data = batch['spikes_data'].clone()
                     for i in range(n_jobs):
                         counter += 1
                         if counter <= tot_num_neurons:
@@ -218,6 +226,15 @@ def co_smoothing_eval(
                                 mode='manual',
                                 heldout_idxs=np.array([n_i+i])
                             )
+                            if isinstance(model, Neurotokenizer):
+                                mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
+                                token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                                token_masks = token_masks.flatten(1,2)
+                                mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
+                                mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+                            
+                                token_mask_lst.append(token_masks)
+
                             mask_spikes_lst.append(mask_result['spikes'])
                             eval_mask_lst.append(mask_result['eval_mask'])
                             gt_spikes_lst.append(gt_spike_data)
@@ -230,26 +247,43 @@ def co_smoothing_eval(
                         else:
                             break
 
-                    masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        torch.cat(mask_spikes_lst, 0),
-                        time_attn_mask=torch.cat(time_attn_mask_lst, 0),
-                        space_attn_mask=torch.cat(space_attn_mask_lst, 0),
-                        spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
-                        spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
-                        targets = torch.cat(targets_lst, 0),
-                        neuron_regions=np.stack(neuron_regions_lst),
-                        eval_mask=torch.cat(eval_mask_lst, 0),
-                        masking_mode = masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
+                    # masking_mode = 'neuron' if model.use_prompt else model.encoder.masker.mode
+                    masking_mode = 'neuron'
+                    # model.encoder.mask = False
+                    if isinstance(model, Neurotokenizer):
+                        with autocast(dtype=torch.bfloat16):
+                            outputs = model(
+                                torch.cat(mask_spikes_lst, 0),
+                                time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                                space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                                timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                                spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                                token_masks = torch.cat(token_mask_lst, 0), 
+                                targets_mask = torch.cat(eval_mask_lst, 0),
+                                targets = torch.cat(targets_lst, 0),
+                                neuron_regions=np.stack(neuron_regions_lst),
+                                masking_mode=masking_mode, 
+                                num_neuron=batch['num_neurons'],
+                                eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            ) 
+                    else:
+                        outputs = model(
+                            torch.cat(mask_spikes_lst, 0),
+                            time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                            space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                            spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                            spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                            targets = torch.cat(targets_lst, 0),
+                            neuron_regions=np.stack(neuron_regions_lst),
+                            eval_mask=torch.cat(eval_mask_lst, 0),
+                            masking_mode = masking_mode,
+                            num_neuron=batch['spikes_data'].shape[2],
+                            eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        )
             outputs.preds = torch.exp(outputs.preds)
     
             gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().float().numpy()
             tot_num_trials = len(batch['spikes_data'])
 
             # compute co-bps
@@ -292,45 +326,80 @@ def co_smoothing_eval(
         assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
         target_regions = neuron_regions = None
         held_out_list = [held_out_list]
+        print(f'HELD OUT LIST: {held_out_list}')
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for hd_idx in held_out_list:
-           
+            
             hd = np.array([hd_idx])
+            print(f"HD IS: {hd}")
 
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
+                    gt_spike_data = batch['spikes_data'].clone().to(accelerator.device)
+                    if isinstance(model, Neurotokenizer):
+                        batch['num_neurons'] = batch['spikes_data'].shape[-1]
+                        batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
                     batch = move_batch_to_device(batch, accelerator.device)
-                    gt_spike_data = batch['spikes_data'].clone()
                     mask_result = heldout_mask(
                         batch['spikes_data'].clone(),
                         mode=mode,
                         heldout_idxs=hd,
                         target_regions=target_regions,
                         neuron_regions=region_list
-                    )                
+                    )               
+                    # token_masks = torch.zeros(tuple(mask_result['spikes'].shape[:3]) + (model.encoder.hidden_size,), dtype=torch.bool, device=accelerator.device)
+                    # token_masks[:, hd] = True
+                    # token_masks = token_masks.flatten(1,2)
+                    if isinstance(model, Neurotokenizer):
+                        mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
+                        token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                        token_masks = token_masks.flatten(1,2)
+                        mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
+                        mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+                    # mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
+                    # mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+                    # token_mask = torch.zeros(tuple(mask_result['spikes'].shape[:2]) + (model.encoder.hidden_size,), dtype=torch.bool, device=accelerator.device)
+                    # token_mask[:, hd, :] = True
+                    masking_mode = 'causal'
+                    # masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
+                    # model.encoder.mask = False
                     
-                    masking_mode = 'causal' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
-                    
-                    outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
+                    if isinstance(model, Neurotokenizer):
+                        with autocast(dtype=torch.bfloat16):
+                            outputs = model(
+                                mask_result['spikes'], 
+                                time_attn_mask=batch['time_attn_mask'],
+                                space_attn_mask=batch['space_attn_mask'],
+                                timestamps=batch['spikes_timestamps'], 
+                                spacestamps=batch['spikes_spacestamps'], 
+                                token_masks = token_masks,
+                                targets_mask = mask_result['eval_mask'],
+                                targets = batch['target'],
+                                neuron_regions=batch['neuron_regions'],
+                                masking_mode=masking_mode, 
+                                num_neuron=batch['num_neurons'],
+                                eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            ) 
+
+                    else:
+                        outputs = model(
+                            mask_result['spikes'],
+                            time_attn_mask=batch['time_attn_mask'],
+                            space_attn_mask=batch['space_attn_mask'],
+                            spikes_timestamps=batch['spikes_timestamps'], 
+                            spikes_spacestamps=batch['spikes_spacestamps'], 
+                            targets = batch['target'],
+                            neuron_regions=batch['neuron_regions'],
+                            eval_mask=mask_result['eval_mask'],
+                            masking_mode=masking_mode,
+                            num_neuron=batch['spikes_data'].shape[2],
+                            eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        )
             outputs.preds = torch.exp(outputs.preds)
-        
             gt_spikes = gt_spike_data.detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().float().numpy()
     
             target_neuron_idxs = np.arange(tot_num_neurons)
             target_time_idxs = held_out_list[0]
@@ -392,8 +461,11 @@ def co_smoothing_eval(
             model.eval()
             with torch.no_grad():
                 for batch in test_dataloader:
-                    batch = move_batch_to_device(batch, accelerator.device)
                     gt_spike_data = batch['spikes_data'].clone()
+                    if isinstance(model, Neurotokenizer):
+                        batch['num_neurons'] = batch['spikes_data'].shape[-1]
+                        batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
+                    batch = move_batch_to_device(batch, accelerator.device)
                     mask_result = heldout_mask(
                         batch['spikes_data'].clone(),
                         mode=mode,
@@ -402,26 +474,52 @@ def co_smoothing_eval(
                         neuron_regions=region_list
                     )              
 
-                    masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
-                    model.encoder.mask = False
+                    if isinstance(model, Neurotokenizer):
+                        mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
+                        token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                        token_masks = token_masks.flatten(1,2)
+                        mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
+                        mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+
+                    masking_mode  = 'inter-region'
+                    # masking_mode = 'inter-region' if model.use_prompt else model.encoder.masker.mode
+                    # model.encoder.mask = False
                     
-                    outputs = model(
-                        mask_result['spikes'],
-                        time_attn_mask=batch['time_attn_mask'],
-                        space_attn_mask=batch['space_attn_mask'],
-                        spikes_timestamps=batch['spikes_timestamps'], 
-                        spikes_spacestamps=batch['spikes_spacestamps'], 
-                        targets = batch['target'],
-                        neuron_regions=batch['neuron_regions'],
-                        eval_mask=mask_result['eval_mask'],
-                        masking_mode=masking_mode,
-                        num_neuron=batch['spikes_data'].shape[2],
-                        eid=batch['eid'][0]  # each batch consists of data from the same eid
-                    )
+                    if isinstance(model, Neurotokenizer):
+                        with autocast(dtype=torch.bfloat16):
+                            outputs = model(
+                                mask_result['spikes'], 
+                                time_attn_mask=batch['time_attn_mask'],
+                                space_attn_mask=batch['space_attn_mask'],
+                                timestamps=batch['spikes_timestamps'], 
+                                spacestamps=batch['spikes_spacestamps'], 
+                                token_masks = token_masks,
+                                targets_mask = mask_result['eval_mask'],
+                                targets = batch['target'],
+                                neuron_regions=batch['neuron_regions'],
+                                masking_mode=masking_mode, 
+                                num_neuron=batch['num_neurons'],
+                                eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            ) 
+
+                    else:
+                        outputs = model(
+                            mask_result['spikes'],
+                            time_attn_mask=batch['time_attn_mask'],
+                            space_attn_mask=batch['space_attn_mask'],
+                            spikes_timestamps=batch['spikes_timestamps'], 
+                            spikes_spacestamps=batch['spikes_spacestamps'], 
+                            targets = batch['target'],
+                            neuron_regions=batch['neuron_regions'],
+                            eval_mask=mask_result['eval_mask'],
+                            masking_mode=masking_mode,
+                            num_neuron=batch['spikes_data'].shape[2],
+                            eid=batch['eid'][0]  # each batch consists of data from the same eid
+                        )
             outputs.preds = torch.exp(outputs.preds)
         
             gt_spikes = gt_spike_data.detach().cpu().numpy()
-            pred_spikes = outputs.preds.detach().cpu().numpy()
+            pred_spikes = outputs.preds.detach().cpu().float().numpy()
     
             target_neuron_idxs = mask_result['heldout_idxs']
             target_time_idxs = np.arange(gt_spikes.shape[1])
@@ -481,14 +579,17 @@ def co_smoothing_eval(
                 if hd_idx >= len(target_neuron_idxs):
                     break
 
-                gt_spikes_lst, mask_spikes_lst, eval_mask_lst, heldout_idxs_lst = [], [], [], []
+                gt_spikes_lst, mask_spikes_lst, eval_mask_lst, heldout_idxs_lst, token_mask_lst = [], [], [], [], []
                 time_attn_mask_lst, space_attn_mask_lst, spikes_timestamps_lst, spikes_spacestamps_lst, targets_lst, neuron_regions_lst = [], [], [], [], [], []
     
                 model.eval()
                 with torch.no_grad():
                     for batch in test_dataloader:
-                        batch = move_batch_to_device(batch, accelerator.device)
                         gt_spike_data = batch['spikes_data'].clone()
+                        if isinstance(model, Neurotokenizer):
+                            batch['num_neurons'] = batch['spikes_data'].shape[-1]
+                            batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
+                        batch = move_batch_to_device(batch, accelerator.device)
                         for i in range(n_jobs):
                             if hd_idx+i < len(target_neuron_idxs):
                                 mask_result = heldout_mask(
@@ -498,6 +599,15 @@ def co_smoothing_eval(
                                     target_regions=[region],
                                     neuron_regions=region_list
                                 )   
+                                if isinstance(model, Neurotokenizer):
+                                    mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
+                                    token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                                    token_masks = token_masks.flatten(1,2)
+                                    mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
+                                    mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+                                
+                                    token_mask_lst.append(token_masks)
+
                                 mask_spikes_lst.append(mask_result['spikes'])
                                 eval_mask_lst.append(mask_result['eval_mask'])
                                 heldout_idxs_lst.append(mask_result['heldout_idxs'])
@@ -511,26 +621,44 @@ def co_smoothing_eval(
                             else:
                                 break
 
-                        masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
-                        model.encoder.mask = False
+                        masking_mode = 'intra-region'
+                        # masking_mode = 'intra-region' if model.use_prompt else model.encoder.masker.mode
+                        # model.encoder.mask = False
                         
-                        outputs = model(
-                            torch.cat(mask_spikes_lst, 0),
-                            time_attn_mask=torch.cat(time_attn_mask_lst, 0),
-                            space_attn_mask=torch.cat(space_attn_mask_lst, 0),
-                            spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
-                            spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
-                            targets = torch.cat(targets_lst, 0),
-                            neuron_regions=np.stack(neuron_regions_lst),
-                            eval_mask=torch.cat(eval_mask_lst, 0),
-                            masking_mode=masking_mode,
-                            num_neuron=batch['spikes_data'].shape[2],
-                            eid=batch['eid'][0]  # each batch consists of data from the same eid
-                        )
+                        if isinstance(model, Neurotokenizer):
+                            with autocast(dtype=torch.bfloat16):
+                                outputs = model(
+                                    torch.cat(mask_spikes_lst, 0),
+                                    time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                                    space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                                    timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                                    spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                                    token_masks = torch.cat(token_mask_lst, 0), 
+                                    targets_mask = torch.cat(eval_mask_lst, 0),
+                                    targets = torch.cat(targets_lst, 0),
+                                    neuron_regions=np.stack(neuron_regions_lst),
+                                    masking_mode=masking_mode, 
+                                    num_neuron=batch['num_neurons'],
+                                    eid=batch['eid'][0]  # each batch consists of data from the same eid
+                                ) 
+                        else:
+                            outputs = model(
+                                torch.cat(mask_spikes_lst, 0),
+                                time_attn_mask=torch.cat(time_attn_mask_lst, 0),
+                                space_attn_mask=torch.cat(space_attn_mask_lst, 0),
+                                spikes_timestamps=torch.cat(spikes_timestamps_lst, 0), 
+                                spikes_spacestamps=torch.cat(spikes_spacestamps_lst, 0), 
+                                targets = torch.cat(targets_lst, 0),
+                                neuron_regions=np.stack(neuron_regions_lst),
+                                eval_mask=torch.cat(eval_mask_lst, 0),
+                                masking_mode = masking_mode,
+                                num_neuron=batch['spikes_data'].shape[2],
+                                eid=batch['eid'][0]  # each batch consists of data from the same eid
+                            )
                 outputs.preds = torch.exp(outputs.preds)
             
                 gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
-                pred_spikes = outputs.preds.detach().cpu().numpy()
+                pred_spikes = outputs.preds.detach().cpu().float().numpy()
                 tot_num_trials = len(batch['spikes_data'])
 
                 heldout_idxs = np.stack(heldout_idxs_lst).flatten()
@@ -580,7 +708,9 @@ def co_smoothing_eval(
     # save R2
     r2_all = np.array(r2_result_list)
     np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
-
+    
+    print('AT END OF CO-BPS')
+    print(f'to return: bps mean: {bps_mean}, bps std: {bps_std}')
     return {
         f"{mode}_mean_bps": bps_mean,
         f"{mode}_std_bps": bps_std,
@@ -1061,6 +1191,84 @@ def compare_R2_scatter(**kwargs):
 # helper functions
 # --------------------------------------------------------------------------------------------------
 
+def reformat_spikes(batch, max_time_F):
+    batch['num_neurons'] = batch['spikes_data'].shape[-1]
+    batch, batch_size, n_tokens,  = patch_spikes(batch, max_time_F)
+    # batch['spikes_data'], batch['token_masks'], batch['target_masks'] = masker(batch['spikes_data'], max_time_F, hidden_size, batch['neuron_regions'])
+    batch['spikes_data'] = batch['spikes_data'].reshape(batch_size, n_tokens, max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
+    return batch
+
+def patch_spikes(batch, max_time_F):
+        """
+        Efficiently patches neural data by chunking in time, optimized for cases where 
+        n_space_patches equals the number of neurons (max_space_F = 1).
+
+        Args:
+            spikes (torch.FloatTensor): Input spikes tensor of shape (B, T, N).
+            pad_time_len (int): Padding length for the time dimension.
+            time_attn_mask (torch.LongTensor): Time attention mask of shape (B, T).
+            space_attn_mask (torch.LongTensor): Space attention mask of shape (B, N).
+            max_time_F (int): Maximum number of time frames per patch.
+            pad_value (float, optional): Value to use for padding. Defaults to -1.0.
+
+        Returns:
+            Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+                - patches (torch.FloatTensor): Patched spikes of shape (B, new_seq_len, n_channels).
+                - patch_mask (torch.LongTensor): Combined attention mask for patches.
+                - spacestamps (torch.LongTensor): Spatial indices for patches.
+                - timestamps (torch.LongTensor): Temporal indices for patches.
+        """
+
+        spikes = batch['spikes_data']
+        time_attn_mask = batch['time_attn_mask']
+        pad_value = -1.
+
+        B, T, N = spikes.size()
+        device = spikes.device
+        n_time_patches = T // max_time_F
+
+        # Track padded values to prevent them from being used
+        if (spikes[0,:,0] == pad_value).sum() == 0:
+            pad_time_len = T
+        else:
+            pad_time_len = (spikes[0,:,0] == pad_value).nonzero().min().item() 
+
+        # Calculate the number of time patches
+        n_time_patches = ceil(T / max_time_F)
+        total_padded_length = n_time_patches * max_time_F
+        pad_time_len = total_padded_length - T  # Total padding required in time dimension
+
+        # Pad spikes along the time dimension
+        spikes = F.pad(spikes, (0, 0, 0, pad_time_len), value=pad_value)  # Shape: (B, total_padded_length, N)
+        # Pad time attention mask
+        time_attn_mask = F.pad(time_attn_mask, (0, pad_time_len), value=0)  # Shape: (B, total_padded_length)
+
+        # Reshape and permute spikes to shape (B, n_time_patches, N, max_time_F)
+        spikes = spikes.view(B, n_time_patches, max_time_F, N).permute(0, 1, 3, 2)
+
+        # Flatten the time dimension to create patches
+        patches = spikes.reshape(B, n_time_patches, N, max_time_F)
+
+        # # Flatten n_time_patches and N dimensions to create the sequence dimension
+        # patches = patches.reshape(B, n_time_patches * N, max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
+
+        # Prepare timestamps and spacestamps
+        timestamps = torch.arange(n_time_patches, device=device).unsqueeze(1).expand(n_time_patches, N).flatten()
+        spacestamps = torch.arange(N, device=device).unsqueeze(0).expand(n_time_patches, N).flatten()
+        # Expand to match batch size
+        timestamps = timestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
+        spacestamps = spacestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
+
+        batch['spikes_data'] = patches
+        batch['spikes_spacestamps'] = spacestamps
+        batch['spikes_timestamps'] = timestamps
+        batch['time_attn_mask'] = time_attn_mask
+
+        return batch, B, n_time_patches * N
+            
+
+
+
 def heldout_mask(
         spike_data,                     # (K, T, N)
         mode='manual',                  # manual / active / per_neuron / forward_pred / inter_region / etc (TODO)
@@ -1108,7 +1316,7 @@ def heldout_mask(
         
     else:
         raise NotImplementedError('mode not implemented')
-
+    
     spike_data_masked = spike_data * mask
 
     return {"spikes": spike_data_masked, "heldout_idxs": hd, "eval_mask": 1-mask}

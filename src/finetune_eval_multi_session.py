@@ -31,10 +31,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--test_eid", type=str, default='51e53aff-1d5d-4182-a684-aba783d50ae5')
 ap.add_argument("--mask_ratio", type=float, default=0.3)
 ap.add_argument("--mask_mode", type=str, default="neuron")
-# ap.add_argument("--model_name", type=str, default="NeuroToken")
-ap.add_argument("--model_name", type=str, default="NDT1")
+ap.add_argument("--model_name", type=str, default="NeuroToken")
+# ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--prompting", type=str, default="False")
-ap.add_argument("--train", type=str, default="True")
+ap.add_argument("--train", type=str, default="False")
 ap.add_argument("--eval", type=str, default="True")
 ap.add_argument("--base_path", type=str, default='/u/csanthirasegaran')
 ap.add_argument("--num_train_sessions", type=int, default=1)
@@ -279,8 +279,8 @@ try:
         forward_pred = True
         inter_region = True
         intra_region = True
-        choice_decoding = True
-        continuous_decoding = True
+        choice_decoding = False
+        continuous_decoding = False
         
         print(f'Mask: {mask_name}')
         
@@ -320,7 +320,7 @@ try:
                 'is_aligned': True,   
                 'target_regions': None,
                 # 'n_jobs': 8
-                'n_jobs': 4
+                'n_jobs': 2
             }
         
             results = co_smoothing_eval(model, 
@@ -334,6 +334,13 @@ try:
         # forward prediction
         if forward_pred:
             print('Start forward prediction:')
+            if model_name == 'NeuroToken':
+                if config.model.encoder.embedder.max_time_F == 10:
+                    held_out_list = [9]
+                else:
+                    print('Need to update held_out_list in forward pred.')
+            else:
+                held_out_list = list(range(90, 100))
             results = co_smoothing_configs = {
                 'subtract': 'task',
                 'onset_alignment': [],
@@ -341,7 +348,7 @@ try:
                 'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_{config.model.model_class}/method_ssl/{mask_name}/stitch_{config.model.encoder.stitching}/{eid}/forward_pred',
                 'mode': 'forward_pred',
                 'n_time_steps': n_time_steps,    
-                'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
+                'held_out_list': held_out_list, # NLB uses 200 ms for fp
                 'is_aligned': True,
                 'target_regions': None,
                 'n_jobs': 8

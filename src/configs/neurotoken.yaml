@@ -109,6 +109,7 @@ encoder:
     dropout: 0.2           # dropout in transformer layers
     fixup_init: true      # modify weight initialization
     causal: false
+    
   # Projection to factor space
   factors:  
     active: false  # project from hidden_size to factors
