@@ -258,12 +258,12 @@ try:
     #########################
 
     if args.eval == "True":
-        import wandb
-        wandb.init(project=config.wandb.project, 
-                entity=config.wandb.entity, 
-                config=config, 
-                name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
-                )
+        # import wandb
+        # wandb.init(project=config.wandb.project, 
+        #         entity=config.wandb.entity, 
+        #         config=config, 
+        #         name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
+        #         )
         print('Start model evaluation.')
         print('=======================')
         
