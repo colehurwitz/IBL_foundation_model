@@ -91,7 +91,7 @@ encoder:
   transformer:
     n_layers: 5         # number of transformer layers -- ORIGINALLY 5
     n_pre_layers: 1
-    hidden_size: 512     #embedding size of tokens
+    hidden_size: 128     #embedding size of tokens
     small_hidden_size: 64
     MEGA_hidden_size: 1024 # embedding size for megatokens - hidden space of the transformer
     use_scalenorm: false  # use scalenorm  instead of layernorm
@@ -103,7 +103,7 @@ encoder:
     attention_bias: true  # learn bias in the attention layers
 
     act: gelu             # activiation function in mlp layers
-    inter_size: 1024      # intermediate dimension in the mlp layers -- ORIGINALLY 1024
+    inter_size: 256      # intermediate dimension in the mlp layers -- ORIGINALLY 1024
     mlp_bias: true        # learn bias in the mlp layers
     
     dropout: 0.2           # dropout in transformer layers

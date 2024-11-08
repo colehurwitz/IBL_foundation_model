@@ -202,6 +202,7 @@ class Trainer():
         if self.model_class == "NeuroToken":
             self.masker.mode = masking_mode
             batch['num_neurons'] = batch['spikes_data'].shape[2]
+            batch['target_spikes'] = batch['spikes_data'].clone()
             batch = self.patch_spikes(batch)
             batch['spikes_data'], batch['token_masks'], batch['target_masks'] = self.masker(batch['spikes_data'], self.config.model.encoder.embedder.max_time_F, self.config.model.encoder.transformer.hidden_size, batch['neuron_regions'])
             batch['spikes_data'] = batch['spikes_data'].reshape(self.batch_size, self.n_time_patches * batch['num_neurons'], self.config.model.encoder.embedder.max_time_F)  # Shape: (B, n_time_patches * N, n_channels)
@@ -214,7 +215,8 @@ class Trainer():
                 spacestamps=batch['spikes_spacestamps'], 
                 token_masks = batch['token_masks'],
                 targets_mask = batch['target_masks'],
-                targets = batch['target'],
+                # targets = batch['target'],
+                targets = batch['target_spikes'],
                 neuron_regions=batch['neuron_regions'],
                 masking_mode=masking_mode, 
                 spike_augmentation=self.config.data.spike_augmentation,
@@ -250,7 +252,6 @@ class Trainer():
         if self.eval_dataloader:
             gt, preds = [], []
             with torch.no_grad():  
-                print(f'LEN EVAL DATALOADER: {len(self.eval_dataloader)}')
                 for batch in self.eval_dataloader:
                     if self.masking_mode in ["combined", "all"]:
                         masking_mode = random.sample(self.masking_schemes, 1)[0]

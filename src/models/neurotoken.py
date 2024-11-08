@@ -551,6 +551,7 @@ class Neurotokenizer(nn.Module):
         B, T_, _ = spikes.size()    
 
         N = self.encoder.n_space_patches
+        n_time_patches = self.encoder.n_time_patches
 
         # print(f'INIT Targets shape: {targets.shape}, targets_mask shape: {targets_mask.shape}')
 
@@ -574,7 +575,7 @@ class Neurotokenizer(nn.Module):
                         spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
 
         if self.method == "ssl":
-            targets = spikes.clone()
+            # targets = spikes.clone()
             if self.encoder.int_spikes:
                 targets = targets.to(torch.int64)
 
@@ -615,9 +616,9 @@ class Neurotokenizer(nn.Module):
         elif self.method == "ssl":
             data_length = self.encoder.max_time_F * self.encoder.n_time_patches
             outputs = self.decoder(x)
-            outputs = outputs.reshape((B,data_length,-1))[:,:,:pad_space_len]
-            targets = targets.reshape((B,data_length,-1))[:,:,:pad_space_len]
-            targets_mask = targets_mask.reshape((B,data_length,-1))[:,:,:pad_space_len]
+            outputs = self.reshape_tensor(outputs, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)        # (B, T, N_padded)
+            # targets = self.reshape_tensor(targets, B, n_time_patches, N, data_length, pad_space_len)        # (B, T, N_padded)
+            targets_mask = self.reshape_tensor(targets_mask, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)  # (B, T, N_padded)
 
 
         # Compute the loss over unmasked outputs
@@ -658,7 +659,35 @@ class Neurotokenizer(nn.Module):
         self.encoder.load_state_dict(torch.load(os.path.join(load_dir,"encoder.bin")))
         self.decoder.load_state_dict(torch.load(os.path.join(load_dir,"decoder.bin")))
 
+    def reshape_tensor(self, tensor, B, n_time_patches, N, max_time_F, pad_space_len):
+        """
+        Reshape tensor from (B, n_time_patches * N, F_decoded) back to (B, T, pad_space_len).
 
+        Args:
+            tensor (torch.Tensor): Tensor to reshape.
+            B (int): Batch size.
+            n_time_patches (int): Number of time patches.
+            N (int): Number of neurons.
+            max_time_F (int): Number of time frames per patch.
+            pad_space_len (int): Number of neurons to pad/truncate.
+
+        Returns:
+            torch.Tensor: Reshaped tensor of shape (B, T, pad_space_len).
+        """
+        # Step 1: Reshape to (B, n_time_patches, N, F_decoded)
+        tensor = tensor.view(B, n_time_patches, N, -1)  # (B, n_time_patches, N, F_decoded)
+        
+        # Step 2: Permute to (B, n_time_patches, F_decoded, N)
+        tensor = tensor.permute(0, 1, 3, 2).contiguous()  # (B, n_time_patches, F_decoded, N)
+        
+        # Step 3: Reshape to (B, T, N)
+        T = n_time_patches * max_time_F
+        tensor = tensor.view(B, T, N)  # (B, T, N)
+        
+        # Step 4: Apply padding/truncation if necessary
+        tensor = tensor[:, :, :pad_space_len]  # (B, T, pad_space_len)
+        
+        return tensor
 
 class ScaleNorm(nn.Module):
 

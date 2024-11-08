@@ -54,7 +54,7 @@ class New_Masker(nn.Module):
     @no_grad
     def forward(
         self, 
-        patched_spikes: torch.FloatTensor,                      # (bs, seq_len, n_channels)
+        patched_spikes: torch.FloatTensor,                     
         max_time_F: torch.FloatTensor,
         embedding_dim: torch.FloatTensor,
         neuron_regions: np.ndarray = None,              # (bs, n_channels)     
@@ -150,8 +150,8 @@ class New_Masker(nn.Module):
         targets_mask = mask if self.mode != "intra-region" else mask & targets_mask.unsqueeze(1).expand_as(mask).bool().to(patched_spikes.device)
         #TODO: double check that this method is right and mask == 1 is what should be replaced
         token_masks = targets_mask.clone().flatten(1,2).unsqueeze(-1).expand(-1,-1,embedding_dim).bool()    #(B, tokens, embed_dim)
-        targets_mask = targets_mask.repeat_interleave(max_time_F, dim=1)        #(B, time, neurons)
-        return patched_spikes, token_masks, targets_mask.bool()    
+        targets_mask = targets_mask.repeat_interleave(max_time_F, dim=1).bool()        #(B, time, neurons)
+        return patched_spikes, token_masks, targets_mask    
 
     @staticmethod
     def expand_timesteps(mask, width=1):

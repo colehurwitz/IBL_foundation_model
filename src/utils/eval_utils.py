@@ -214,6 +214,8 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     gt_spike_data = batch['spikes_data'].clone().to(accelerator.device)
+                    # print(F'GT spike data immediately after cloning: {gt_spike_data[0,50:55,50:55]}')
+                    batch['target_spikes'] = batch['spikes_data'].clone()
                     if isinstance(model, Neurotokenizer):
                         batch['num_neurons'] = batch['spikes_data'].shape[-1]
                         batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
@@ -242,7 +244,7 @@ def co_smoothing_eval(
                             space_attn_mask_lst.append(batch['space_attn_mask'])
                             spikes_timestamps_lst.append(batch['spikes_timestamps'])
                             spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
-                            targets_lst.append(batch['target'])
+                            targets_lst.append(batch['target_spikes'])
                             neuron_regions_lst.append(batch['neuron_regions'])
                         else:
                             break
@@ -280,10 +282,14 @@ def co_smoothing_eval(
                             num_neuron=batch['spikes_data'].shape[2],
                             eid=batch['eid'][0]  # each batch consists of data from the same eid
                         )
+            # print(f'Pre-exp outputs: {outputs.preds[0,:5,:5]}')
             outputs.preds = torch.exp(outputs.preds)
-    
+            # print(f'Post-exp outputs: {outputs.preds[0,:5,:5]}')
+
             gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().float().numpy()
+            # print(f'GT spikes: {gt_spikes[0,:5,:5]}')
+            # print(f'PRED spikes: {pred_spikes[0,:5,:5]}')
             tot_num_trials = len(batch['spikes_data'])
 
             # compute co-bps
@@ -291,8 +297,10 @@ def co_smoothing_eval(
                 if n_i+i < tot_num_neurons:
                     gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
                     pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
-        
+                    print(f'GT held out: {gt_held_out}')
+                    print(f'PRED held out: {pred_held_out}')
                     bps = bits_per_spike(pred_held_out, gt_held_out)
+                    print(f'BPS: {bps}')
                     if np.isinf(bps):
                         bps = np.nan
                     bps_result_list[n_i+i] = bps
@@ -338,6 +346,7 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     gt_spike_data = batch['spikes_data'].clone().to(accelerator.device)
+                    batch['target_spikes'] = batch['spikes_data'].clone()
                     if isinstance(model, Neurotokenizer):
                         batch['num_neurons'] = batch['spikes_data'].shape[-1]
                         batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
@@ -376,7 +385,7 @@ def co_smoothing_eval(
                                 spacestamps=batch['spikes_spacestamps'], 
                                 token_masks = token_masks,
                                 targets_mask = mask_result['eval_mask'],
-                                targets = batch['target'],
+                                targets = batch['target_spikes'],
                                 neuron_regions=batch['neuron_regions'],
                                 masking_mode=masking_mode, 
                                 num_neuron=batch['num_neurons'],
@@ -462,6 +471,7 @@ def co_smoothing_eval(
             with torch.no_grad():
                 for batch in test_dataloader:
                     gt_spike_data = batch['spikes_data'].clone()
+                    batch['target_spikes'] = batch['spikes_data'].clone()
                     if isinstance(model, Neurotokenizer):
                         batch['num_neurons'] = batch['spikes_data'].shape[-1]
                         batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
@@ -495,7 +505,7 @@ def co_smoothing_eval(
                                 spacestamps=batch['spikes_spacestamps'], 
                                 token_masks = token_masks,
                                 targets_mask = mask_result['eval_mask'],
-                                targets = batch['target'],
+                                targets = batch['target_spikes'],
                                 neuron_regions=batch['neuron_regions'],
                                 masking_mode=masking_mode, 
                                 num_neuron=batch['num_neurons'],
@@ -586,6 +596,7 @@ def co_smoothing_eval(
                 with torch.no_grad():
                     for batch in test_dataloader:
                         gt_spike_data = batch['spikes_data'].clone()
+                        batch['target_spikes'] = batch['spikes_data'].clone()
                         if isinstance(model, Neurotokenizer):
                             batch['num_neurons'] = batch['spikes_data'].shape[-1]
                             batch, batch_size, n_tokens,  = patch_spikes(batch, model.encoder.max_time_F)
@@ -616,7 +627,7 @@ def co_smoothing_eval(
                                 space_attn_mask_lst.append(batch['space_attn_mask'])
                                 spikes_timestamps_lst.append(batch['spikes_timestamps'])
                                 spikes_spacestamps_lst.append(batch['spikes_spacestamps'])
-                                targets_lst.append(batch['target'])
+                                targets_lst.append(batch['target_spikes'])
                                 neuron_regions_lst.append(batch['neuron_regions'])
                             else:
                                 break
@@ -1278,7 +1289,7 @@ def heldout_mask(
         neuron_regions=None,            # list for region mode
 ):
     mask = torch.ones(spike_data.shape).to(torch.int64).to(spike_data.device)
-    
+
     if mode == 'manual':
         hd = heldout_idxs
         mask[:, :, hd] = 0
