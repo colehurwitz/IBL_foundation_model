@@ -3,7 +3,7 @@
 #SBATCH --time=16:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --partition=gpuA100x4
+#SBATCH --partition=gpuA100x8
 #SBATCH --gpus=1
 #SBATCH --mem=128g
 #SBATCH --job-name=hyper_search

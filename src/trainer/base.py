@@ -38,7 +38,7 @@ class Trainer():
         self.config = kwargs.get("config", None)
         self.stitching = kwargs.get("stitching", None)
         self.num_neurons = kwargs.get("num_neurons", None)
-
+        print(f'NUM NEURONS INIT: {self.num_neurons}')
         self.model_class = self.config.model.model_class
 
         if self.config.method.model_kwargs.clf:
@@ -412,8 +412,7 @@ class Trainer():
 
         # Prepare timestamps and spacestamps
         timestamps = torch.arange(n_time_patches, device=device).unsqueeze(1).expand(n_time_patches, N).flatten()
-        spacestamps = torch.arange(N, device=device).unsqueeze(0).expand(n_time_patches, N).flatten()
-        # Expand to match batch size
+        spacestamps = torch.arange(N, device=device).unsqueeze(0).expand(n_time_patches, N).flatten()        # Expand to match batch size
         timestamps = timestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
         spacestamps = spacestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
 

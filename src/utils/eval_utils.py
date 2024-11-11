@@ -35,6 +35,37 @@ PROMPTING_MODE=['neuron', 'causal', 'inter-region', 'intra-region']
 # --------------------------------------------------------------------------------------------------
 # Model/Dataset Loading and Configuration
 # --------------------------------------------------------------------------------------------------
+def plot_mask(mask, title):
+
+    if isinstance(mask, torch.Tensor):
+        mask_np = mask.cpu().numpy()
+    elif isinstance(mask, np.ndarray):
+        mask_np = mask
+    else:
+        raise TypeError("Mask must be a torch.Tensor or np.ndarray")
+
+    # Ensure mask is 2D
+    if mask_np.ndim != 2:
+        raise ValueError(f"Mask must be a 2D array, but has shape {mask_np.shape}")
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.imshow(mask_np[:,:30].T, cmap='gray', aspect='auto', interpolation='nearest', origin='lower')
+    plt.xlabel('Time')
+    plt.ylabel('Neuron')
+    plt.title(title)
+    plt.colorbar(label='Mask Value')
+    plt.tight_layout()
+
+    # Save or display the plot
+    random_val = torch.rand((1,)).item()
+    save_path = os.path.join('/u/csanthirasegaran/IBL_foundation_model/check_traces', f'{title}_{random_val}.png')
+    plt.savefig(save_path)
+    plt.close()
+    print(f'Plot saved at {save_path}')
+
+
+
 
 def load_model_data_local(**kwargs):
     model_config = kwargs['model_config']
@@ -205,7 +236,9 @@ def co_smoothing_eval(
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         # loop through all the neurons
         counter = 0
-        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):    
+        for n_i in tqdm(range(0, tot_num_neurons+n_jobs, n_jobs)):
+            # if counter > 10: 
+            #     break
             if counter >= tot_num_neurons:
                 break
             gt_spikes_lst, mask_spikes_lst, eval_mask_lst, token_mask_lst = [], [], [], []
@@ -229,17 +262,24 @@ def co_smoothing_eval(
                                 heldout_idxs=np.array([n_i+i])
                             )
                             if isinstance(model, Neurotokenizer):
+                                # print(f"EVAL MASK INIT SHAPE: {mask_result['eval_mask'].shape}")
                                 mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
+                                # print(f'plotting eval mask')
+                                # plot_mask(mask_result['eval_mask'][0], title='EVAL_Mask')
+                                # print(f"EVAL MASK POST SHAPE: {mask_result['eval_mask'].shape}")
                                 token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                                print('plotting token masks')
+                                # plot_mask(token_masks[0,:,:,0], title='TOKEN_mask')
                                 token_masks = token_masks.flatten(1,2)
                                 mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
                                 mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
+                                # plot_mask(mask_result['eval_mask'][0], title='FINAL_eval_mask')
                             
                                 token_mask_lst.append(token_masks)
 
                             mask_spikes_lst.append(mask_result['spikes'])
                             eval_mask_lst.append(mask_result['eval_mask'])
-                            gt_spikes_lst.append(gt_spike_data)
+                            # gt_spikes_lst.append(gt_spike_data)
                             time_attn_mask_lst.append(batch['time_attn_mask'])
                             space_attn_mask_lst.append(batch['space_attn_mask'])
                             spikes_timestamps_lst.append(batch['spikes_timestamps'])
@@ -282,12 +322,13 @@ def co_smoothing_eval(
                             num_neuron=batch['spikes_data'].shape[2],
                             eid=batch['eid'][0]  # each batch consists of data from the same eid
                         )
-            # print(f'Pre-exp outputs: {outputs.preds[0,:5,:5]}')
             outputs.preds = torch.exp(outputs.preds)
-            # print(f'Post-exp outputs: {outputs.preds[0,:5,:5]}')
 
-            gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
+            # gt_spikes = torch.cat(gt_spikes_lst, 0).detach().cpu().numpy()
+            gt_spikes = gt_spike_data.detach().cpu().numpy()
             pred_spikes = outputs.preds.detach().cpu().float().numpy()
+            # print(f'Pred spikes SHAPE: {pred_spikes.shape}')
+            # print(f'GT spikes SHAPE: {gt_spikes.shape}')
             # print(f'GT spikes: {gt_spikes[0,:5,:5]}')
             # print(f'PRED spikes: {pred_spikes[0,:5,:5]}')
             tot_num_trials = len(batch['spikes_data'])
@@ -295,16 +336,17 @@ def co_smoothing_eval(
             # compute co-bps
             for i in range(n_jobs):
                 if n_i+i < tot_num_neurons:
-                    gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
+                    # gt_held_out = gt_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
+                    gt_held_out = gt_spikes[:,:,[n_i+i]]
                     pred_held_out = pred_spikes[i*tot_num_trials:(i+1)*tot_num_trials, :, [n_i+i]]
-                    print(f'GT held out: {gt_held_out}')
-                    print(f'PRED held out: {pred_held_out}')
+                    # check_traces(gt_held_out, pred_held_out)
                     bps = bits_per_spike(pred_held_out, gt_held_out)
-                    print(f'BPS: {bps}')
                     if np.isinf(bps):
                         bps = np.nan
                     bps_result_list[n_i+i] = bps
-        
+
+
+                    # print(f"SAVED PLOT TO: {kwargs['save_path']}")
                     # compute R2
                     if is_aligned:
                         X = behavior_set  # [#trials, #timesteps, #variables]
@@ -314,14 +356,15 @@ def co_smoothing_eval(
                                                               aligned_tbins=kwargs['onset_alignment'],
                                                               neuron_idx=uuids_list[n_i+i][:4],
                                                               neuron_region=region_list[n_i+i],
-                                                              method=method_name, save_path=kwargs['save_path'])
+                                                              method=method_name, save_path=kwargs['save_path'], save_plot=True)
                         r2_result_list[n_i+i] = np.array([_r2_psth, _r2_trial])
                     else:
                         r2 = viz_single_cell_unaligned(
                             gt_held_out.squeeze(), pred_held_out.squeeze(), 
                             neuron_idx=uuids_list[n_i+i][:4],
                             neuron_region=region_list[n_i+i],
-                            method=method_name, save_path=kwargs['save_path']
+                            method=method_name, save_path=kwargs['save_path'],
+                            save_plot=True
                         )
                         r2_result_list[n_i+i] = r2
                 else:
@@ -334,13 +377,11 @@ def co_smoothing_eval(
         assert held_out_list is not None, 'forward_pred requires specific target time points to predict'
         target_regions = neuron_regions = None
         held_out_list = [held_out_list]
-        print(f'HELD OUT LIST: {held_out_list}')
 
         bps_result_list, r2_result_list = [float('nan')] * tot_num_neurons, [np.array([np.nan, np.nan])] * N
         for hd_idx in held_out_list:
             
             hd = np.array([hd_idx])
-            print(f"HD IS: {hd}")
 
             model.eval()
             with torch.no_grad():
@@ -363,8 +404,9 @@ def co_smoothing_eval(
                     # token_masks = token_masks.flatten(1,2)
                     if isinstance(model, Neurotokenizer):
                         mask_result['eval_mask'] = mask_result['eval_mask'][...,0]
-                        token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
-                        token_masks = token_masks.flatten(1,2)
+                        # token_masks = mask_result['eval_mask'].clone().unsqueeze(-1).expand(tuple(mask_result['eval_mask'].shape) + (model.encoder.hidden_size,)).bool().to(accelerator.device)
+                        # token_masks = token_masks.reshape(batch_size, n_tokens, model.encoder.hidden_size)
+                        token_masks = mask_result['eval_mask'].clone().flatten(1,2).unsqueeze(-1).expand(-1,-1,model.encoder.hidden_size)
                         mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
                         mask_result['eval_mask'] = mask_result['eval_mask'].repeat_interleave(model.encoder.max_time_F, dim=1) 
                     # mask_result['spikes'] = mask_result['spikes'].reshape(batch_size, n_tokens, model.encoder.max_time_F)
@@ -720,8 +762,6 @@ def co_smoothing_eval(
     r2_all = np.array(r2_result_list)
     np.save(os.path.join(kwargs['save_path'], f'r2.npy'), r2_all)
     
-    print('AT END OF CO-BPS')
-    print(f'to return: bps mean: {bps_mean}, bps std: {bps_std}')
     return {
         f"{mode}_mean_bps": bps_mean,
         f"{mode}_std_bps": bps_std,
@@ -1832,3 +1872,27 @@ def compute_R2_main(y, y_pred, clip=True):
         return np.clip(r2s, 0., 1.)
     else:
         return r2s
+
+
+def check_traces(gt_spikes, pred_spikes):
+    for neuron_idx in [0]:
+        # Adjust indexing based on your data shapes and accumulation
+        gt_held_out = gt_spikes[:, :, neuron_idx]
+        pred_held_out = pred_spikes[:, :, neuron_idx]
+
+        gt_mean = gt_held_out.mean(axis=0)
+        pred_mean = pred_held_out.mean(axis=0)
+
+        plt.figure(figsize=(10, 4))
+        plt.plot(gt_mean, label='Ground Truth', color='blue')
+        plt.plot(pred_mean, label='Prediction', color='red', alpha=0.7)
+        plt.xlabel('Time')
+        plt.ylabel('Spike Rate')
+        plt.legend()
+        plt.tight_layout()
+        random_val = torch.rand((1,)).item()
+        save_path = os.path.join('/u/csanthirasegaran/IBL_foundation_model/check_traces', f'randplot_{random_val}.png')
+        plt.savefig(save_path)
+        plt.close()
+
+        print(f'Plot saved for neuron {neuron_idx} at {save_path}')
