@@ -23,6 +23,8 @@ from models.region_lookup import RegionLookup
 from transformers.models.llama.modeling_llama import LlamaFlashAttention2 # Import the new attention layer
 from transformers import LlamaConfig
 
+import matplotlib.pyplot as plt
+
 DEFAULT_CONFIG = "src/configs/ndt1.yaml"
 #TODO: make default config for neurotoken
 
@@ -35,7 +37,7 @@ class NeurotokenizerOutput(ModelOutput):
     n_examples: Optional[torch.LongTensor] = None
     preds: Optional[torch.FloatTensor] = None
     targets: Optional[torch.FloatTensor] = None
-    # num_neuron: Optional[int] = None      #TOOD: decide whether to add - included in stpatch
+    num_neuron: Optional[int] = None      #TOOD: decide whether to add - included in stpatch
 
 
 def create_context_mask(          
@@ -144,7 +146,7 @@ class NeuralAttention(nn.Module):
 
 
         # Replace the existing query, key, value layers with LlamaFlashAttention2
-        self.attention = LlamaFlashAttention2(llama_config, layer_idx=0)
+        self.attention = LlamaFlashAttention2(llama_config, layer_idx=idx)
         self.out_proj = nn.Linear(hidden_size, hidden_size, bias=use_bias)
         self.dropout = nn.Dropout(dropout)
     
@@ -312,7 +314,15 @@ class NeuralEncoder(nn.Module):
         self.use_session = config.embedder.use_session
 
         # Transformer
-        self.embedding_layer = nn.Linear(self.max_time_F, self.hidden_size)
+        self.embedding_layer = nn.Sequential(
+            nn.Linear(self.max_time_F, self.hidden_size//2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.hidden_size//2, int(self.hidden_size * 1.5)), 
+            nn.ReLU(), 
+            nn.Dropout(0.1),
+            nn.Linear(int(self.hidden_size * 1.5), self.hidden_size))
+        # self.embedding_layer = nn.Linear(self.max_time_F, self.hidden_size)
         self.layers = nn.ModuleList([NeuralEncoderLayer(idx, config.embedder.max_F, config.transformer) for idx in range(self.n_layers)])
         self.out_norm = ScaleNorm(self.hidden_size ** 0.5) if config.transformer.use_scalenorm else nn.LayerNorm(self.hidden_size) 
        
@@ -323,12 +333,14 @@ class NeuralEncoder(nn.Module):
         if self.pos:
             if self.embed_region:
                 self.region_embeddings = nn.Sequential(
-                    nn.Embedding(self.regionlookup.max_region_indx, self.hidden_size),nn.LayerNorm(self.hidden_size),)
-            self.embed_unit = nn.Sequential(
-                nn.Embedding(self.n_space_patches, self.hidden_size),nn.LayerNorm(self.hidden_size),)
+                    nn.Embedding(self.regionlookup.max_region_indx, self.hidden_size))
+            # self.embed_unit = nn.Sequential(nn.Embedding(self.n_space_patches, self.hidden_size),
+            #                                 nn.LayerNorm(self.hidden_size))
+            self.embed_unit = nn.Embedding(self.n_space_patches, self.hidden_size)
+            self.embed_time = nn.Embedding(self.n_time_patches, self.hidden_size)
 
         self.learned_mask = nn.Parameter(torch.randn(1, 1, self.hidden_size))
-
+        # self.embeddings_layernorm = nn.LayerNorm(self.hidden_size)
 
     # @profile
     def forward(
@@ -379,7 +391,9 @@ class NeuralEncoder(nn.Module):
 
         if False and self.embed_region:
             x = x + self.region_embeddings(regionstamps)
-        x = x + self.embed_unit(spacestamps)
+        x = x + self.embed_unit(spacestamps) + self.embed_time(timestamps)
+        # x = self.embeddings_layernorm(x)
+        # x = x + self.embed_unit(spacestamps)
         _, T, N_embed = x.shape
 
         # # Prepare 
@@ -393,7 +407,8 @@ class NeuralEncoder(nn.Module):
         # Forward transformer
         # for idx, layer in enumerate(self.layers):
         for layer in self.layers:
-            x = layer(x, attn_mask=None, timestamp = timestamps) 
+            x = layer(x, attn_mask=None, timestamp = timestamps)
+            # x = layer(x, attn_mask=None, timestamp = None)
         x = self.out_norm(x)
 
         #NOTE: _T value may be wrong here 
@@ -486,7 +501,256 @@ class Neurotokenizer(nn.Module):
                 nn.Linear((self.encoder.n_time_patches * self.encoder.n_space_patches) * self.encoder.out_proj.out_size, n_outputs)
             )
         else:
-            decoder_layers.append(nn.Linear(self.encoder.hidden_size, n_outputs))
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size, int(self.encoder.hidden_size*1.5)))
+            # decoder_layers.append(nn.LayerNorm(int(self.encoder.hidden_size*1.5)))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(p=0.05))
+            decoder_layers.append(nn.Linear(int(self.encoder.hidden_size*1.5), self.encoder.hidden_size//2))
+            # decoder_layers.append(nn.LayerNorm(self.encoder.hidden_size//2))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(p=0.05))
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size//2, self.encoder.hidden_size//3))
+            # decoder_layers.append(nn.LayerNorm(self.encoder.hidden_size//3))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(0.05))
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size//3, n_outputs))
+            # decoder_layers.append(nn.Linear(self.encoder.hidden_size, n_outputs))
+            # decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, self.n_channels*self.encoder.max_time_F))
+
+        if self.method == "sft" and not kwargs["use_lograte"]:
+            decoder_layers.append(nn.ReLU()) # If we're not using lograte, we need to feed positive rates
+        if self.method == "ctc":
+            decoder_layers.append(nn.LogSoftmax(dim=-1))  # CTC loss asks for log-softmax-normalized logits
+        if self.method == "sl":
+            if kwargs["clf"]:
+                pass  # cross-entropy loss uses logits as inputs
+            elif kwargs["reg"]:
+                pass
+            else:
+                raise Exception(f"Decoder not implemented yet for sl")
+            
+        self.decoder = nn.Sequential(*decoder_layers)
+
+        # Load decoder weights
+        if config.decoder.from_pt is not None:
+            self.decoder.load_state_dict(torch.load(os.path.join(config.decoder.from_pt,"decoder.bin")))
+
+        # Build loss function
+        if self.method == "ssl":
+            if kwargs["loss"] == "poisson_nll":
+                self.loss_fn = nn.PoissonNLLLoss(reduction="none", log_input=kwargs["use_lograte"])
+                self.mse_loss_fn = nn.MSELoss(reduction="none")
+                self.alpha = 0.2
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:   
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for ssl")
+        elif self.method == "ctc":
+             self.loss_fn = nn.CTCLoss(reduction="none", blank=kwargs["blank_id"], zero_infinity=kwargs["zero_infinity"])
+        elif self.method == "sl":
+            if kwargs["loss"] == "cross_entropy":
+                self.loss_fn = nn.CrossEntropyLoss(reduction="none")
+            elif kwargs["loss"] == "mse":
+                self.loss_fn = nn.MSELoss(reduction="none")
+            else:
+                raise Exception(f"Loss {kwargs['loss']} not implemented yet for sl")
+        
+
+    def forward(
+        self, 
+        spikes:             torch.FloatTensor,  # (bs, seq_len, n_channels)
+        time_attn_mask:     torch.LongTensor,   # (bs, seq_len)
+        space_attn_mask:    torch.LongTensor,   # (bs, seq_len)
+        timestamps:         torch.LongTensor,   # (bs, seq_len)
+        spacestamps:        torch.LongTensor,   # (bs, seq_len)
+        token_masks:        torch.BoolTensor,
+        targets_mask:      torch.BoolTensor,
+        targets:            Optional[torch.FloatTensor] = None,  # (bs, tar_len)
+        spikes_lengths:     Optional[torch.LongTensor] = None,   # (bs) 
+        targets_lengths:    Optional[torch.LongTensor] = None,   # (bs)
+        block_idx:          Optional[torch.LongTensor] = None,   # (bs)
+        date_idx:           Optional[torch.LongTensor] = None,   # (bs)
+        neuron_regions:     Optional[torch.LongTensor] = None,   # (bs, n_channels)
+        masking_mode:       Optional[str] = None,
+        spike_augmentation: Optional[bool] = False,
+        eval_mask:          Optional[torch.LongTensor] = None,
+        num_neuron:         Optional[torch.LongTensor] = None,
+        eid:                Optional[str] = None,
+    ) -> NeurotokenizerOutput:  
+        #from stpatch, T_ is for orig seq length, _T is for patched seq length, T is for output length (output: x)
+        B, T_, _ = spikes.size()    
+
+        N = self.encoder.n_space_patches
+        n_time_patches = self.encoder.n_time_patches
+
+        # print(f'TARGETS MASK SHAPE: {targets_mask.shape}')
+        # print(f'INIT Targets shape: {targets.shape}, targets_mask shape: {targets_mask.shape}')
+
+        if eval_mask is not None:
+            targets_mask = eval_mask.clone()
+        
+        # if neuron_regions type is list 
+        if isinstance(neuron_regions, list):
+            neuron_regions = np.asarray(neuron_regions).T
+
+        # Augmentation
+        if spike_augmentation:
+            if self.training:
+                # 50% of the time, we reverse the spikes
+                if torch.rand(1) > 0.5:
+                    # calculate unmask timestamps
+                    unmask_temporal = time_attn_mask.sum(dim=1)
+                    for i in range(len(unmask_temporal)):
+                        # reverse idx from unmask_temporal to 0
+                        reverse_idx = torch.arange(unmask_temporal[i]-1, -1, -1)
+                        spikes[i, :unmask_temporal[i]] = spikes[i, reverse_idx]
+
+        if self.method == "ssl":
+            # targets = spikes.clone()
+            if self.encoder.int_spikes:
+                targets = targets.to(torch.int64)
+
+        #From stpatch, not sure if handling padding will be necessary but leaving here
+        # Track padded values to prevent them from being used
+        if (spikes[0,:,0] == self.pad_value).sum() == 0:
+            pad_time_len = T_
+        else:
+            pad_time_len = (spikes[0,:,0] == self.pad_value).nonzero().min().item() 
+
+        if (spikes[0,0,:] == self.pad_value).sum() == 0:
+            pad_space_len = N
+        else:
+            pad_space_len = (spikes[0,0,:] == self.pad_value).nonzero().min().item() 
+
+        # Encode neural data    TODO: figure out why the targets_mask | new_mask part is needed isntead of just getting targets_mask from encoder 
+        # targets_mask = torch.zeros_like(spikes, dtype=torch.int64)
+        x, _T = self.encoder(spikes, pad_space_len, pad_time_len, timestamps, spacestamps, token_masks, time_attn_mask, space_attn_mask, block_idx, date_idx, neuron_regions, masking_mode, eval_mask, num_neuron, eid)
+        # targets_mask = targets_mask | new_mask
+
+        if False:   #TODO: embedder class is not being used atm, need to move other required functions out of that class 
+                            #or move embedding funcs into that class
+            spikes_lengths = self.encoder.embedder.get_stacked_lens(spikes_lengths)
+
+        _, T, _ = x.size()
+
+        if self.use_prompt or self.use_session:
+            x = x[:,T-_T:]
+
+        # Transform neural embeddings into rates/logits -- get outputs and targets
+        if self.method == "sl":
+            x = x.flatten(start_dim=1)
+            outputs = self.decoder(x)
+
+        if hasattr(self, "stitching") and self.method == "ssl":
+            outputs = self.stitch_decoder(x, str(num_neuron))
+
+        elif self.method == "ssl":
+            data_length = self.encoder.max_time_F * self.encoder.n_time_patches
+            outputs = self.decoder(x)
+            outputs = self.reshape_tensor(outputs, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)        # (B, T, N_padded)
+            # targets_mask = self.reshape_tensor(targets_mask, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)  # (B, T, N_padded)
+
+        # check_traces(targets, outputs, targets_mask.bool())
+        # plot_mask(targets_mask[0], title='NT_forward_mask')
+
+        # Compute the loss over unmasked outputs
+        if self.method == "ssl":
+            if self.encoder.mask:
+                # loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
+                poisson_loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
+            else:
+                loss = self.loss_fn(outputs, targets).sum()
+
+            #add MSE loss
+            # outputs_clamped = torch.clamp(outputs, min=-20, max=20)  # For numerical stability
+            predicted_rates = torch.exp(outputs)
+            mse_loss = (self.mse_loss_fn(predicted_rates, targets) * targets_mask).sum()
+            loss = self.alpha * poisson_loss + (1 - self.alpha) * mse_loss
+
+            n_examples = targets_mask.sum()
+        elif self.method == "ctc":      #THIS METHOD ISN'T TESTED WITH MODIFIED CODE
+            loss = self.loss_fn(outputs.transpose(0,1), targets, spikes_lengths, targets_lengths)
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
+        elif self.method == "sl":
+            loss = self.loss_fn(outputs, targets).sum()
+            n_examples = torch.Tensor([len(targets)]).to(loss.device, torch.long)
+
+        return NeurotokenizerOutput(
+            loss=loss,
+            n_examples=n_examples,
+            preds=outputs,
+            targets=targets,
+            num_neuron = pad_space_len     #TOOD: decide whether to add - included in stpatch  
+        )# Encoder for time binned neural data
+class Neurotokenizer(nn.Module):
+
+    def __init__(
+        self, 
+        config: DictConfig,
+        **kwargs
+    ):
+        super().__init__()
+
+        config = update_config(DEFAULT_CONFIG, config)
+        self.method = kwargs["method_name"]
+        
+        self.pad_value = -1.    #added from stpatch
+
+        # Build encoder
+        encoder_pt_path = config["encoder"].pop("from_pt", None)
+        if encoder_pt_path is not None:
+            encoder_config = os.path.join(encoder_pt_path, "encoder_config.yaml")
+            config["encoder"] = update_config(config.encoder, encoder_config)
+        self.encoder = NeuralEncoder(config.encoder, **kwargs)
+
+        # Load encoder weights
+        if encoder_pt_path is not None:
+            self.encoder.load_state_dict(torch.load(os.path.join(encoder_pt_path,"encoder.bin")))
+
+        self.use_prompt = config.encoder.embedder.use_prompt
+        self.use_session = config.encoder.embedder.use_session
+
+        # stitching
+        if config.encoder.stitching:
+            self.stitching=True
+            self.n_channels = config.encoder.embedder.n_channels
+            self.hidden_size = config.encoder.transformer.hidden_size
+            self.stitch_decoder = StitchDecoder(kwargs['num_neurons'], self.hidden_size)
+        else:
+            self.n_channels = kwargs['num_neurons'][0]
+
+        # Build decoder
+        if self.method == "ssl":
+            assert config.encoder.masker.force_active, "Can't pretrain with inactive masking"
+            n_outputs = config.encoder.embedder.max_time_F * config.encoder.embedder.max_space_F
+        elif self.method == "ctc":
+            n_outputs = kwargs["vocab_size"]
+        elif self.method == "sl":
+            n_outputs = kwargs["output_size"]
+        else:
+            raise Exception(f"Method {self.method} not implemented yet for Neurotokenizer")
+
+        decoder_layers = []
+        if self.method == "sl":     #TODO: figure out how this should be changed
+            decoder_layers.append(
+                # nn.Linear(config.encoder.embedder.max_F * self.encoder.out_proj.out_size, n_outputs)
+                nn.Linear((self.encoder.n_time_patches * self.encoder.n_space_patches) * self.encoder.out_proj.out_size, n_outputs)
+            )
+        else:
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size, int(self.encoder.hidden_size*1.5)))
+            # decoder_layers.append(nn.LayerNorm(int(self.encoder.hidden_size*1.5)))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(p=0.1))
+            decoder_layers.append(nn.Linear(int(self.encoder.hidden_size*1.5), self.encoder.hidden_size//2))
+            # decoder_layers.append(nn.LayerNorm(self.encoder.hidden_size//2))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(p=0.1))
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size//2, self.encoder.hidden_size//3))
+            # decoder_layers.append(nn.LayerNorm(self.encoder.hidden_size//3))
+            decoder_layers.append(nn.ReLU())
+            # decoder_layers.append(nn.Dropout(0.1))
+            decoder_layers.append(nn.Linear(self.encoder.hidden_size//3, n_outputs))
+            # decoder_layers.append(nn.Linear(self.encoder.hidden_size, n_outputs))
             # decoder_layers.append(nn.Linear(self.encoder.out_proj.out_size, self.n_channels*self.encoder.max_time_F))
 
         if self.method == "sft" and not kwargs["use_lograte"]:
@@ -553,6 +817,7 @@ class Neurotokenizer(nn.Module):
         N = self.encoder.n_space_patches
         n_time_patches = self.encoder.n_time_patches
 
+        # print(f'TARGETS MASK SHAPE: {targets_mask.shape}')
         # print(f'INIT Targets shape: {targets.shape}, targets_mask shape: {targets_mask.shape}')
 
         if eval_mask is not None:
@@ -617,9 +882,12 @@ class Neurotokenizer(nn.Module):
             data_length = self.encoder.max_time_F * self.encoder.n_time_patches
             outputs = self.decoder(x)
             outputs = self.reshape_tensor(outputs, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)        # (B, T, N_padded)
-            # targets = self.reshape_tensor(targets, B, n_time_patches, N, data_length, pad_space_len)        # (B, T, N_padded)
-            targets_mask = self.reshape_tensor(targets_mask, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)  # (B, T, N_padded)
+            # targets_mask = self.reshape_tensor(targets_mask, B, n_time_patches, N, self.encoder.max_time_F, pad_space_len)  # (B, T, N_padded)
 
+        # print(f'Shape outputs: {outputs.shape}')
+        # print(f'Shape targets: {targets.shape}')
+        # check_traces(targets, outputs, targets_mask.bool())
+        # plot_mask(targets_mask[0], title='NT_forward_mask')
 
         # Compute the loss over unmasked outputs
         if self.method == "ssl":
@@ -627,12 +895,6 @@ class Neurotokenizer(nn.Module):
                 loss = (self.loss_fn(outputs, targets) * targets_mask).sum()
             else:
                 loss = self.loss_fn(outputs, targets).sum()
-            
-            # if hasattr(self, "stitching"):        #originally commented out as first if statement in ndt1, not sure if it's safe to delete or still being debugged
-            #         if self.n_channels <= targets.shape[2]:
-            #             targets, targets_mask = targets[:,:,:self.n_channels], targets_mask[:,:,:self.n_channels]
-            #         else:
-            #             outputs = outputs[:,:,:targets.shape[2]]
 
             n_examples = targets_mask.sum()
         elif self.method == "ctc":      #THIS METHOD ISN'T TESTED WITH MODIFIED CODE
@@ -646,8 +908,8 @@ class Neurotokenizer(nn.Module):
             loss=loss,
             n_examples=n_examples,
             preds=outputs,
-            targets=targets
-            # num_neuron = pad_space_len     #TOOD: decide whether to add - included in stpatch  
+            targets=targets,
+            num_neuron = pad_space_len     #TOOD: decide whether to add - included in stpatch  
         )
 
 
@@ -689,6 +951,81 @@ class Neurotokenizer(nn.Module):
         
         return tensor
 
+def plot_mask(mask, title='Mask Visualization'):
+
+    if isinstance(mask, torch.Tensor):
+        mask_np = mask.cpu().numpy()
+    elif isinstance(mask, np.ndarray):
+        mask_np = mask
+    else:
+        raise TypeError("Mask must be a torch.Tensor or np.ndarray")
+
+    # Ensure mask is 2D
+    if mask_np.ndim != 2:
+        raise ValueError(f"Mask must be a 2D array, but has shape {mask_np.shape}")
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.imshow(mask_np[:,:30].T, cmap='gray', aspect='auto', interpolation='nearest', origin='lower')
+    plt.xlabel('Time')
+    plt.ylabel('Neuron')
+    plt.title(title)
+    plt.colorbar(label='Mask Value')
+    plt.tight_layout()
+
+    # Save or display the plot
+    random_val = torch.rand((1,)).item()
+    save_path = os.path.join('/u/csanthirasegaran/IBL_foundation_model/check_traces', f'{title}_{random_val}.png')
+    plt.savefig(save_path)
+    plt.close()
+    print(f'Plot saved at {save_path}')
+
+
+def check_traces(gt_spikes, pred_spikes, masks):
+    pred_spikes = pred_spikes.float()
+    # Ensure masks is a boolean tensor
+    if masks.dtype != torch.bool:
+        masks = masks.bool()
+
+    # Verify shapes
+    B, T, N = gt_spikes.shape
+    # print(f'gt_spikes shape: {gt_spikes.shape}')
+    # print(f'pred_spikes shape: {pred_spikes.shape}')
+    # print(f'masks shape: {masks.shape}')
+
+
+    # Now, masks should have shape [B, T, N]
+
+    # For each neuron, apply the mask and compute mean spike rates over time
+    for neuron_idx in range(5):
+        # Extract data for the neuron
+        gt_neuron = gt_spikes[:, :, neuron_idx]  # Shape: [B, T]
+        pred_neuron = pred_spikes[:, :, neuron_idx]  # Shape: [B, T]
+        mask_neuron = masks[:, :, neuron_idx]  # Shape: [B, T]
+
+        # Apply the mask to keep only the relevant data
+        gt_masked = torch.where(mask_neuron, gt_neuron, torch.tensor(float('nan')).to(gt_spikes.device))
+        pred_masked = torch.where(mask_neuron, pred_neuron, torch.tensor(float('nan')).to(pred_spikes.device))
+
+        # Compute mean over batches, ignoring NaNs
+        gt_mean = torch.nanmean(gt_masked, dim=0).cpu().numpy()
+        pred_mean = torch.nanmean(pred_masked, dim=0).cpu().numpy()
+
+        # Plotting
+        plt.figure(figsize=(10, 4))
+        plt.plot(gt_mean, label='Ground Truth', color='blue')
+        plt.plot(pred_mean, label='Prediction', color='red', alpha=0.7)
+        plt.xlabel('Time')
+        plt.ylabel('Mean Spike Rate')
+        plt.legend()
+        plt.tight_layout()
+        random_val = torch.rand((1,)).item()
+        save_path = os.path.join('/u/csanthirasegaran/IBL_foundation_model/check_traces', f'outputplot_{random_val}.png')
+        plt.savefig(save_path)
+        plt.close()
+
+        print(f'Plot saved for neuron {neuron_idx} at {save_path}')
+
 class ScaleNorm(nn.Module):
 
     def __init__(self, scale, eps=1e-5):
@@ -699,124 +1036,4 @@ class ScaleNorm(nn.Module):
     def forward(self, x):
         norm = self.scale / torch.norm(x, dim=-1, keepdim=True).clamp(min=self.eps)
         return x * norm
-    
-#Not used for this architecture
-class MegaTokenizer(nn.Module):
-    def __init__(self, neuron_combined_hidden_size, MEGA_hidden_size):
-        super().__init__()
-        self.neuron_combined_hidden_size = neuron_combined_hidden_size
-        self.middle_layer_size = (neuron_combined_hidden_size + MEGA_hidden_size) // 2
-        self.embed_tokens = nn.Sequential(
-                                nn.Linear(neuron_combined_hidden_size, self.middle_layer_size, bias=True),
-                                nn.ReLU(),
-                                # nn.Linear(self.middle_layer_size, self.middle_layer_size, bias=True),
-                                # nn.ReLU(),
-                                nn.Linear(self.middle_layer_size, MEGA_hidden_size, bias=True))
-                                
-        #skipping projection Linear layer used in NeuralEmbeddingLayer since we don't need to embed pos and time in a lower dim (input_dim)
-    
-    def forward(self, x):
-        megaX = self.embed_tokens(x)
-        return megaX
-
-
-    # Compute new lens after stacking
-    def get_stacked_lens(self, lens):
-        return lens if not self.stack else (1 + (lens - self.stack_size) / self.stack_stride).to(lens.dtype)
-
-    # Initialization methods copied from NDT
-    def fixup_initialization(self, init_range, spike_log_init, max_spikes, adapt):
-        if adapt:
-            for i in range(len(self.embed_spikes)):
-                if spike_log_init:
-                    # Use a log scale, since we expect spike semantics to follow compressive distribution
-                    log_scale = torch.arange(1, max_spikes+1).float().log() # 1 to lg
-                    log_scale = (log_scale - log_scale.mean()) / (log_scale[-1] - log_scale[0])
-                    log_scale = log_scale * init_range
-                    # Add some noise
-                    self.embed_spikes[i][0].weight.data.uniform_(-init_range / 10, init_range / 10)
-                    self.embed_spikes[i][0].weight.data += log_scale.unsqueeze(1).expand_as(self.embed_spikes[i][0].weight.data)
-                else:
-                    self.embed_spikes[i][0].weight.data.uniform_(-init_range, init_range)
-        else:
-            if spike_log_init:
-                # Use a log scale, since we expect spike semantics to follow compressive distribution
-                log_scale = torch.arange(1, max_spikes+1).float().log() # 1 to lg
-                log_scale = (log_scale - log_scale.mean()) / (log_scale[-1] - log_scale[0])
-                log_scale = log_scale * init_range
-                # Add some noise
-                self.embed_spikes[0].weight.data.uniform_(-init_range / 10, init_range / 10)
-                self.embed_spikes[0].weight.data += log_scale.unsqueeze(1).expand_as(self.embed_spikes[0].weight.data)
-            else:
-                self.embed_spikes[0].weight.data.uniform_(-init_range, init_range)
-
-# class Patcher(nn.Module):
-#     def __init__(self, max_time_F, embed_region = False):
-#         super().__init__()
-#         self.max_time_F = max_time_F
-#         self.pad_value = -1.
-#         self.embed_region = embed_region
-
-#     def forward(self, patched_spikes, time_attn_mask):
-#         """
-#         Efficiently patches neural data by chunking in time, optimized for cases where 
-#         n_space_patches equals the number of neurons (max_space_F = 1).
-
-#         Args:
-#             spikes (torch.FloatTensor): Input spikes tensor of shape (B, T, N).
-#             pad_time_len (int): Padding length for the time dimension.
-#             time_attn_mask (torch.LongTensor): Time attention mask of shape (B, T).
-#             space_attn_mask (torch.LongTensor): Space attention mask of shape (B, N).
-#             max_time_F (int): Maximum number of time frames per patch.
-#             pad_value (float, optional): Value to use for padding. Defaults to -1.0.
-
-#         Returns:
-#             Tuple[torch.FloatTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
-#                 - patches (torch.FloatTensor): Patched spikes of shape (B, new_seq_len, n_channels).
-#                 - patch_mask (torch.LongTensor): Combined attention mask for patches.
-#                 - spacestamps (torch.LongTensor): Spatial indices for patches.
-#                 - timestamps (torch.LongTensor): Temporal indices for patches.
-#         """
-
-#         spikes = patched_spikes
-#         pad_value = -1.
-
-#         B, T, N = spikes.size()
-#         device = spikes.device
-
-#         # Track padded values to prevent them from being used
-#         if (spikes[0,:,0] == pad_value).sum() == 0:
-#             pad_time_len = T
-#         else:
-#             pad_time_len = (spikes[0,:,0] == pad_value).nonzero().min().item() 
-
-#         # Calculate the number of time patches
-#         n_time_patches = ceil(T / self.max_time_F)
-#         total_padded_length = n_time_patches * self.max_time_F
-#         pad_time_len = total_padded_length - T  # Total padding required in time dimension
-
-#         # Pad spikes along the time dimension
-#         spikes = F.pad(spikes, (0, 0, 0, pad_time_len), value=pad_value)  # Shape: (B, total_padded_length, N)
-#         # Pad time attention mask
-#         time_attn_mask = F.pad(time_attn_mask, (0, pad_time_len), value=0)  # Shape: (B, total_padded_length)
-
-#         # Reshape and permute spikes to shape (B, n_time_patches, N, max_time_F)
-#         spikes = spikes.view(B, n_time_patches, self.max_time_F, N).permute(0, 1, 3, 2)
-
-#         # Flatten the time dimension to create patches
-#         patches = spikes.reshape(B, n_time_patches, N, self.max_time_F)
-
-#         # Prepare timestamps and spacestamps
-#         timestamps = torch.arange(n_time_patches, device=device).unsqueeze(1).expand(n_time_patches, N).flatten()
-#         spacestamps = torch.arange(N, device=device).unsqueeze(0).expand(n_time_patches, N).flatten()
-#         # Expand to match batch size
-#         timestamps = timestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
-#         spacestamps = spacestamps.unsqueeze(0).expand(B, -1)  # Shape: (B, n_time_patches * N)
-
-#         # batch['spikes_data'] = patches
-#         # batch['spikes_spacestamps'] = spacestamps
-#         # batch['spikes_timestamps'] = timestamps
-#         # batch['time_attn_mask'] = time_attn_mask
-
-#         return patches, spacestamps, timestamps, time_attn_mask
-            
+  

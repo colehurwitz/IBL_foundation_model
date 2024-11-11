@@ -34,9 +34,9 @@ ap.add_argument("--mask_mode", type=str, default="neuron")
 ap.add_argument("--model_name", type=str, default="NeuroToken")
 # ap.add_argument("--model_name", type=str, default="NDT1")
 ap.add_argument("--prompting", type=str, default="False")
-ap.add_argument("--train", type=str, default="False")
+ap.add_argument("--train", type=str, default="True")
 ap.add_argument("--eval", type=str, default="True")
-ap.add_argument("--base_path", type=str, default='/u/csanthirasegaran')
+ap.add_argument("--base_path", type=str, default='/u/csanthirasegaran/IBL_foundation_model')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
 
@@ -258,12 +258,12 @@ try:
     #########################
 
     if args.eval == "True":
-        # import wandb
-        # wandb.init(project=config.wandb.project, 
-        #         entity=config.wandb.entity, 
-        #         config=config, 
-        #         name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
-        #         )
+        import wandb
+        wandb.init(project=config.wandb.project, 
+                entity=config.wandb.entity, 
+                config=config, 
+                name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_{config.model.encoder.stitching}_{eid}"
+                )
         print('Start model evaluation.')
         print('=======================')
         
@@ -276,9 +276,9 @@ try:
         n_time_steps = 100
         
         co_smooth = True
-        forward_pred = True
-        inter_region = True
-        intra_region = True
+        forward_pred = False
+        inter_region = False
+        intra_region = False
         choice_decoding = False
         continuous_decoding = False
         

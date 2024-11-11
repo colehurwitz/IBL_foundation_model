@@ -28,14 +28,15 @@ dirs:
 
 # Training configuration
 training:
-  num_epochs: 750
+  num_epochs: 400 
   # num_epochs: 500
-  train_batch_size: 32
-  test_batch_size: 32
+  train_batch_size: 16
+  test_batch_size: 16
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
   save_plot_every_n_epochs: 10  # Plot the model output every n epochs
-  save_every: 50  # Save checkpoint
+  # save_every: 50  # Save checkpoint
+  save_every: 50
   eval_every: null  # Eval model
 
   dummy: true  # Use dummy data
