@@ -96,20 +96,20 @@ class NeuralEmbeddingLayer(nn.Module):
         if self.embed_region:
             self.region_embeddings = nn.Sequential(
                 nn.Embedding(
-                    self.n_time_patches * max_region_indx, hidden_size),
+                    max_region_indx, hidden_size),
                 nn.LayerNorm(hidden_size),
             )
 
         self.embed_space_pos = nn.Sequential(
             nn.Embedding(
-                self.n_time_patches * self.n_space_patches, hidden_size
+                self.n_space_patches, hidden_size
             ),
             nn.LayerNorm(hidden_size),
         )
             
         self.embed_time_pos = nn.Sequential(
             nn.Embedding(
-                self.n_time_patches * self.n_space_patches, hidden_size
+                self.n_time_patches, hidden_size
             ),
             nn.LayerNorm(hidden_size),
         )

@@ -67,10 +67,10 @@ class Masker(nn.Module):
 
 
         if 'all' in self.mask_regions:
-            self.mask_regions = list(np.unique(neuron_regions))
+            mask_regions = list(np.unique(neuron_regions))
 
         if 'all' in self.target_regions:
-            self.target_regions = list(np.unique(neuron_regions))
+            target_regions = list(np.unique(neuron_regions))
 
         mask_ratio = self.ratio
         if self.mode in ["temporal", "random_token", "causal"]:
@@ -98,7 +98,7 @@ class Masker(nn.Module):
         elif self.mode == "inter-region":
             assert neuron_regions is not None, "Can't mask region without brain region information"
             #assert self.mask_regions is not None, "No regions to mask"
-            mask_regions = random.sample(self.mask_regions, self.n_mask_regions)
+            mask_regions = random.sample(mask_regions, self.n_mask_regions)
             mask_probs = torch.zeros(spikes.shape[0],spikes.shape[2])
             for region in mask_regions:
                 region_indx = torch.tensor(neuron_regions == region, device=spikes.device)
@@ -107,7 +107,7 @@ class Masker(nn.Module):
             assert neuron_regions is not None, "Can't mask region without brain region information"
             #assert self.target_regions is not None, "No target regions"
 
-            target_regions = random.sample(self.target_regions, self.n_mask_regions)
+            target_regions = random.sample(target_regions, self.n_mask_regions)
             mask_probs = torch.ones(spikes.shape[0],spikes.shape[2])
             targets_mask = torch.zeros(spikes.shape[0],spikes.shape[2])
             for region in target_regions:
