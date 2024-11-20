@@ -8,7 +8,7 @@ verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
   project: multi-session
   run_name: 671c7ea7

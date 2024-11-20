@@ -4,3 +4,5 @@
 *result*
 *.png
 finetune
+eval
+wandb

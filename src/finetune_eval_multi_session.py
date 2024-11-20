@@ -114,6 +114,7 @@ try:
         print('=====================')
 
         log_dir = os.path.join(base_path, 
+                            "results",
                             "finetune", 
                             "num_session_{}".format(num_train_sessions),
                             "model_{}".format(config.model.model_class), 
@@ -128,7 +129,7 @@ try:
             print(log_dir)
             os.makedirs(log_dir)
 
-        if config.wandb.use and False:
+        if config.wandb.use:
             import wandb
             wandb.init(project=config.wandb.project, 
                     entity=config.wandb.entity, 
@@ -199,7 +200,7 @@ try:
                 entity=config.wandb.entity, 
                 config=config, 
                 name=f"eval_num_session_{num_train_sessions}_model_{args.model_name}_method_ssl_mask_{args.mask_mode}_stitch_True_{eids}_region_channel_{args.region_channel_num}"
-                )
+                ) if config.wandb.use else None
         print('Start model evaluation.')
         print('=======================')
         
@@ -266,7 +267,7 @@ try:
                             **co_smoothing_configs)
             
             print(results)
-            wandb.log(results)
+            wandb.log(results) if config.wandb.use else None
         
         # forward prediction
         if forward_pred:
@@ -290,7 +291,7 @@ try:
                             test_dataloader, 
                             **co_smoothing_configs)
             print(results)
-            wandb.log(results)
+            wandb.log(results) if config.wandb.use else None
                    
         # inter-region
         if inter_region:
@@ -316,7 +317,7 @@ try:
                             test_dataloader, 
                             **co_smoothing_configs)
             print(results)
-            wandb.log(results)
+            wandb.log(results) if config.wandb.use else None
 
         # intra-region
         if intra_region:
@@ -339,7 +340,7 @@ try:
                             test_dataloader, 
                             **co_smoothing_configs)
             print(results)
-            wandb.log(results)
+            wandb.log(results) if config.wandb.use else None
         
 
 
