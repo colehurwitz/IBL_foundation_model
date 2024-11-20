@@ -1,14 +1,17 @@
 #!/bin/bash
 
-#SBATCH --job-name=multi-session
-#SBATCH --output=multi-session-%j.out
+#SBATCH --account=col169
+#SBATCH --partition=gpu-shared
+#SBATCH --job-name="train"
+#SBATCH --output="train.%j.out"
 #SBATCH -N 1
-#SBATCH -n 1
+#SBACTH --array=0
+#SBATCH -c 8
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:rtx8000:1
-#SBATCH -t 3-12:00:00 
-#SBATCH --mem=64g
+#SBATCH --mem 150000
+#SBATCH --gpus=1
+#SBATCH -t 0-2:00
+#SBATCH --export=ALL
 
 . ~/.bashrc
 conda activate ibl-fm
