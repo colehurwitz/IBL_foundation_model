@@ -16,7 +16,7 @@ from utils.config_utils import DictConfig, update_config
 from models.model_output import ModelOutput
 from models.masker import Masker
 #%%
-DEFAULT_CONFIG = "/mnt/smb/locker/miller-locker/users/jx2484/code/autoencoder/src/configs/ndt1_with_region_stitcher_stitching.yaml"
+DEFAULT_CONFIG = "/home/ywang74/Dev/IBL_foundation_model/src/configs/ndt1_with_region_stitcher_stitching.yaml"
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 

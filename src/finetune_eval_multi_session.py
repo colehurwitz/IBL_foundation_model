@@ -125,9 +125,10 @@ try:
                             )
 
         if not os.path.exists(log_dir):
+            print(log_dir)
             os.makedirs(log_dir)
 
-        if config.wandb.use:
+        if config.wandb.use and False:
             import wandb
             wandb.init(project=config.wandb.project, 
                     entity=config.wandb.entity, 
@@ -149,9 +150,9 @@ try:
         model = accelerator.prepare(model)
     
         # load pretrain model
-        pretrain_model_path = f'{base_path}/finetune/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/{eids}/region_factors_{args.region_channel_num}/model_best.pt'
-        print('load pretrain model from:', pretrain_model_path)
-        model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
+        # pretrain_model_path = f'{base_path}/finetune/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/{eids}/region_factors_{args.region_channel_num}/model_best.pt'
+        # print('load pretrain model from:', pretrain_model_path)
+        # model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
 
         # if num_train_sessions > 1:
         #     print('Load pretrain model from:', pretrain_model_path)

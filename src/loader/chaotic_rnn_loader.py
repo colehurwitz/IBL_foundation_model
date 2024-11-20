@@ -115,7 +115,7 @@ class RNNNet(nn.Module):
         return out, rnn_output
 
 #%%
-path = '/mnt/smb/locker/miller-locker/users/jx2484/code/autoencoder/src/loader/'
+path = '/home/ywang74/Dev/IBL_foundation_model/src/loader/'
 #file_path = path + 'chaotic_rnn_500_tau25_dt10_small_g.pth'
 #file_path = path + 'chaotic_rnn_500_tau25_dt10.pth'
 #file_path = path + 'chaotic_rnn_600_tau25_dt10_g_5_btw_sparsity_01.pth'
@@ -251,7 +251,7 @@ def make_chaotic_rnn_loader(session_ind_list, batch_size):
     area_ind_list_list = []
     record_info_list = []
     
-    path = '/mnt/smb/locker/miller-locker/users/jx2484/data/generated_before_chaotic_rnn/3_area_chaotic_rnn_g3_factor_200/'
+    path = '/expanse/lustre/scratch/ywang74/temp_project/Data/synthetic/'
 
     generated_session_ind_list = [int(file.split('_')[-1].split('.')[0]) for file in os.listdir(path)]  
 

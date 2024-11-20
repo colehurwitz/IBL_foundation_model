@@ -1,2 +1,6 @@
-__pycache__
+*__pycache__*
 *egg-info
+*.pyc
+*result*
+*.png
+finetune
