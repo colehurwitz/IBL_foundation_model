@@ -9,6 +9,7 @@ from utils.utils import set_seed, dummy_load
 from utils.config_utils import config_from_kwargs, update_config
 from models.ndt1 import NDT1
 from models.ndt1_with_region_stitcher import NDT1_with_region_stitcher 
+from models.mlp import NeuralMLP
 from torch.optim.lr_scheduler import OneCycleLR
 import torch
 import numpy as np
@@ -146,8 +147,10 @@ try:
         NAME2MODEL = {"NDT1": NDT1, "NDT1_with_region_stitcher": NDT1_with_region_stitcher}
 
         model_class = NAME2MODEL[config.model.model_class]
-
+        mlp = NeuralMLP(hidden_size=512, inter_size=512, act='relu', use_bias=True, dropout=0.1)
         model = model_class(config.model, **config.method.model_kwargs, **meta_data)
+        print(model.encoder.layers)
+        model.encoder.layers = nn.ModuleList([mlp])
         model = accelerator.prepare(model)
     
         # load pretrain model

@@ -6,3 +6,4 @@
 finetune
 eval
 wandb
+*.out
