@@ -1,16 +1,16 @@
 seed: 42
 
 savestring: test
-wandb_project: multi-session
+wandb_project: ibl-ndt1-100
 log_to_wandb: false
 
 verbosity: 0
 
 # wandb configuration
 wandb:
-  use: false
+  use: true
   entity: null
-  project: multi-session
+  project: ibl-ndt1-100
   run_name: 671c7ea7
 
 # Logging directories
@@ -20,8 +20,9 @@ dirs:
   dataset_cache_dir: checkpoints/datasets_cache  # save dataset cache
   # dataset_dir: /home/ppwang/neural-data-transformers/data/lfads_lorenz.h5
   # pretrained_model_path: checkpoints/models/ndt1/ssl/temporal/model_best_multi-session.pt
-  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b
-  behav_dir:  671c7ea7-6726-4fbe-adeb-f89c2c8e489b
+  pretrained_model_path: /scratch/yl6624/IBL_foundation_model/results_/train/num_session_34/model_NDT1/method_ssl/mask_all/stitch_True/model_best.pt
+  dataset_dir: ibl-foundation-model/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
+  behav_dir:  data/671c7ea7-6726-4fbe-adeb-f89c2c8e489b_aligned
   huggingface_org: ibl-foundation-model
   
 
@@ -33,11 +34,10 @@ training:
   test_batch_size: 16  
   shuffle_test_dataloader: false    # Shuffle test dataloader between epochs
 
-  save_plot_every_n_epochs: 10  # Plot the model output every n epochs
-  save_every: 50  # Save checkpoint
+  save_plot_every_n_epochs: 5  # Plot the model output every n epochs
+  save_every: 100  # Save checkpoint
   eval_every: null  # Eval model
 
-  dummy: true  # Use dummy data
 
 
 # Model configuration. 
@@ -67,28 +67,21 @@ data:
   max_space_length: 668   # max_space_length has to be a multiple of space patch size
   patching: true # patching the neurons
   sort_by_depth: false
+  sort_by_region: false
   brain_region: all
+  spike_augmentation: false
 
   include_behav: false # include behavior data
   target: null
 
   load_meta: true
 
-  num_sessions: 40
-  train_session_eid: ['72cb5550-43b4-4ef0-add5-e4adfdfb5e02', '51e53aff-1d5d-4182-a684-aba783d50ae5', 'd57df551-6dcb-4242-9c72-b806cff5613a', 'e2b845a1-e313-4a08-bc61-a5f662ed295e', 'd2832a38-27f6-452d-91d6-af72d794136c'] 
-  test_session_eid: [] 
+  num_sessions: 3
+  test_session_eid: ["671c7ea7-6726-4fbe-adeb-f89c2c8e489b"] 
 
-  split_method: predefined # random_split/session_based/predefined
+  split_method: session_based # random_split/session_based
 
   use_aligned_test: False
-
-  sort_by_depth: false
-  sort_by_region: false
-  brain_region: all
-
-  spike_augmentation: false
-
-  use_re: true
 
 # Method configuration. Contains kwargs that are specific to the training method.
 method:

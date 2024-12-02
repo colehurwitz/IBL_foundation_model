@@ -46,7 +46,7 @@ conda activate ibl-fm
 
 cd ../
 
-python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
+python src/finetune_eval_multi_session.py --mask_ratio 0.2 \
                          --mask_mode $MASK_MODE \
                          --model_name $MODEL_NAME \
                          --prompting $PROMPTING \
@@ -55,7 +55,8 @@ python src/finetune_eval_multi_session.py --mask_ratio 0.3 \
                          --base_path $SCRATCH/IBL_foundation_model \
                          --num_train_sessions $NUM_TRAIN_SESSIONS \
                          --test_eid $TEST_EID \
-                         --use_dummy
+                         --use_nlb \
+                         --seed 42
 
 cd script
 

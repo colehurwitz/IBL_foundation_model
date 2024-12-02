@@ -2,6 +2,7 @@ import argparse
 from math import ceil
 from datasets import load_dataset, load_from_disk, concatenate_datasets, load_dataset_builder
 from utils.dataset_utils import get_user_datasets, load_ibl_dataset, split_both_dataset
+from utils.nlb_data_utils import load_nlb_dataset
 import argparse
 from datasets import load_dataset, load_from_disk, concatenate_datasets
 from utils.dataset_utils import load_ibl_dataset
@@ -34,9 +35,12 @@ ap.add_argument("--eval", type=str, default="True")
 ap.add_argument("--base_path", type=str, default='/mnt/home/yzhang1/ceph')
 ap.add_argument("--num_train_sessions", type=int, default=1)
 ap.add_argument('--use_dummy', action='store_true')
+ap.add_argument('--use_nlb', action='store_true')
+ap.add_argument('--use_leaderboard', action='store_true')
+ap.add_argument('--seed', type=int, default=42)
 args = ap.parse_args()
 
-eid = args.test_eid
+eid = args.test_eid if not args.use_nlb else "nlb-rtt"
 base_path = args.base_path
 model_acroynm = args.model_name.lower()
 num_train_sessions = args.num_train_sessions
@@ -44,27 +48,38 @@ assert num_train_sessions > 0, 'num_train_sessions should be greater than 0.'
 
 if args.prompting == "True":
     if args.model_name == 'NDT1':
-        kwargs = {
-            "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
-        }
+        if args.mask_mode == "all":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_prompting.yaml"
+            }
+        elif args.mask_mode == "temporal":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_prompting_temporal.yaml"
+            }
     elif args.model_name == 'NDT2':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}_prompting.yaml"
         }
 else:
     if args.model_name == 'NDT1':
-        kwargs = {
-            "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
-        }
+        if args.mask_mode == "all":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching.yaml"
+            }
+        elif args.mask_mode == "temporal":
+            kwargs = {
+                "model": f"include:src/configs/{model_acroynm}_stitching_temporal.yaml"
+            }
     elif args.model_name == 'NDT2':
         kwargs = {
             "model": f"include:src/configs/{model_acroynm}.yaml"
         }
 
+trainer_config_path = f"src/configs/finetune_nlb_trainer.yaml" if args.use_nlb else f"src/configs/finetune_sessions_trainer.yaml"
 config = config_from_kwargs(kwargs)
-config = update_config("src/configs/finetune_sessions_trainer.yaml", config)
+config = update_config(trainer_config_path, config)
 
-set_seed(config.seed)
+set_seed(args.seed)
 # Shared variable to signal the dummy load to stop
 stop_dummy_load = threading.Event()
 if args.use_dummy:
@@ -76,17 +91,23 @@ try:
     if args.train == "True":
         print('Start model training.')
         print('=====================')
-        train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
-                            config.dirs.huggingface_org,
-                            eid=None,
-                            num_sessions=config.data.num_sessions,
-                            split_method=config.data.split_method,
-                            train_session_eid=[eid],
-                            test_session_eid=config.data.test_session_eid,
-                            batch_size=config.training.train_batch_size,
-                            seed=config.seed)
+        if args.use_nlb:
+            if args.use_leaderboard:
+                from utils.nlb_data_utils import load_nlb_dataset_test as load_nlb_dataset
+            train_dataset, val_dataset, meta_data = load_nlb_dataset("data/000129/sub-Indy", 20)
+        else:
+            train_dataset, val_dataset, test_dataset, meta_data = load_ibl_dataset(config.dirs.dataset_cache_dir, 
+                                config.dirs.huggingface_org,
+                                eid=None,
+                                num_sessions=config.data.num_sessions,
+                                split_method=config.data.split_method,
+                                train_session_eid=[eid],
+                                test_session_eid=config.data.test_session_eid,
+                                batch_size=config.training.train_batch_size,
+                                seed=config.seed)
 
-        log_dir = os.path.join(base_path, config.dirs.log_dir, 
+        log_dir = os.path.join(base_path, 
+                            config.dirs.log_dir, 
                             "finetune", 
                             "num_session_{}".format(num_train_sessions),
                             "model_{}".format(config.model.model_class), 
@@ -95,8 +116,7 @@ try:
                             "stitch_{}".format(config.model.encoder.stitching),
                             "{}".format(eid)
                             )
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
         print(meta_data)
 
         if config.wandb.use:
@@ -132,6 +152,7 @@ try:
                                 sort_by_depth=config.data.sort_by_depth,
                                 sort_by_region=config.data.sort_by_region,
                                 stitching=config.model.encoder.stitching,
+                                use_nlb=args.use_nlb,
                                 shuffle=True)
         
         val_dataloader = make_loader(val_dataset, 
@@ -146,6 +167,7 @@ try:
                                 sort_by_depth=config.data.sort_by_depth,
                                 sort_by_region=config.data.sort_by_region,
                                 stitching=config.model.encoder.stitching,
+                                use_nlb=args.use_nlb,
                                 shuffle=False)
         
         # Initialize the accelerator
@@ -160,12 +182,23 @@ try:
         model = accelerator.prepare(model)
         # load pretrain model
         pretrain_model_path = f'{base_path}/results/train/num_session_{num_train_sessions}/model_{config.model.model_class}/method_{config.method.model_kwargs.method_name}/mask_{args.mask_mode}/stitch_{config.model.encoder.stitching}/model_best.pt'
-        if num_train_sessions > 1:
+        if num_train_sessions > 1 and not args.use_nlb:
             print('Load pretrain model from:', pretrain_model_path)
             # load weights that can be found in the pretrain model
             model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
-        else:
+        elif not args.use_nlb:
             print('Train from scratch.')
+        if args.use_nlb and config.dirs.pretrain_model_path and num_train_sessions > 1:
+            pretrain_model_path = config.dirs.pretrain_model_path
+            if args.mask_mode == "temporal":
+                print("load pretrained 34-session IBL temporal model, start finetune for NLB RTT data")
+                pretrain_model_path = pretrain_model_path.replace("mask_all", "mask_temporal")
+            else:
+                print("load pretrained 34-session IBL MtM model, start finetune for NLB RTT data")
+            model.load_state_dict(torch.load(pretrain_model_path)['model'].state_dict(), strict=False)
+            print("load pretrained 34-session IBL model, start finetune for NLB RTT data")
+        elif args.use_nlb:
+            print("NLB RTT data, train from scratch.")
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=config.optimizer.lr, weight_decay=config.optimizer.wd, eps=config.optimizer.eps)
         lr_scheduler = OneCycleLR(
@@ -217,12 +250,12 @@ try:
             
         n_time_steps = 100
         
-        co_smooth = True
-        forward_pred = True
+        co_smooth = False
+        forward_pred = False
         inter_region = True
-        intra_region = True
-        choice_decoding = True
-        continuous_decoding = True
+        intra_region = False
+        choice_decoding = True if not args.use_nlb else False
+        continuous_decoding = True if not args.use_nlb else False
         
         print(mask_name)
         
@@ -234,20 +267,47 @@ try:
         configs = {
             'model_config': model_config,
             'model_path': f'{base_path}/results/finetune/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/model_best.pt',
-            'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml',
+            'trainer_config': f'src/configs/trainer_{model_acroynm}.yaml' if not args.use_nlb else f'src/configs/trainer_nlb.yaml',
             'dataset_path': None, 
             'test_size': 0.2,
             'seed': 42,
             'mask_name': mask_name,
             'eid': eid,
             'stitching': True,
-            'num_sessions': 1 
+            'num_sessions': 1 ,
+            'use_nlb': args.use_nlb,
+            'use_leaderboard': args.use_leaderboard,
         }  
         
         
         # load your model and dataloader
         model, accelerator, dataset, dataloader = load_model_data_local(**configs)
-        
+        from utils.eval_utils import co_smoothing_eval_nlb as co_smoothing_eval
+        if args.use_nlb:
+            from utils.eval_utils import co_smoothing_eval_nlb as co_smoothing_eval
+            print("NLB RTT data, save h5")
+            co_smoothing_configs = {
+                'subtract': 'task',
+                'onset_alignment': [40],
+                'method_name': mask_name, 
+                'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/co_smooth',
+                'mode': 'save_h5',
+                'n_time_steps': n_time_steps,    
+                'held_out_list': None,
+                'is_aligned': True,
+                'target_regions': ['all'],
+                'n_jobs': 8,
+            }
+            results, gt_result, pred_result = co_smoothing_eval(model, 
+                            accelerator, 
+                            dataloader, 
+                            dataset, 
+                            **co_smoothing_configs)
+            print(results)
+
+            print(f"co_smooth shape of gt_result: {gt_result.shape}")
+            print(f"co_smooth shape of pred_result: {pred_result.shape}")
+            wandb.log(results)
         # co-smoothing
         if co_smooth:
             print('Start co-smoothing:')
@@ -263,12 +323,15 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+
+            print(f"co_smooth shape of gt_result: {gt_result.shape}")
+            print(f"co_smooth shape of pred_result: {pred_result.shape}")
             wandb.log(results)
         
         # forward prediction
@@ -281,18 +344,20 @@ try:
                 'save_path': f'{base_path}/results/eval/num_session_{num_train_sessions}/model_NDT1/method_ssl/{mask_name}/stitch_True/{eid}/forward_pred',
                 'mode': 'forward_pred',
                 'n_time_steps': n_time_steps,    
-                'held_out_list': list(range(90, 100)), # NLB uses 200 ms for fp
+                'held_out_list': list(range(90, 100)) if not args.use_nlb else list(range(27,30)),       # NLB uses 200 ms for fp
                 'is_aligned': True,
                 'target_regions': None,
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"forward_pred shape of gt_result: {gt_result.shape}")
+            print(f"forward_pred shape of pred_result: {pred_result.shape}")
             wandb.log(results)
             
         
@@ -312,12 +377,14 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"inter_region shape of gt_result: {gt_result.shape}")
+            print(f"inter_region shape of pred_result: {pred_result.shape}")
             wandb.log(results)
 
         
@@ -337,12 +404,14 @@ try:
                 'n_jobs': 8
             }
         
-            results = co_smoothing_eval(model, 
+            results, gt_result, pred_result = co_smoothing_eval(model, 
                             accelerator, 
                             dataloader, 
                             dataset, 
                             **co_smoothing_configs)
             print(results)
+            print(f"intra_region shape of gt_result: {gt_result.shape}")
+            print(f"intra_region shape of pred_result: {pred_result.shape}")
             wandb.log(results)
         
         
